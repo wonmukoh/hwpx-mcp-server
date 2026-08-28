@@ -1,0 +1,22 @@
+{
+  "//": "검증 스크립트(.mjs)가 쓸 JS 를 굽는다. 꾸러미 세 개를 한 번에.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": ".빌드전체",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "baseUrl": "..",
+    "paths": {
+      "@hwpx/owpml": ["packages/owpml/src/index.ts"],
+      "@hwpx/container": ["packages/hwpx/src/index.ts"],
+      "@hwpx/doc": ["packages/doc/src/index.ts"],
+      "@hwpx/compose": ["packages/compose/src/index.ts"],
+      "@hwpx/server": ["packages/server/src/index.ts"]
+    }
+  },
+  "include": ["../packages/*/src/**/*.ts"]
+}

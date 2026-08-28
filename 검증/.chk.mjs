@@ -1,0 +1,16 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const B = (p) => pathToFileURL(path.join('검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
+const { 문서 } = await import(B('doc'));
+const { parseXml, findAll, getAttr } = await import(B('owpml'));
+const d = 문서.열기(fs.readFileSync(path.join('자료', '표본', '공개', '교육부-2026대학혁신지원사업-보도자료.hwpx')));
+d.ID매기기();
+const 것 = d.구역들.flatMap((s) => s.모든문단들).filter((p) => p.글 && p.글.trim().length >= 6)[0];
+const 앞수 = findAll(parseXml(d.머리.toXml()).root, 'hh:charPr').length;
+const r = d.글자서식주기(d.이름표.아이디(것.el), { 굵게: true, 색: '#C00000' });
+const 뒤 = parseXml(d.머리.toXml()).root;
+console.log('결과', JSON.stringify(r));
+console.log('charPr', 앞수, '->', findAll(뒤, 'hh:charPr').length);
+const 영 = findAll(뒤, 'hh:charPr').find((x) => getAttr(x, 'id') === '0');
+console.log('id=0 색:', 영 ? getAttr(영, 'textColor') : '없음');

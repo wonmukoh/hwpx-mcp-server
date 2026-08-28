@@ -39,27 +39,61 @@ import { 못함 } from './결과내기.js';
 export const 서버이름 = 'hwpx-mcp';
 
 /**
+ * **이 파일이 어디 놓여 있나.** 거기서부터 위로 걸어 `package.json` 을 찾는다.
+ *
+ * 두 갈래를 다 본다. **하나만 보면 묶는 방식에 따라 죽는다** —
+ *
+ *   - ESM 으로 돌 때는 `import.meta.url` 이 있다.
+ *   - **CJS 로 묶으면 없다.** esbuild 는 `import.meta` 를 빈 객체로 바꿔 놓는다.
+ *     그러면 `fileURLToPath(undefined)` 가 던지고 걷기가 시작도 못 한다.
+ *     그때는 `__dirname` 이 살아 있다.
+ *
+ * 실제로 겪었다. 앱에 번들해 넣은 쪽에서 **바로 옆에 `package.json` 이 있는데도**
+ * 서버가 자기를 `0.0.0` 이라 말했다.
+ */
+export function 놓인자리(): string | undefined {
+  try {
+    const url = (import.meta as { url?: string }).url;
+    if (typeof url === 'string' && url) return path.dirname(fileURLToPath(url));
+  } catch { /* 아래로 */ }
+  // CJS 로 묶였을 때
+  if (typeof __dirname === 'string' && __dirname) return __dirname;
+  return undefined;
+}
+
+/**
  * **판 번호는 `package.json` 에서 읽는다.**
  *
  * 여기에 따로 적어 두면 갈라진다 — 실제로 갈라졌다.
  * `package.json` 은 0.4.0 인데 서버는 클라이언트에게 **0.1.0 이라고 말하고 있었다.**
  * 짜서 깔아 보는 갈래가 「서버 판 0.1.0」 을 찍어 줘서 알았다.
  *
- * 못 읽으면 `0.0.0` 이다 — 그럴듯한 수를 지어내면 갈라진 것을 못 알아본다.
+ * **이름이 맞는 `package.json` 만 읽는다.** 아무거나 읽으면 남의 판을 제 판이라 말한다.
+ *
+ * 못 찾으면 `0.0.0` 이다 — 그럴듯한 수를 지어내면 갈라진 것을 못 알아본다.
+ * 이 대체값 덕에 번들에서 죽은 것을 **알아챌 수 있었다.**
  */
-export const 서버판: string = (() => {
+// 기본값을 두지 않는다. JS 는 `판읽기(undefined)` 에도 기본값을 켜서,
+// **「자리를 못 찾았다」 를 뜻하는 값이 못 찾은 것으로 안 읽힌다.**
+export function 판읽기(시작: string | undefined): string {
+  if (시작 === undefined) return '0.0.0';
   try {
-    const 여기 = path.dirname(fileURLToPath(import.meta.url));
     // dist/packages/server/src → 뿌리. 소스에서 돌 때도 같은 깊이다.
-    for (let d = 여기, i = 0; i < 8; i++, d = path.dirname(d)) {
+    for (let d = 시작, i = 0; i < 8; i++) {
       const p = path.join(d, 'package.json');
-      if (!fs.existsSync(p)) continue;
-      const j = JSON.parse(fs.readFileSync(p, 'utf8')) as { name?: string; version?: string };
-      if (j.name === 서버이름 && typeof j.version === 'string') return j.version;
+      if (fs.existsSync(p)) {
+        const j = JSON.parse(fs.readFileSync(p, 'utf8')) as { name?: string; version?: string };
+        if (j.name === 서버이름 && typeof j.version === 'string') return j.version;
+      }
+      const 위 = path.dirname(d);
+      if (위 === d) break;   // 뿌리에 닿았다
+      d = 위;
     }
   } catch { /* 못 읽으면 아래로 */ }
   return '0.0.0';
-})();
+}
+
+export const 서버판: string = 판읽기(놓인자리());
 
 /** 도구 목록을 얼마나 캐시해도 되나 */
 export const 목록캐시밀리초 = 60 * 60 * 1000;

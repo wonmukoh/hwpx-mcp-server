@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  도구들, 서버이름, 서버판, 스키마린트, 금지키워드, 최대중첩, 출력최대중첩, 차림표, 도구부르기, 문서방,
+  도구들, 서버이름, 서버판, 판읽기, 놓인자리, 스키마린트, 금지키워드, 최대중첩, 출력최대중첩, 차림표, 도구부르기, 문서방,
   인자검사, 절대경로검사,
 } from '../src/index.js';
 
@@ -1231,5 +1231,49 @@ describe('판 번호가 갈라지지 않는다', () => {
     // 0.0.0 이면 「못 읽었다」 가 눈에 보인다. 0.1.0 같은 수를 넣으면 갈라진 것을 못 알아본다.
     expect(서버판).not.toBe('0.0.0');
     expect(서버판).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+describe('판 읽기가 묶는 방식에 안 흔들린다', () => {
+  /**
+   * 판 읽기가 `import.meta.url` 하나에 걸려 있었다.
+   * **CJS 로 묶으면 그게 없다** — esbuild 는 `import.meta` 를 빈 객체로 바꾼다.
+   * 그러면 `fileURLToPath(undefined)` 가 던지고 걷기가 시작도 못 한다.
+   *
+   * 앱에 번들해 넣은 쪽에서 **바로 옆에 package.json 이 있는데도**
+   * 서버가 자기를 `0.0.0` 이라 말했다. 재현해서 확인했다.
+   *
+   * 이제 `__dirname` 으로도 자리를 찾는다.
+   */
+  it('놓인 자리를 찾는다', () => {
+    expect(놓인자리(), '자리를 못 찾으면 판을 영영 못 읽는다').toBeTypeOf('string');
+  });
+
+  it('**시작 자리를 밖에서 줘도 읽는다** (번들이 어디 놓이든)', () => {
+    const 뿌리판 = JSON.parse(
+      fs.readFileSync(path.join(뿌리, 'package.json'), 'utf8'),
+    ) as { version: string };
+    // 깊은 자리에서 시작해도 위로 걸어 찾는다
+    expect(판읽기(path.join(뿌리, 'packages', 'server', 'src'))).toBe(뿌리판.version);
+    // 바로 그 자리에 있어도 찾는다 — 번들은 package.json 옆에 놓인다
+    expect(판읽기(뿌리)).toBe(뿌리판.version);
+  });
+
+  it('**자리를 못 찾으면 0.0.0 이다** — 그럴듯한 수를 지어내지 않는다', () => {
+    // 지어내면 갈라진 것을 못 알아본다. 실제로 이 대체값 덕에 번들에서 죽은 걸 알았다.
+    expect(판읽기(undefined)).toBe('0.0.0');
+    expect(판읽기(os.tmpdir())).toBe('0.0.0');
+  });
+
+  it('**이름이 다른 package.json 은 안 읽는다** (남의 판을 제 판이라 하지 않는다)', () => {
+    const 방 = fs.mkdtempSync(path.join(os.tmpdir(), '판시험-'));
+    fs.writeFileSync(path.join(방, 'package.json'),
+      JSON.stringify({ name: '남의것', version: '9.9.9' }), 'utf8');
+    expect(판읽기(방), '이름을 안 보면 옆에 놓인 아무 package.json 이나 읽는다').toBe('0.0.0');
+    fs.rmSync(방, { recursive: true, force: true });
+  });
+
+  it('뿌리에 닿으면 멈춘다 (끝없이 안 걷는다)', () => {
+    expect(판읽기(path.parse(뿌리).root)).toBe('0.0.0');
   });
 });

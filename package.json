@@ -1,6 +1,6 @@
 {
   "name": "hwpx-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "한글 문서(HWPX)를 읽고 쓰는 MCP 서버",
   "keywords": [
     "hwpx",
@@ -15,6 +15,14 @@
   ],
   "license": "MIT",
   "author": "owm21",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wonmukoh/hwpx-mcp-server.git"
+  },
+  "homepage": "https://github.com/wonmukoh/hwpx-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/wonmukoh/hwpx-mcp-server/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"

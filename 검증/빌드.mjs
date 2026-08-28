@@ -23,14 +23,44 @@ process.chdir(뿌리);
 
 const 배포인가 = process.argv.includes('--배포');
 const 낼곳 = 배포인가 ? path.join(뿌리, 'dist') : path.join(여기, '.빌드전체');
-fs.rmSync(낼곳, { recursive: true, force: true });
+
+/**
+ * **옆에 굽고 마지막에 이름만 바꾼다.**
+ *
+ * 예전에는 `dist` 를 먼저 지우고 그 자리에 구웠다. 굽는 동안 —
+ * 검증 한 바퀴에 여섯 번, 매번 몇십 초 — **`dist` 가 빈 자리**였고,
+ * 그때 밖에서 읽는 쪽은 「dist 없음」을 봤다.
+ *
+ * 앱에 번들해 넣는 쪽이 2분 넘게 여섯 번 내리 걸렸다고 알려 왔다.
+ * `npx` 로 쓰는 쪽도, **이 폴더를 가리키는 MCP 설정**도 같은 창에 걸린다.
+ *
+ * 이제 밖에서는 언제 읽어도 **옛 것 아니면 새 것**이지 빈 자리가 없다.
+ */
+const 굽는곳 = `${낼곳}.굽는중`;
+fs.rmSync(굽는곳, { recursive: true, force: true });
 
 const r = spawnSync(process.execPath, [
   path.join('node_modules', 'typescript', 'bin', 'tsc'),
   '-p', path.join('검증', 'tsconfig.빌드.json'),
-  '--outDir', 낼곳,
+  '--outDir', 굽는곳,
 ], { stdio: 'inherit' });
-if (r.status !== 0) process.exit(r.status ?? 1);
+if (r.status !== 0) {
+  fs.rmSync(굽는곳, { recursive: true, force: true });
+  process.exit(r.status ?? 1);
+}
+
+/**
+ * 다 구웠으니 자리를 바꾼다. **여기서만 잠깐 빈다** — 밀리초다.
+ *
+ * 윈도우는 있는 폴더 위로 이름을 못 바꾼다. 그래서 옛 것을 먼저 옆으로 치운다.
+ */
+{
+  const 치울곳 = `${낼곳}.치움`;
+  fs.rmSync(치울곳, { recursive: true, force: true });
+  if (fs.existsSync(낼곳)) fs.renameSync(낼곳, 치울곳);
+  fs.renameSync(굽는곳, 낼곳);
+  fs.rmSync(치울곳, { recursive: true, force: true });
+}
 
 /** 꾸러미 이름 → 구운 index.js */
 const 꾸러미 = {

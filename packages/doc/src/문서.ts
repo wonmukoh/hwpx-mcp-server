@@ -20,7 +20,7 @@
 import { HwpxContainer, 부품 } from '@hwpx/container';
 import {
   parseXml, serializeXml, findAll, getAttr,
-  type ElementNode, type XmlDocument, childrenNamed, removeNode, setText,
+  type ElementNode, type XmlDocument, childrenNamed, removeNode, setText, 못쓰는제어문자,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
 import { 이름표, 셀아이디, 셀아이디풀기 } from './식별자.js';
@@ -380,6 +380,23 @@ export class 문서 {
         for (const x of new 표(t).탈만) 탈.push(`${s.이름}: ${x}`);
       }
     }
+
+    // **XML 이 못 쓰는 글자가 새어 들어갔나** — 마지막 그물이다.
+    //
+    // 쓰는 길목(글바꾸기)에서 막지만 조판·복제 같은 딴 길도 있다.
+    // 그런 글자가 하나라도 들면 **한글이 그 파일을 통째로 못 연다** —
+    // 열어 보기 전에는 모르니 저장 길목에서 잡는다.
+    for (const s of this.구역들) {
+      for (const t of findAll(s.root, 'hp:t')) {
+        const 글 = (t.children[0] as { raw?: string } | undefined)?.raw ?? '';
+        const 나쁜것 = 못쓰는제어문자(글);
+        if (나쁜것) {
+          탈.push(`${s.이름}: 글에 XML 이 못 쓰는 제어문자 ${나쁜것.글자} 가 있다 (한글이 못 연다)`);
+          break;   // 한 구역에 하나만 알려도 넉넉하다
+        }
+      }
+    }
+
     탈.push(...this.통.검사());
     return 탈;
   }

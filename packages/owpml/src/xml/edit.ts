@@ -13,6 +13,32 @@ import { markDirty } from './ast.js';
 import type { Attr, ElementNode, Node, TextNode } from './ast.js';
 
 /** XML 특수문자를 이스케이프한다. 속성 값과 글자 모두 이걸 거친다 */
+/**
+ * **XML 1.0 이 못 쓰는 제어문자.**
+ *
+ * C0 제어문자 가운데 TAB·LF·CR 만 쓸 수 있다. 나머지는 **어떤 방법으로도 못 쓴다** —
+ * `&#0;` 같은 숫자 참조로도 안 된다. 규격이 그렇게 정해 놓았다.
+ *
+ * 그런 글자가 든 파일은 XML 파서가 거절하고 **한글도 못 연다.**
+ * 실제로 겪었다: `U+0000` 이 든 글을 넣었더니 저장은 됐는데 한글이 `OPENFAIL` 을 냈다.
+ *
+ * 찾으면 첫 번째 것을 알려 준다. 없으면 `undefined`.
+ */
+export function 못쓰는제어문자(s: string): { 글자: string; 자리: number } | undefined {
+  for (let i = 0; i < s.length; i++) {
+    const n = s.charCodeAt(i);
+    // TAB(9) · LF(10) · CR(13) 만 쓸 수 있다
+    if (n < 0x20 && n !== 0x09 && n !== 0x0a && n !== 0x0d) {
+      return { 글자: `U+${n.toString(16).toUpperCase().padStart(4, '0')}`, 자리: i };
+    }
+    // U+FFFE · U+FFFF 도 못 쓴다
+    if (n === 0xfffe || n === 0xffff) {
+      return { 글자: `U+${n.toString(16).toUpperCase()}`, 자리: i };
+    }
+  }
+  return undefined;
+}
+
 export function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')

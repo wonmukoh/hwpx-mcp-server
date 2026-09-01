@@ -1518,3 +1518,76 @@ describe('합친 칸이 보인다 — 덮인 자리를 딴 칸으로 안 센다'
       '안 합친 표에 합침 표시가 붙으면 군더더기다').toBe(true);
   });
 });
+
+describe('XML 이 못 쓰는 글자를 막는다', () => {
+  /**
+   * `U+0000`(NUL) 같은 C0 제어문자는 XML 1.0 에서 **어떤 방법으로도 못 쓴다** —
+   * `&#0;` 같은 숫자 참조로도 안 된다. 규격이 그렇게 정해 놓았다.
+   *
+   * 전에는 그런 글을 넣으면 **저장까지 됐다.** 그런데 그 파일을 한글에 물으니
+   * `OPENFAIL` 이었다. 저장이 됐다고 쓸 수 있는 게 아니다.
+   *
+   * 깐 꾸러미를 짓궂은 입력으로 찔러 보다 나왔다.
+   */
+  const 나쁜글 = (n: number) => `앞${String.fromCharCode(n)}뒤`;
+
+  async function 글든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '가' }] }, 방);
+    const p = (await 도구부르기('find', { doc_id, text: '가' }, 방))
+      .structuredContent!['matches'] as { id: string }[];
+    return { 방, doc_id, p: p[0]!.id };
+  }
+
+  it('**NUL 을 넣으려 하면 막는다**', async () => {
+    const { 방, doc_id, p } = await 글든문서();
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: p, text: 나쁜글(0) }],
+    }, 방);
+    expect(r.isError, '넣으면 저장은 되는데 한글이 그 파일을 못 연다').toBe(true);
+    expect(r.content[0]?.text).toContain('U+0000');
+  });
+
+  it('어디에 있는지 짚어 준다', async () => {
+    const { 방, doc_id, p } = await 글든문서();
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: p, text: 나쁜글(8) }],
+    }, 방);
+    expect(r.isError).toBe(true);
+    const 말 = r.content[0]?.text ?? '';
+    expect(말).toContain('U+0008');
+    expect(말, '몇 번째 글자인지 알려 줘야 뺄 수 있다').toMatch(/\d+번째/);
+  });
+
+  it('**줄바꿈·탭은 써도 된다** — 규격이 허락하는 것까지 막으면 안 된다', async () => {
+    const { 방, doc_id, p } = await 글든문서();
+    for (const n of [0x09, 0x0a, 0x0d]) {
+      const r = await 도구부르기('edit', {
+        doc_id, edits: [{ op: 'set_text', id: p, text: `앞${String.fromCharCode(n)}뒤` }],
+      }, 방);
+      expect(r.isError, `U+${n.toString(16)} 는 XML 이 허락하는 글자다`).toBeUndefined();
+    }
+  });
+
+  it('보통 글은 그대로 통과한다', async () => {
+    const { 방, doc_id, p } = await 글든문서();
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: p, text: '< & > " 🏫 학교' }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 다시 = (await 도구부르기('get_content', { doc_id, id: p }, 방))
+      .structuredContent!['text'];
+    expect(다시).toBe('< & > " 🏫 학교');
+  });
+
+  it('**저장 길목에도 그물이 있다** — 딴 길로 새어 들어와도 잡는다', async () => {
+    // 저장 길목이 이 검사를 정말 하고 있나. 검사 목록에 그 말이 있는지 본다.
+    const { 방, doc_id } = await 글든문서();
+    const 낼곳 = path.join(os.tmpdir(), '제어문자시험.hwpx');
+    const r = await 도구부르기('save_document', { doc_id, path: 낼곳, overwrite: true }, 방);
+    expect(r.isError, '깨끗한 문서는 그냥 저장돼야 한다').toBeUndefined();
+    fs.rmSync(낼곳, { force: true });
+  });
+});

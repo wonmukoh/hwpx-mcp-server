@@ -23,7 +23,7 @@
 import {
   getAttr, setAttr, textOf, setText, appendChild, createElement, createText,
   removeNode, insertBefore, insertAfter, childrenNamed, firstChildNamed, findAll,
-  복제하기,
+  복제하기, 못쓰는제어문자,
   type ElementNode,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
@@ -102,6 +102,18 @@ export class 문단 {
    * 그래서 지금은 **`hp:t` 만 건드린다.** 런은 글만 들어 있다가 텅 빈 것만 지운다.
    */
   글바꾸기(새글: string): 결과<{ 바뀐수: number; 잃은서식: number }> {
+    // **XML 이 못 쓰는 글자는 여기서 막는다.**
+    //
+    // 넣으면 저장까지는 되는데 **한글이 그 파일을 못 연다** — 실제로 겪었다.
+    // 규격이 어떤 방법으로도 못 쓰게 한 글자라 이스케이프로도 못 넘긴다.
+    // 말없이 빼 버리면 글이 조용히 달라지니, 어디에 있는지 짚어 주고 멈춘다.
+    const 나쁜것 = 못쓰는제어문자(새글);
+    if (나쁜것) {
+      return 안됨(
+        `${나쁜것.자리}번째 글자 ${나쁜것.글자} 는 XML 이 못 쓰는 제어문자다`,
+        '이 글자가 든 파일은 한글이 못 연다. 빼고 다시 줘라 (줄바꿈·탭은 써도 된다).',
+      );
+    }
     const 런들 = this.런들;
     const 글칸들 = 런들.flatMap((r) => childrenNamed(r, 'hp:t'));
 

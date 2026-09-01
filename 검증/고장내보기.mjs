@@ -371,6 +371,20 @@ const 고장들 = [
     'packages/owpml',
   ],
   [
+    'XML 이 못 쓰는 제어문자를 그냥 받는다 (한글이 그 파일을 못 연다)',
+    'packages/doc/src/본문.ts',
+    "    const 나쁜것 = 못쓰는제어문자(새글);",
+    "    const 나쁜것 = undefined;",
+    'packages/server',
+  ],
+  [
+    '줄바꿈·탭까지 못 쓰는 글자로 잡는다 (멀쩡한 글이 막힌다)',
+    'packages/owpml/src/xml/edit.ts',
+    "    if (n < 0x20 && n !== 0x09 && n !== 0x0a && n !== 0x0d) {",
+    "    if (n < 0x20) {",
+    'packages/server',
+  ],
+  [
     '덮인 자리를 딴 칸처럼 돌려준다 (같은 글이 두 번 나오고 쓰면 알 수 없는 말이 난다)',
     'packages/doc/src/문서.ts',
     "      if (자리.row !== 셀주소.row || 자리.col !== 셀주소.col) {",

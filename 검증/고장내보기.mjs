@@ -373,7 +373,7 @@ const 고장들 = [
   [
     '옛 방식대로 dist 를 지우고 그 자리에 굽는다 (굽는 내내 밖에서 못 읽는다)',
     '검증/빌드.mjs',
-    "const 굽는곳 = `${낼곳}.굽는중`;",
+    "const 굽는곳 = `${낼곳}.굽는중.${process.pid}`;",
     "const 굽는곳 = 낼곳;",
     'packages/server/test/굽는동안.test.ts',
   ],

@@ -36,8 +36,23 @@ const 낼곳 = 배포인가 ? path.join(뿌리, 'dist') : path.join(여기, '.�
  *
  * 이제 밖에서는 언제 읽어도 **옛 것 아니면 새 것**이지 빈 자리가 없다.
  */
-const 굽는곳 = `${낼곳}.굽는중`;
+// **굽기가 겹쳐 돌 수 있다.** 검증 한 바퀴에 여섯 번 굽고, vitest 는 시험 파일을
+// 나란히 돌린다. 자리 이름이 같으면 둘이 서로의 것을 지운다 — 실제로 그랬다.
+// 프로세스마다 다른 이름을 쓴다. 마지막에 이름 바꾸는 쪽이 이기고,
+// **어느 쪽이 이기든 dist 는 통째로 성한 것**이다.
+const 굽는곳 = `${낼곳}.굽는중.${process.pid}`;
 fs.rmSync(굽는곳, { recursive: true, force: true });
+
+// **죽은 것이 두고 간 자리를 치운다.** 굽다 깨진 프로세스는 제 자리를 못 치운다.
+// 안 치우면 폴더가 쌓이고, 「찌꺼기 없나」 를 보는 쪽이 남의 것에 걸린다.
+for (const 이름 of fs.readdirSync(path.dirname(낼곳))) {
+  const 앞 = `${path.basename(낼곳)}.`;
+  if (!이름.startsWith(`${앞}굽는중.`) && !이름.startsWith(`${앞}치움.`)) continue;
+  const 쥔이 = Number(이름.split('.').pop());
+  if (!Number.isFinite(쥔이) || 쥔이 === process.pid) continue;
+  try { process.kill(쥔이, 0); continue; } catch { /* 죽었다 */ }
+  fs.rmSync(path.join(path.dirname(낼곳), 이름), { recursive: true, force: true });
+}
 
 const r = spawnSync(process.execPath, [
   path.join('node_modules', 'typescript', 'bin', 'tsc'),
@@ -49,26 +64,14 @@ if (r.status !== 0) {
   process.exit(r.status ?? 1);
 }
 
-/**
- * 다 구웠으니 자리를 바꾼다. **여기서만 잠깐 빈다** — 밀리초다.
- *
- * 윈도우는 있는 폴더 위로 이름을 못 바꾼다. 그래서 옛 것을 먼저 옆으로 치운다.
- */
-{
-  const 치울곳 = `${낼곳}.치움`;
-  fs.rmSync(치울곳, { recursive: true, force: true });
-  if (fs.existsSync(낼곳)) fs.renameSync(낼곳, 치울곳);
-  fs.renameSync(굽는곳, 낼곳);
-  fs.rmSync(치울곳, { recursive: true, force: true });
-}
 
 /** 꾸러미 이름 → 구운 index.js */
 const 꾸러미 = {
-  '@hwpx/owpml': path.join(낼곳, 'packages', 'owpml', 'src', 'index.js'),
-  '@hwpx/container': path.join(낼곳, 'packages', 'hwpx', 'src', 'index.js'),
-  '@hwpx/doc': path.join(낼곳, 'packages', 'doc', 'src', 'index.js'),
-  '@hwpx/compose': path.join(낼곳, 'packages', 'compose', 'src', 'index.js'),
-  '@hwpx/server': path.join(낼곳, 'packages', 'server', 'src', 'index.js'),
+  '@hwpx/owpml': path.join(굽는곳, 'packages', 'owpml', 'src', 'index.js'),
+  '@hwpx/container': path.join(굽는곳, 'packages', 'hwpx', 'src', 'index.js'),
+  '@hwpx/doc': path.join(굽는곳, 'packages', 'doc', 'src', 'index.js'),
+  '@hwpx/compose': path.join(굽는곳, 'packages', 'compose', 'src', 'index.js'),
+  '@hwpx/server': path.join(굽는곳, 'packages', 'server', 'src', 'index.js'),
 };
 
 function js파일들(d) {
@@ -80,7 +83,7 @@ function js파일들(d) {
 }
 
 let 바꾼파일 = 0, 바꾼줄 = 0;
-for (const f of js파일들(낼곳)) {
+for (const f of js파일들(굽는곳)) {
   const 앞 = fs.readFileSync(f, 'utf8');
   let 뒤 = 앞;
   for (const [이름, 대상] of Object.entries(꾸러미)) {
@@ -104,14 +107,58 @@ for (const [이름, 대상] of Object.entries(꾸러미)) {
 }
 console.log(`꾸러미 이름을 상대 경로로 바꾼 파일 ${바꾼파일}개`);
 
+// **자리를 바꾸기 전에** 본다 — 바꾸고 나면 굽는곳이 없다.
+// 그리고 흠이 있으면 옛 dist 를 그대로 두는 편이 낫다.
 if (배포인가) {
   // 남은 꾸러미 이름이 있으면 순수 node 에서 터진다. 여기서 잡는다.
   const 찾을것 = "from '" + '@hwpx/';
-  const 남은것 = js파일들(낼곳).filter((f) => fs.readFileSync(f, 'utf8').includes(찾을것));
+  const 남은것 = js파일들(굽는곳).filter((f) => fs.readFileSync(f, 'utf8').includes(찾을것));
   if (남은것.length) {
     console.error(`✗ 꾸러미 이름이 ${남은것.length}개 파일에 남았다 — 순수 node 로 못 돈다:`);
     for (const f of 남은것.slice(0, 5)) console.error(`   ${path.relative(뿌리, f)}`);
+    fs.rmSync(굽는곳, { recursive: true, force: true });
     process.exit(1);
   }
-  console.log(`배포용을 ${path.relative(뿌리, 낼곳)} 에 구웠다`);
 }
+
+/**
+ * 다 구웠으니 자리를 바꾼다. **여기서만 잠깐 빈다** — 밀리초다.
+ *
+ * 윈도우는 있는 폴더 위로 이름을 못 바꾼다. 그래서 옛 것을 먼저 옆으로 치운다.
+ *
+ * **자리 바꾸기는 한 번에 하나만.** 굽기가 겹쳐 돌 수 있는데(검증 한 바퀴가
+ * 여섯 번 굽고, vitest 는 시험 파일을 나란히 돌린다), 둘이 동시에 `dist` 를
+ * 옮기려 하면 윈도우가 `EPERM` 을 낸다. 실제로 그랬다.
+ *
+ * 굽는 것 자체는 겹쳐도 된다 — 자리가 pid 로 갈려 있다. 바꾸는 순간만 줄 세운다.
+ */
+{
+  const 잠금 = `${낼곳}.잠금`;
+  const 살아있나 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+  // 잠금을 잡는다. 남이 쥐고 있으면 놓을 때까지 기다린다.
+  for (let i = 0; ; i++) {
+    try {
+      fs.writeFileSync(잠금, String(process.pid), { flag: 'wx' });
+      break;
+    } catch {
+      // 죽은 프로세스가 두고 간 잠금이면 걷어낸다
+      const 쥔이 = Number(fs.readFileSync(잠금, 'utf8').trim());
+      if (!Number.isFinite(쥔이) || !살아있나(쥔이)) { fs.rmSync(잠금, { force: true }); continue; }
+      if (i > 600) { console.error('✗ 자리 바꾸기 잠금을 60초 기다렸다'); process.exit(1); }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);   // 100ms 쉰다
+    }
+  }
+
+  try {
+    const 치울곳 = `${낼곳}.치움.${process.pid}`;
+    fs.rmSync(치울곳, { recursive: true, force: true });
+    if (fs.existsSync(낼곳)) fs.renameSync(낼곳, 치울곳);
+    fs.renameSync(굽는곳, 낼곳);
+    fs.rmSync(치울곳, { recursive: true, force: true });
+  } finally {
+    fs.rmSync(잠금, { force: true });
+  }
+}
+
+if (배포인가) console.log(`배포용을 ${path.relative(뿌리, 낼곳)} 에 구웠다`);

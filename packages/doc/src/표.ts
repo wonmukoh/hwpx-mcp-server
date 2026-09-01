@@ -424,6 +424,91 @@ export class 표 {
     return 됨({ 넣은수 });
   }
 
+  /**
+   * **줄을 지운다.** `줄넣기` 의 짝이다.
+   *
+   * 양식에는 넉넉히 만들어 둔 줄이 있다 — 예산 표에 다섯 줄인데 쓸 것이 셋이면
+   * 둘이 남는다. 빈 줄을 그대로 두면 결재 문서로는 어설프다.
+   * 그런데 **줄을 넣을 수만 있고 뺄 수는 없었다.** 짝이 안 맞았다.
+   *
+   * 막는 것 셋 —
+   *
+   *   - **마지막 줄은 못 지운다.** 줄 없는 표는 한글이 안 연다.
+   *   - **세로로 합쳐진 셀이 걸치면 못 지운다.** 지우면 기하가 무너진다.
+   *   - **글이 든 줄은 기본으로 못 지운다.** 실수로 내용을 날리는 것이
+   *     빈 줄이 남는 것보다 훨씬 나쁘다. 정말 지우려면 `비어야만: false` 로 부른다.
+   */
+  줄지우기(자리: number, 몇줄 = 1, 비어야만 = true): 결과<{ 지운수: number }> {
+    if (몇줄 < 1) return 안됨(`${몇줄}줄을 지우라 한다`, '1 이상이어야 한다.');
+    if (자리 < 0 || 자리 >= this.줄수) {
+      return 안됨(
+        `${자리}번 줄이 없다 (표는 ${this.줄수}줄이다)`,
+        `0~${this.줄수 - 1} 사이여야 한다.`,
+      );
+    }
+    const 끝 = Math.min(자리 + 몇줄, this.줄수);
+    if (끝 - 자리 >= this.줄수) {
+      return 안됨(
+        `${this.줄수}줄짜리 표에서 ${끝 - 자리}줄을 지우면 남는 줄이 없다`,
+        '줄 없는 표는 한글이 안 연다. 표를 통째로 지우려면 표를 지워라.',
+      );
+    }
+
+    // 세로로 합쳐진 셀이 지울 자리를 드나들면 손대지 않는다
+    for (const c of this.셀들) {
+      const a = c.자리;
+      if (a.rowSpan <= 1) continue;
+      const 셀끝 = a.row + a.rowSpan;
+      const 걸치나 = a.row < 끝 && 자리 < 셀끝;
+      const 통째로드나 = 자리 <= a.row && 셀끝 <= 끝;
+      if (걸치나 && !통째로드나) {
+        return 안됨(
+          `(${a.row},${a.col}) 셀이 ${a.rowSpan}줄에 걸쳐 있어 ${자리}~${끝 - 1}번 줄에 반쯤 든다`,
+          '합친 셀을 반만 지울 수 없다. 합침을 먼저 풀거나 지울 자리를 맞춰라.',
+        );
+      }
+    }
+
+    const 줄들 = childrenNamed(this.el, 'hp:tr');
+    if (비어야만) {
+      for (let r = 자리; r < 끝; r++) {
+        const tr = 줄들[r];
+        if (!tr) continue;
+        const 글 = findAll(tr, 'hp:t')
+          .map((t) => (t.children[0] as { raw?: string } | undefined)?.raw ?? '')
+          .join('').trim();
+        if (글) {
+          return 안됨(
+            `${r}번 줄에 글이 있다: «${글.slice(0, 30)}»`,
+            '빈 줄만 지운다. 정말 지우려면 비어야만 을 false 로 줘라 — '
+            + '지운 글은 되돌릴 수 없다.',
+          );
+        }
+      }
+    }
+
+    let 지운수 = 0;
+    for (let r = 끝 - 1; r >= 자리; r--) {
+      const tr = 줄들[r];
+      if (!tr) continue;
+      removeNode(tr);
+      지운수++;
+    }
+
+    // 줄 주소를 다시 매긴다 — 안 하면 표 검사에 걸린다.
+    // **이 표의 줄만** 본다. 안쪽 표까지 훑으면 그 표 주소를 덮어쓴다.
+    for (const [r, tr] of childrenNamed(this.el, 'hp:tr').entries()) {
+      for (const tc of childrenNamed(tr, 'hp:tc')) {
+        const addr = firstChildNamed(tc, 'hp:cellAddr');
+        if (addr) setAttr(addr, 'rowAddr', String(r));
+      }
+    }
+    setAttr(this.el, 'rowCnt', String(childrenNamed(this.el, 'hp:tr').length));
+    this.높이맞추기();
+
+    return 됨({ 지운수 });
+  }
+
   높이맞추기(): 결과<{ 바뀐수: number }> {
     const 높이 = this.줄높이;
     if (높이.some((h) => h === undefined)) {

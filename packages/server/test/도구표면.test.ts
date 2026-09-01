@@ -1277,3 +1277,244 @@ describe('판 읽기가 묶는 방식에 안 흔들린다', () => {
     expect(판읽기(path.parse(뿌리).root)).toBe('0.0.0');
   });
 });
+
+describe('delete_row — 양식에 남는 줄을 걷어낸다', () => {
+  /**
+   * `insert_row` 는 있는데 **지우는 짝이 없었다.**
+   *
+   * 양식에는 넉넉히 만들어 둔 줄이 있다 — 예산 표에 다섯 줄인데 쓸 것이 셋이면
+   * 둘이 남는다. 넣을 수만 있고 뺄 수는 없으니 빈 줄을 그대로 두는 수밖에 없었다.
+   *
+   * 지우기는 되돌릴 수 없으므로 **기본은 빈 줄만** 지운다.
+   */
+  async function 표든문서(줄들: string[][]) {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'table', rows: 줄들 }],
+    }, 방);
+    const 뼈대 = await 도구부르기('get_outline', { doc_id }, 방);
+    const 표id = (뼈대.structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    return { 방, doc_id, 표id };
+  }
+  const 줄수 = async (방: 문서방, doc_id: string, 표id: string) =>
+    ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; rows?: number }[])
+      .find((x) => x.id === 표id)?.rows;
+
+  it('**빈 줄을 지운다**', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나'], ['', ''], ['다', '라']]);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 1 }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect(await 줄수(방, doc_id, 표id)).toBe(2);
+  });
+
+  it('**글이 든 줄은 막는다** — 실수로 내용을 날리는 게 더 나쁘다', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나'], ['다', '라']]);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 0 }],
+    }, 방);
+    expect(r.isError, '글 든 줄을 말없이 지우면 안 된다').toBe(true);
+    expect(await 줄수(방, doc_id, 표id), '막았으면 줄이 그대로여야 한다').toBe(2);
+  });
+
+  it('force 를 켜면 글이 든 줄도 지운다', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나'], ['다', '라']]);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 0, force: true }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect(await 줄수(방, doc_id, 표id)).toBe(1);
+  });
+
+  it('**at 을 안 주면 거절한다** — 엉뚱한 줄을 말없이 지우면 안 된다', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나'], ['', '']]);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id }],
+    }, 방);
+    expect(r.isError, 'insert_row 처럼 기본값을 두면 엉뚱한 줄이 지워진다').toBe(true);
+    expect(r.content[0]?.text).toContain('at');
+  });
+
+  it('**마지막 줄은 못 지운다** — 줄 없는 표는 한글이 안 연다', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나']]);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 0, force: true }],
+    }, 방);
+    expect(r.isError).toBe(true);
+    expect(await 줄수(방, doc_id, 표id)).toBe(1);
+  });
+
+  it('없는 줄을 지우라면 어디까지 있는지 말해 준다', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나'], ['', '']]);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 9 }],
+    }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('2줄');
+  });
+
+  it('지운 뒤에도 **저장이 된다** (표 기하가 안 어긋난다)', async () => {
+    const { 방, doc_id, 표id } = await 표든문서([['가', '나'], ['', ''], ['', '']]);
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 1, count: 2 }],
+    }, 방);
+    const 낼곳 = path.join(os.tmpdir(), '줄지우기시험.hwpx');
+    const r = await 도구부르기('save_document', { doc_id, path: 낼곳, overwrite: true }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    fs.rmSync(낼곳, { force: true });
+  });
+
+  it('**세로로 합친 셀을 반만 지우려 하면 막는다**', async () => {
+    // 0~1 줄의 첫 칸을 세로로 합친 표를 만든다
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [{
+        kind: 'table',
+        rows: [['', ''], ['', ''], ['', '']],
+        merges: [{ row: 0, col: 0, rowspan: 2 }],
+      }],
+    }, 방);
+    const 표id = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+
+    // 합침이 정말 걸렸나 — 안 걸렸으면 이 시험은 아무것도 안 본 것이다.
+    // **칸 수로는 못 본다** — 덮인 자리도 자리로는 나온다. rowspan 으로 본다.
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표id }, 방))
+      .structuredContent!['cells'] as { row: number; col: number; rowspan?: number }[];
+    expect(칸들.find((c) => c.row === 0 && c.col === 0)?.rowspan,
+      '합침이 안 걸렸으면 이 시험은 아무것도 안 본 것이다').toBe(2);
+
+    // 합친 셀(0~1줄)의 아래 절반만 지우려 든다
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 1, force: true }],
+    }, 방);
+    expect(r.isError, '합친 셀을 반만 지우면 표 기하가 무너진다').toBe(true);
+    expect(r.content[0]?.text).toContain('걸쳐');
+  });
+
+  it('합친 셀을 **통째로** 감싸면 지울 수 있다', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [{
+        kind: 'table',
+        rows: [['', ''], ['', ''], ['남길 줄', '']],
+        merges: [{ row: 0, col: 0, rowspan: 2 }],
+      }],
+    }, 방);
+    const 표id = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_row', id: 표id, at: 0, count: 2 }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 뒤 = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; rows?: number }[])
+      .find((x) => x.id === 표id);
+    expect(뒤?.rows).toBe(1);
+  });
+});
+
+describe('합친 칸이 보인다 — 덮인 자리를 딴 칸으로 안 센다', () => {
+  /**
+   * 합친 표에서 **덮인 자리가 따로 있는 칸처럼 보였다.**
+   *
+   *   표 전체:  0,0="여기"  1,0="여기"      ← 한 칸인데 두 번 나온다
+   *   cell_x_1_0 에 쓰면 → "이미 같은 글이라 바뀐 것이 없다"
+   *
+   * 양식을 채우는 모델이 이걸 보면 **두 칸인 줄 알고** 서로 다른 걸 쓰려다 막힌다.
+   * 그리고 그 오류 문구로는 왜 막혔는지 알 길이 없다.
+   */
+  async function 합친표() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [{
+        kind: 'table',
+        rows: [['가', '나'], ['', '다'], ['', '']],
+        merges: [{ row: 0, col: 0, rowspan: 2 }],
+      }],
+    }, 방);
+    const 표id = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    return { 방, doc_id, 표id, 꼬리: 표id.slice(4) };
+  }
+
+  it('**합친 칸에 rowspan 이 붙는다**', async () => {
+    const { 방, doc_id, 표id } = await 합친표();
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표id }, 방))
+      .structuredContent!['cells'] as { row: number; col: number; rowspan?: number }[];
+    const 시작 = 칸들.find((c) => c.row === 0 && c.col === 0);
+    expect(시작?.rowspan, '합침이 안 보이면 지우기·넣기가 안 보이는 것을 이유로 거절한다').toBe(2);
+  });
+
+  it('**덮인 자리는 covered_by 로 어느 칸인지 알려 준다**', async () => {
+    const { 방, doc_id, 표id, 꼬리 } = await 합친표();
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표id }, 방))
+      .structuredContent!['cells'] as { row: number; col: number; covered_by?: string }[];
+    const 덮인것 = 칸들.find((c) => c.row === 1 && c.col === 0);
+    expect(덮인것?.covered_by).toBe(`cell_${꼬리}_0_0`);
+  });
+
+  it('**덮인 자리에 글이 안 겹쳐 나온다**', async () => {
+    const { 방, doc_id, 표id } = await 합친표();
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표id }, 방))
+      .structuredContent!['cells'] as { row: number; col: number; text: string }[];
+    const 시작 = 칸들.find((c) => c.row === 0 && c.col === 0);
+    const 덮인것 = 칸들.find((c) => c.row === 1 && c.col === 0);
+    expect(시작?.text).toBe('가');
+    expect(덮인것?.text, '같은 글이 두 자리에 나오면 두 칸인 줄 안다').toBe('');
+  });
+
+  it('**덮인 자리에 쓰려 하면 어느 칸을 쓰라고 알려 준다**', async () => {
+    const { 방, doc_id, 꼬리 } = await 합친표();
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: `cell_${꼬리}_1_0`, text: '여기' }],
+    }, 방);
+    expect(r.isError).toBe(true);
+    const 말 = r.content[0]?.text ?? '';
+    expect(말, '왜 막혔는지 알 수 있어야 한다').toContain('덮인 자리');
+    expect(말, '어느 칸을 쓰라고 짚어 줘야 한다').toContain(`cell_${꼬리}_0_0`);
+  });
+
+  it('**find 가 덮인 자리를 안 낸다**', async () => {
+    const { 방, doc_id } = await 합친표();
+    const r = await 도구부르기('find', { doc_id, kind: 'cell' }, 방);
+    expect(r.structuredContent!['count'],
+      '3x2 에서 두 칸을 합쳤으니 실제 칸은 5개다').toBe(5);
+    const 낸것 = (r.structuredContent!['matches'] as { id: string }[]).map((m) => m.id);
+    expect(new Set(낸것).size, '같은 칸이 두 번 나오면 안 된다').toBe(낸것.length);
+  });
+
+  it('안 합친 표에는 rowspan 이 안 붙는다', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'table', rows: [['가', '나'], ['다', '라']] }],
+    }, 방);
+    const 표id = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표id }, 방))
+      .structuredContent!['cells'] as { rowspan?: number; covered_by?: string }[];
+    expect(칸들.every((c) => c.rowspan === undefined && c.covered_by === undefined),
+      '안 합친 표에 합침 표시가 붙으면 군더더기다').toBe(true);
+  });
+});

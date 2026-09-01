@@ -214,7 +214,8 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
  * Draftsmith 지침도 "한 칸씩보다 묶어서" 를 못박아 두고 있다.
  */
 const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
-  op: 고름('무엇을 할까', ['set_text', 'replace', 'set_style', 'insert_row', 'insert_image']),
+  op: 고름('무엇을 할까',
+    ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row', 'insert_image']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -227,8 +228,11 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   color: 글자('set_style — 글자색 #RRGGBB'),
   font: 글자('set_style — 글꼴 이름'),
   align: 고름('set_style — 정렬', ['left', 'center', 'right', 'justify']),
-  at: 정수('insert_row — 몇 번째 자리에 넣을까 (0부터). 안 주면 맨 뒤'),
-  count: 정수('insert_row — 몇 줄. 기본 1'),
+  at: 정수('insert_row — 몇 번째 자리에 넣을까 (0부터). 안 주면 맨 뒤. '
+    + 'delete_row — 몇 번째 줄부터 지울까 (0부터). **이건 꼭 줘야 한다**'),
+  count: 정수('insert_row · delete_row — 몇 줄. 기본 1'),
+  // **지우는 것은 되돌릴 수 없다.** 그래서 기본은 빈 줄만 지운다.
+  force: 참거짓('delete_row — 글이 든 줄도 지울까. 기본 false (빈 줄만 지운다)'),
   path: 글자('insert_image — 그림 파일 **절대 경로** (png·jpg·gif·bmp)'),
   // **하나만 주는 것이 낫다.** 하나만 주면 비율을 지켜 나머지를 잡는다.
   // 둘 다 주면 그대로 늘려서 찌그러진다 — 그럴 뜻이 있을 때만 둘을 줘라.
@@ -588,6 +592,12 @@ export const 도구들: 도구[] = [
         text: 글자('칸 글'),
         row: 정수('몇 째 줄 (0부터)'),
         col: 정수('몇 째 칸 (0부터)'),
+        // **합침을 드러낸다.** 안 드러내면 덮인 자리가 딴 칸처럼 보이고,
+        // 같은 글이 두 번 나와 **모델이 두 칸인 줄 안다.**
+        // 거기 글을 쓰면 「이미 같은 글이라 바뀐 것이 없다」 는 알 수 없는 말이 났다.
+        rowspan: 정수('세로로 몇 줄을 덮나. 1 이면 안 합친 것'),
+        colspan: 정수('가로로 몇 칸을 덮나. 1 이면 안 합친 것'),
+        covered_by: 글자('**덮인 자리**일 때 — 이 자리를 덮는 칸의 ID. 여긴 글을 못 쓴다'),
       })),
       empty: 참거짓('표일 때 — 칸이 다 비었나'),
       // 칸일 때만. **문단마다 ID 를 준다** — 줄마다 따로 채우려면 이게 있어야 한다.
@@ -635,8 +645,25 @@ export const 도구들: 도구[] = [
       const 칸들: Record<string, unknown>[] = [];
       for (let y = 0; y < t.줄수; y++) {
         for (let x = 0; x < t.칸수; x++) {
+          const 아이디 = 것.it.d.셀아이디(인자.id, y, x);
+          // **여기서 시작하는 칸인가, 남에게 덮인 자리인가.**
+          // 덮인 자리에 덮는 칸의 글을 그대로 넣으면 같은 글이 두 번 나오고,
+          // 모델은 두 칸인 줄 안다. 실제로 그래서 「이미 같은 글이라」 가 났다.
+          const 시작 = t.시작셀(y, x);
+          if (!시작) {
+            const 덮는것 = t.셀(y, x);
+            const a = 덮는것?.자리;
+            칸들.push({
+              id: 아이디, text: '', row: y, col: x,
+              ...(a ? { covered_by: 것.it.d.셀아이디(인자.id, a.row, a.col) } : {}),
+            });
+            continue;
+          }
+          const 자리 = 시작.자리;
           칸들.push({
-            id: 것.it.d.셀아이디(인자.id, y, x), text: 칸줄글(t.셀(y, x)?.el), row: y, col: x,
+            id: 아이디, text: 칸줄글(시작.el), row: y, col: x,
+            ...(자리.rowSpan > 1 ? { rowspan: 자리.rowSpan } : {}),
+            ...(자리.colSpan > 1 ? { colspan: 자리.colSpan } : {}),
           });
         }
       }
@@ -741,7 +768,11 @@ export const 도구들: 도구[] = [
             if (인자.kind === 'cell' || (인자.text !== undefined && 인자.kind === undefined)) {
               for (let y = 0; y < tt.줄수; y++) {
                 for (let x = 0; x < tt.칸수; x++) {
-                  const 글 = 셀글(tt.셀(y, x)?.el);
+                  // **덮인 자리는 안 낸다.** 합친 칸 아래 자리를 따로 내면
+                  // 같은 글이 두 번 나오고, 그 ID 로는 아무것도 못 한다.
+                  const 시작 = tt.시작셀(y, x);
+                  if (!시작) continue;
+                  const 글 = 셀글(시작.el);
                   if (인자.text !== undefined && !글.includes(인자.text)) continue;
                   나온것.push({ id: d.셀아이디(표아이디, y, x), kind: 'cell', preview: 미리보기(글) });
                 }
@@ -895,7 +926,9 @@ export const 도구들: 도구[] = [
       '**열어 놓은 문서를 고친다.** 양식을 채울 때 쓰는 도구다. '
       + '`find` 나 `get_outline` 이 준 ID(`p_…` `tbl_…` `cell_…`)로 가리킨다. '
       + '**여러 개를 한 번에 준다** — 한 칸씩 여러 번 부르면 그 사이에 줄이 밀린다. '
-      + '글을 갈아도 **서식은 그대로 남는다** (글자 칸만 갈고 런은 안 건드린다).',
+      + '글을 갈아도 **서식은 그대로 남는다** (글자 칸만 갈고 런은 안 건드린다). '
+      + '`delete_row` 는 **빈 줄만** 지운다 — 양식에 남는 줄을 걷어낼 때 쓴다. '
+      + '글이 든 줄을 지우려면 force 를 켜야 하고, **지운 글은 못 되돌린다.**',
     inputSchema: 고치기스키마,
     outputSchema: 묶음('고친 것', {
       ok: 참거짓('됐나'),
@@ -953,7 +986,7 @@ export const 도구들: 도구[] = [
 
 /** 고침 하나의 꼴 */
 interface 고침 {
-  op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'insert_image';
+  op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row' | 'insert_image';
   id?: string;
   text?: string;
   find?: string;
@@ -961,7 +994,7 @@ interface 고침 {
   limit?: number;
   bold?: boolean; italic?: boolean; underline?: boolean;
   size?: number; color?: string; font?: string; align?: string;
-  at?: number; count?: number;
+  at?: number; count?: number; force?: boolean;
   path?: string; width?: number; height?: number;
 }
 
@@ -1072,6 +1105,34 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         );
       }
       return 됨(넣기.value.넣은수);
+    }
+
+    case 'delete_row': {
+      if (!e.id) return 안됨('delete_row 에 id 가 없다', 'get_outline 이 준 표 ID(tbl_…)를 줘라.');
+      // **자리를 꼭 받는다.** insert_row 는 안 주면 맨 뒤에 붙이지만,
+      // 지우기에서 그런 기본값을 두면 **엉뚱한 줄을 말없이 지운다.**
+      if (e.at === undefined) {
+        return 안됨(
+          'delete_row 에 at 이 없다',
+          '몇 번째 줄부터 지울지 꼭 줘라 (0부터). '
+          + 'get_content(id: 표ID) 로 줄·칸을 먼저 보라.',
+        );
+      }
+      const r = d.찾기(e.id);
+      if (!r.ok) return r;
+      if (r.value.갈래 !== '표') {
+        return 안됨(`${e.id} 는 표가 아니다 (${r.value.갈래})`, 'tbl_ 로 시작하는 ID 를 줘라.');
+      }
+      const t = new 표(r.value.표.el, r.value.구역.source);
+      const 지우기 = t.줄지우기(e.at, e.count ?? 1, e.force !== true);
+      if (!지우기.ok) return 지우기;
+      if (t.탈만.length) {
+        return 안됨(
+          `줄을 지웠더니 표가 어긋났다: ${t.탈만[0]}`,
+          '이건 우리 잘못이다. 되돌리고 다시 열어라.',
+        );
+      }
+      return 됨(지우기.value.지운수);
     }
 
     case 'insert_image': {

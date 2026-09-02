@@ -125,9 +125,19 @@ for (const [i, 양식] of 양식들.entries()) {
     `다시 세니 문단 ${나중.문단} · 표 ${나중.표}`
     + (나중.문단 === 처음.문단 && 나중.표 === 처음.표 ? ' (처음과 같다)' : ' ← **줄었다. 잘못 지웠다**'));
 
-  // 바꾼 글이 진짜 들어갔나
-  const 확인 = await 도구부르기('find', { doc_id: 다시.structuredContent.doc_id, text: '한빛초등학교' }, 방);
-  적기((확인.structuredContent?.count ?? 0) > 0, `바꾼 글이 ${확인.structuredContent?.count ?? 0}곳에 보인다`);
+  // 바꾼 글이 **그 자리에** 들어갔나
+  //
+  // 전에는 `find(text:…)` 로 「문서 어딘가에 있나」 를 봤다. **그건 헐겁다** —
+  // 양식은 같은 낱말이 여러 자리에 나온다(「한울초등학교」가 머리글에도
+  // 발신 명의에도 있다). 딴 자리에 원래 있던 것만 걸려도 통과한다.
+  // 고친 자리를 콕 집어 읽는다.
+  const 다시연것 = 다시.structuredContent.doc_id;
+  const 그자리 = await 도구부르기('get_content', { doc_id: 다시연것, id: 고칠것 }, 방);
+  const 그글 = String(그자리.structuredContent?.text ?? '');
+  적기(!그자리.isError && 그글.includes('한빛초등학교'),
+    그자리.isError
+      ? `고친 자리를 못 읽는다: ${그자리.content?.[0]?.text?.split('\n')[0]?.slice(0, 70)}`
+      : `${고칠것} 를 읽으니 «${그글.slice(0, 24)}» ${그글.includes('한빛초등학교') ? '' : '← **거기 없다**'}`);
 
   // 7의2) **회신서 표에 줄을 넣는다.**
   //

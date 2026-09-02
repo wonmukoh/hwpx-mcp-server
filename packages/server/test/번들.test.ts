@@ -19,7 +19,17 @@ const 뿌리 = path.resolve(__dirname, '../../..');
 // `.bin/esbuild.cmd` 를 부르면 **공백 든 경로에서 깨진다** (shell 이 필요하고,
 // shell 을 켜면 인자가 안 감싸진다). JS 진입점을 node 로 바로 부른다.
 const esbuild = path.join(뿌리, 'node_modules', 'esbuild', 'bin', 'esbuild');
-const 진입점 = path.join(뿌리, 'dist', 'packages', 'server', 'src', 'index.js');
+
+/**
+ * **`dist` 를 묶지 않는다.** `dist` 는 여럿이 함께 쓰는 자리다 —
+ * 검증 한 바퀴가 여섯 번 굽고, `굽는동안.test.ts` 도 굽는다.
+ * 묶는 사이에 남이 갈아치우면 esbuild 가 읽던 파일이 사라진다.
+ * 실제로 **간헐적으로** 그랬다: 혼자 돌리면 되고 전체를 돌리면 가끔 깨졌다.
+ *
+ * `.빌드전체` 는 vitest 도는 동안 아무도 안 건드린다 —
+ * 시험들은 소스(`../src`)를 직접 부르고, 굽는 시험은 `--배포`(dist)만 만진다.
+ */
+const 진입점 = path.join(뿌리, '검증', '.빌드전체', 'packages', 'server', 'src', 'index.js');
 
 /**
  * 묶어서 돌린 결과.
@@ -36,8 +46,9 @@ beforeAll(() => {
   적힌판 = (JSON.parse(fs.readFileSync(path.join(뿌리, 'package.json'), 'utf8')) as
     { version: string }).version;
 
-  // 배포본을 먼저 굽는다 — 묵은 dist 를 묶으면 옛것을 재게 된다
-  execFileSync(process.execPath, [path.join(뿌리, '검증', '빌드.mjs'), '--배포'],
+  // 먼저 굽는다 — 묵은 것을 묶으면 옛것을 재게 된다.
+  // **`--배포` 를 안 준다.** dist 는 남이 갈아치우는 자리다(위 설명).
+  execFileSync(process.execPath, [path.join(뿌리, '검증', '빌드.mjs')],
     { cwd: 뿌리, stdio: 'pipe' });
 
   const 방 = fs.mkdtempSync(path.join(os.tmpdir(), 'cjs번들-'));
@@ -60,7 +71,12 @@ beforeAll(() => {
   });
   잰것 = JSON.parse(답) as { 판: string; 이름: string };
   fs.rmSync(방, { recursive: true, force: true });
- } catch (e) { 못한까닭 = String(e).slice(0, 300); }
+ } catch (e) {
+   // **300자로는 모자랐다.** 긴 경로가 다 먹어 정작 까닭이 잘렸다.
+   // 실패한 자리를 알아야 고친다.
+   const 글 = e instanceof Error ? `${e.message}\n${String((e as { stderr?: unknown }).stderr ?? '')}` : String(e);
+   못한까닭 = 글.slice(0, 1500);
+ }
 }, 120_000);
 
 describe('CJS 로 묶어도 제 판을 안다', () => {

@@ -23,7 +23,7 @@ import {
   parseXml, findAll, childrenNamed, firstChildNamed,
   getAttr, setAttr, setText, appendChild, removeNode, insertAfter, 복제하기,
   pt, ptToHwp, hwp,
-  type ElementNode, textOf, createElement, insertBefore,
+  type ElementNode, textOf, createElement, insertBefore, 못쓰는제어문자,
 } from '@hwpx/owpml';
 import {
   문서, 문단, 구역, 표, 셀, 그림들이기,
@@ -1140,11 +1140,68 @@ export function 크기맞추기(pic: ElementNode, 너비: number, 높이: number
 }
 
 /** 한 번에 쓰는 통로 */
+/**
+ * 블록에 든 글에 **XML 이 못 쓰는 글자**가 있나 훑는다.
+ *
+ * 저장 길목이 잡아 주기는 한다. 그런데 그때는 「이 문서에 있다」 까지만 알고
+ * **몇 번째 블록인지** 모른다 — 서른 블록을 짜 넣었으면 찾기 어렵다.
+ * 짜기 전에 훑어 **어느 블록의 어느 자리**인지 짚어 준다.
+ */
+function 블록속나쁜글자(블록들: 블록[]): string | undefined {
+  const 볼것 = (b: Record<string, unknown>, 자리: string): string | undefined => {
+    for (const [열쇠, 값] of Object.entries(b)) {
+      if (typeof 값 === 'string') {
+        const 나쁜것 = 못쓰는제어문자(값);
+        if (나쁜것) return `${자리}.${열쇠} 의 ${나쁜것.자리}번째 글자 ${나쁜것.글자}`;
+        continue;
+      }
+      if (!Array.isArray(값)) continue;
+      for (const [i, x] of 값.entries()) {
+        if (typeof x === 'string') {
+          const 나쁜것 = 못쓰는제어문자(x);
+          if (나쁜것) return `${자리}.${열쇠}[${i}] 의 ${나쁜것.자리}번째 글자 ${나쁜것.글자}`;
+        } else if (Array.isArray(x)) {
+          for (const [j, y] of x.entries()) {
+            if (typeof y !== 'string') continue;
+            const 나쁜것 = 못쓰는제어문자(y);
+            if (나쁜것) return `${자리}.${열쇠}[${i}][${j}] 의 ${나쁜것.자리}번째 글자 ${나쁜것.글자}`;
+          }
+        } else if (x && typeof x === 'object') {
+          const r = 볼것(x as Record<string, unknown>, `${자리}.${열쇠}[${i}]`);
+          if (r) return r;
+        }
+      }
+    }
+    return undefined;
+  };
+  for (const [i, b] of 블록들.entries()) {
+    const r = 볼것(b as unknown as Record<string, unknown>, `blocks[${i}]`);
+    if (r) return r;
+  }
+  return undefined;
+}
+
 export function 조판(
   d: 문서,
   블록들: 블록[],
   설정: 조판설정 = {},
   구역이름?: string,
 ): 결과<{ 만든것: 만든것[]; 문단수: number }> {
+  // **짜기 전에 막는다.** 반쯤 짜 놓고 저장 길목에서 걸리면 문서가 어정쩡해진다.
+  const 나쁜것 = 블록속나쁜글자(블록들)
+    ?? (['header_text', 'footer_text'] as const)
+      .map((k) => {
+        const v = 설정[k];
+        if (typeof v !== 'string') return undefined;
+        const x = 못쓰는제어문자(v);
+        return x ? `${k} 의 ${x.자리}번째 글자 ${x.글자}` : undefined;
+      })
+      .find((x) => x !== undefined);
+  if (나쁜것) {
+    return 안됨(
+      `${나쁜것} 는 XML 이 못 쓰는 제어문자다`,
+      '이 글자가 든 파일은 한글이 못 연다. 빼고 다시 줘라 (줄바꿈·탭은 써도 된다).',
+    );
+  }
   return new 조판기(d, 설정).쓰기(블록들, 구역이름);
 }

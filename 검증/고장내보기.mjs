@@ -371,6 +371,20 @@ const 고장들 = [
     'packages/owpml',
   ],
   [
+    'replace 길목이 제어문자를 그냥 받는다 (딴 길로 새어 들어간다)',
+    'packages/doc/src/본문.ts',
+    "    const 나쁜것 = 못쓰는제어문자(새글);",
+    "    const 나쁜것 = undefined; const _쓴다 = 못쓰는제어문자;",
+    'packages/server',
+  ],
+  [
+    'compose 가 제어문자를 앞에서 안 막는다 (어느 블록인지 모른다)',
+    'packages/compose/src/조판.ts',
+    "  const 나쁜것 = 블록속나쁜글자(블록들)",
+    "  const 나쁜것 = undefined && 블록속나쁜글자(블록들)",
+    'packages/server',
+  ],
+  [
     'XML 이 못 쓰는 제어문자를 그냥 받는다 (한글이 그 파일을 못 연다)',
     'packages/doc/src/본문.ts',
     "    const 나쁜것 = 못쓰는제어문자(새글);",

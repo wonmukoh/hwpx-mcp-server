@@ -1591,3 +1591,105 @@ describe('XML 이 못 쓰는 글자를 막는다', () => {
     fs.rmSync(낼곳, { force: true });
   });
 });
+
+describe('제어문자가 새는 길이 없다 — 글이 들어오는 길을 다 막았다', () => {
+  /**
+   * 처음엔 `글바꾸기` 한 곳만 막았다. 그런데 **`replace` 로는 그냥 들어갔다** —
+   * 딴 길이었기 때문이다. 저장 길목이 잡아 주긴 했지만 그때는
+   * 「이 문서에 있다」 까지만 알고 **어느 고침이 나빴는지** 모른다.
+   *
+   * 막는 자리는 **글이 들어오는 길목마다** 있어야 한다.
+   * 그래서 길을 하나씩 다 찔러 본다 — 새 길이 생기면 여기서 걸린다.
+   */
+  const 나쁜글 = `앞${String.fromCharCode(0)}뒤`;
+
+  async function 빈문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    return { 방, doc_id };
+  }
+
+  it('**set_text (문단)** 이 막는다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '가' }] }, 방);
+    const p = ((await 도구부르기('find', { doc_id, text: '가' }, 방))
+      .structuredContent!['matches'] as { id: string }[])[0]!.id;
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: p, text: 나쁜글 }],
+    }, 방);
+    expect(r.isError).toBe(true);
+  });
+
+  it('**replace** 도 막는다 — 여기로 새어 들어갔던 자리다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '바꿀낱말' }] }, 방);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'replace', find: '바꿀낱말', replace: 나쁜글 }],
+    }, 방);
+    expect(r.isError, 'replace 는 글바꾸기와 딴 길이다').toBe(true);
+    expect(r.content[0]?.text).toContain('U+0000');
+  });
+
+  it('**set_text (칸)** 도 막는다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'table', rows: [['가', '나']] }] }, 방);
+    const 표id = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    const 칸 = ((await 도구부르기('get_content', { doc_id, id: 표id }, 방))
+      .structuredContent!['cells'] as { id: string }[])[0]!.id;
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: 칸, text: 나쁜글 }],
+    }, 방);
+    expect(r.isError).toBe(true);
+  });
+
+  it('**compose** 도 막고, 어느 블록인지 짚어 준다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    const r = await 도구부르기('compose', {
+      doc_id,
+      blocks: [
+        { kind: 'body', text: '멀쩡' },
+        { kind: 'body', text: '이것도' },
+        { kind: 'table', rows: [['가', '나'], ['다', 나쁜글]] },
+      ],
+    }, 방);
+    expect(r.isError).toBe(true);
+    const 말 = r.content[0]?.text ?? '';
+    expect(말, '서른 블록을 짜 넣었으면 어디인지 알아야 찾는다').toContain('blocks[2]');
+    expect(말).toContain('rows[1][1]');
+  });
+
+  it('compose 의 머리말·꼬리말도 막는다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    const r = await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'body', text: '가' }], header_text: 나쁜글,
+    }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('header_text');
+  });
+
+  it('**막혔으면 문서가 안 바뀐다** — 반쯤 짜 놓고 멈추면 안 된다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    const 앞 = ((await 도구부르기('find', { doc_id, kind: 'paragraph' }, 방))
+      .structuredContent!['count']) as number;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [{ kind: 'body', text: '멀쩡' }, { kind: 'body', text: 나쁜글 }],
+    }, 방);
+    const 뒤 = ((await 도구부르기('find', { doc_id, kind: 'paragraph' }, 방))
+      .structuredContent!['count']) as number;
+    expect(뒤, '앞 블록이 들어갔으면 문서가 어정쩡해진다').toBe(앞);
+  });
+
+  it('멀쩡한 compose 는 그대로 통과한다', async () => {
+    const { 방, doc_id } = await 빈문서();
+    const r = await 도구부르기('compose', {
+      doc_id,
+      blocks: [{ kind: 'body', text: '줄바꿈\n탭\t도 된다' }],
+      header_text: '머리말',
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+  });
+});

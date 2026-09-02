@@ -371,6 +371,13 @@ const 고장들 = [
     'packages/owpml',
   ],
   [
+    '묶음이 반쯤 됐을 때 몇 개가 됐는지 안 알려 준다 (부르는 쪽이 두 번 쓴다)',
+    'packages/server/src/도구.ts',
+    "            { done: i, failed_at: i, failed_op: e.op, results: 낸것 },",
+    "            {},",
+    'packages/server',
+  ],
+  [
     'replace 길목이 제어문자를 그냥 받는다 (딴 길로 새어 들어간다)',
     'packages/doc/src/본문.ts',
     "    const 나쁜것 = 못쓰는제어문자(새글);",

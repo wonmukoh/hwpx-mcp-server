@@ -359,7 +359,7 @@ describe('edit — 열어 놓은 문서를 고친다', () => {
     }, 방);
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toContain('1번째');
-    expect(r.content[0]!.text).toContain('앞의 1개는 이미 됐다');
+    expect(r.content[0]!.text).toContain('앞의 1개는');
   });
 
   it('표에 줄을 넣는다', async () => {
@@ -1691,5 +1691,108 @@ describe('제어문자가 새는 길이 없다 — 글이 들어오는 길을 �
       header_text: '머리말',
     }, 방);
     expect(r.isError, r.content[0]?.text).toBeUndefined();
+  });
+});
+
+describe('묶음이 중간에 어긋나면 — 앞의 것은 안 물린다', () => {
+  /**
+   * `edit` 은 여러 고침을 묶어 받는다. 하나가 어긋나면 **거기서 멈추되
+   * 앞의 것은 이미 문서에 들어가 있다** — rollback 이 아니다.
+   *
+   * 이걸 말로만 적어 뒀더니 부르는 쪽이 **거꾸로 읽었다.**
+   * 「앞의 성공까지 다 물린다」 고 알고 다시 넣으면 **두 번 쓴다** —
+   * 그러면 「이미 같은 글이라 바뀐 것이 없다」 라는 알 수 없는 답을 받는다.
+   *
+   * 그래서 글이 아니라 **수로도** 담는다.
+   */
+  async function 셋든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [
+        { kind: 'body', text: '첫째' },
+        { kind: 'body', text: '둘째' },
+        { kind: 'body', text: '셋째' },
+      ],
+    }, 방);
+    const 것들 = ((await 도구부르기('find', { doc_id, kind: 'paragraph' }, 방))
+      .structuredContent!['matches'] as { id: string; preview: string }[])
+      .filter((m) => /첫째|둘째|셋째/.test(m.preview));
+    expect(것들.length, '셋이 다 있어야 이 시험이 뜻이 있다').toBe(3);
+    return { 방, doc_id, ids: 것들.map((m) => m.id) };
+  }
+
+  it('**앞의 고침은 문서에 남는다** (다시 넣으면 두 번 쓴다)', async () => {
+    const { 방, doc_id, ids } = await 셋든문서();
+    await 도구부르기('edit', {
+      doc_id,
+      edits: [
+        { op: 'set_text', id: ids[0]!, text: '첫째 바뀜' },
+        { op: 'set_text', id: 'p_없는것', text: 'x' },
+        { op: 'set_text', id: ids[2]!, text: '셋째 바뀜' },
+      ],
+    }, 방);
+    const 첫 = (await 도구부르기('get_content', { doc_id, id: ids[0]! }, 방))
+      .structuredContent!['text'];
+    expect(첫, '앞의 것이 물리면 rollback 인데, 이 도구는 안 물린다').toBe('첫째 바뀜');
+  });
+
+  it('뒤의 고침은 안 들어간다', async () => {
+    const { 방, doc_id, ids } = await 셋든문서();
+    await 도구부르기('edit', {
+      doc_id,
+      edits: [
+        { op: 'set_text', id: ids[0]!, text: '첫째 바뀜' },
+        { op: 'set_text', id: 'p_없는것', text: 'x' },
+        { op: 'set_text', id: ids[2]!, text: '셋째 바뀜' },
+      ],
+    }, 방);
+    const 셋 = (await 도구부르기('get_content', { doc_id, id: ids[2]! }, 방))
+      .structuredContent!['text'] as string;
+    expect(셋, '멈춘 뒤의 것까지 들어가면 어디서 멈췄는지 뜻이 없다').not.toContain('바뀜');
+  });
+
+  it('**몇 개가 됐는지 수로 알려 준다** — 글을 파싱 안 해도 되게', async () => {
+    const { 방, doc_id, ids } = await 셋든문서();
+    const r = await 도구부르기('edit', {
+      doc_id,
+      edits: [
+        { op: 'set_text', id: ids[0]!, text: '첫째 바뀜' },
+        { op: 'set_text', id: ids[1]!, text: '둘째 바뀜' },
+        { op: 'set_text', id: 'p_없는것', text: 'x' },
+      ],
+    }, 방);
+    expect(r.isError).toBe(true);
+    const sc = r.structuredContent!;
+    expect(sc['done'], '앞의 두 개가 이미 들어갔다').toBe(2);
+    expect(sc['failed_at']).toBe(2);
+    expect(sc['failed_op']).toBe('set_text');
+    expect((sc['results'] as unknown[]).length, '무엇이 됐는지도 준다').toBe(2);
+  });
+
+  it('말로도 「안 물린다」 고 적는다', async () => {
+    const { 방, doc_id, ids } = await 셋든문서();
+    const r = await 도구부르기('edit', {
+      doc_id,
+      edits: [
+        { op: 'set_text', id: ids[0]!, text: '첫째 바뀜' },
+        { op: 'set_text', id: 'p_없는것', text: 'x' },
+      ],
+    }, 방);
+    const 말 = r.content[0]?.text ?? '';
+    expect(말, '거꾸로 읽히면 다시 넣어 두 번 쓴다').toContain('안 물린다');
+  });
+
+  it('다 잘되면 done 이 아니라 성공으로 온다', async () => {
+    const { 방, doc_id, ids } = await 셋든문서();
+    const r = await 도구부르기('edit', {
+      doc_id,
+      edits: ids.map((id, i) => ({ op: 'set_text', id, text: `${i} 바뀜` })),
+    }, 방);
+    expect(r.isError).toBeUndefined();
+    expect(r.structuredContent!['done']).toBe(3);
+    expect(r.structuredContent!['failed_at']).toBeUndefined();
   });
 });

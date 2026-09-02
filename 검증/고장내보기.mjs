@@ -448,6 +448,13 @@ const 고장들 = [
     'packages/server',
   ],
   [
+    '굽는 자리를 .gitignore 에서 뺀다 (dirty 가 늘 켜져 쓸모없어진다)',
+    '.gitignore',
+    "dist.굽는중.*/",
+    "# (뺐다)",
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
     '굽고도 자국을 안 남긴다 (어느 소스에서 구웠는지 모른다)',
     '검증/빌드.mjs',
     "  fs.writeFileSync(path.join(굽는곳, '구운것.json'), `${JSON.stringify({",

@@ -114,6 +114,16 @@ describe('구운 자국 — 어느 소스에서 구웠나', () => {
     }
   });
 
+  it('**굽는 자리가 dirty 를 켜지 않는다**', () => {
+    // `.gitignore` 가 `dist/` 만 막았더니 굽는 동안 생기는 `dist.굽는중.<pid>/` 이
+    // 안 걸러져, **굽는 쪽이 제가 만든 자리를 보고** 「고치는 중」 이라 찍었다.
+    // 커밋 직후에도 켜졌다 — **늘 켜지는 표시는 아무것도 안 알려 준다.**
+    const 무시글 = fs.readFileSync(path.join(뿌리, '.gitignore'), 'utf8');
+    for (const 자리 of ['dist.굽는중.', 'dist.치움.']) {
+      expect(무시글, `${자리}* 를 안 걸러내면 굽는 내내 dirty 가 켜진다`).toContain(자리);
+    }
+  });
+
   it('**안 올린 변경이 있으면 dirty 를 켠다**', () => {
     const 자국 = JSON.parse(fs.readFileSync(자국길, 'utf8')) as { dirty?: boolean };
     // 여기서 못 박는다. 안 그러면 git 저장소가 아닌 기계에서 **조용히 건너뛴다** —

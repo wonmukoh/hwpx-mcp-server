@@ -448,6 +448,20 @@ const 고장들 = [
     'packages/server',
   ],
   [
+    '굽고도 자국을 안 남긴다 (어느 소스에서 구웠는지 모른다)',
+    '검증/빌드.mjs',
+    "  fs.writeFileSync(path.join(굽는곳, '구운것.json'), `${JSON.stringify({",
+    "  if (false) fs.writeFileSync(path.join(굽는곳, '구운것.json'), `${JSON.stringify({",
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
+    '안 올린 변경이 있어도 dirty 를 안 켠다 (자국이 거짓말한다)',
+    '검증/빌드.mjs',
+    "    ...(안올린것 !== undefined ? { dirty: 안올린것.length > 0 } : {}),",
+    "    ...({}),",
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
     '옛 방식대로 dist 를 지우고 그 자리에 굽는다 (굽는 내내 밖에서 못 읽는다)',
     '검증/빌드.mjs',
     "const 굽는곳 = `${낼곳}.굽는중.${process.pid}`;",

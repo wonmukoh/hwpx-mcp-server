@@ -107,6 +107,34 @@ for (const [이름, 대상] of Object.entries(꾸러미)) {
 }
 console.log(`꾸러미 이름을 상대 경로로 바꾼 파일 ${바꾼파일}개`);
 
+/**
+ * **어느 소스에서 구웠는지 찍는다.**
+ *
+ * 판 번호로는 번들을 못 가린다 — 개발 중에는 판을 안 올리고 `packages/` 만 고치는
+ * 게 흔해서, 어제 것과 오늘 것이 둘 다 `0.5.0` 이라 답하면서 동작이 다르다.
+ *
+ * 실제로 그것 때문에 「이 번들에 그 고침이 들었나」 를 알아내려고
+ * **도구 지문을 뜨고 stdio 로 두드려야** 했다. 이 한 줄이면 끝날 일이었다.
+ *
+ * **안 올린 변경이 있으면 `dirty` 를 켠다** — 커밋만 찍으면
+ * 고치는 중인 것을 그 커밋 그대로라고 말하게 된다.
+ */
+{
+  const 꾸러미것 = JSON.parse(fs.readFileSync(path.join(뿌리, 'package.json'), 'utf8'));
+  const 깃 = (인자) => {
+    const r = spawnSync('git', 인자, { cwd: 뿌리, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return r.status === 0 ? (r.stdout ?? '').trim() : undefined;
+  };
+  const 커밋 = 깃(['rev-parse', '--short', 'HEAD']);
+  const 안올린것 = 깃(['status', '--porcelain']);
+  fs.writeFileSync(path.join(굽는곳, '구운것.json'), `${JSON.stringify({
+    name: 꾸러미것.name,
+    version: 꾸러미것.version,
+    ...(커밋 !== undefined ? { commit: 커밋 } : {}),
+    ...(안올린것 !== undefined ? { dirty: 안올린것.length > 0 } : {}),
+  }, null, 2)}\n`, 'utf8');
+}
+
 // **자리를 바꾸기 전에** 본다 — 바꾸고 나면 굽는곳이 없다.
 // 그리고 흠이 있으면 옛 dist 를 그대로 두는 편이 낫다.
 if (배포인가) {

@@ -54,14 +54,31 @@ const 판읽어보기 = () => {
   return '0.0.0';
 };
 
+/**
+ * **어느 소스에서 구운 것인지도 같이 낸다.**
+ *
+ * 판 번호만으로는 번들을 못 가린다 — 개발 중에는 판을 안 올리고 소스만 고치는 게
+ * 흔해서, 어제 것과 오늘 것이 둘 다 `0.5.0` 이라 답하면서 동작이 다르다.
+ * 그래서 「이 번들에 그 고침이 들었나」 를 알아내려고 도구를 두드려 봐야 했다.
+ */
+const 구운자국 = () => {
+  try {
+    const p = path.join(뿌리, 'dist', '구운것.json');
+    if (!fs.existsSync(p)) return '';
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (typeof j.commit !== 'string') return '';
+    return ` (${j.commit}${j.dirty === true ? ', 고치는 중' : ''})`;
+  } catch { return ''; }
+};
+
 if (인자.includes('--version') || 인자.includes('-v')) {
-  process.stdout.write(`${판읽어보기()}\n`);
+  process.stdout.write(`${판읽어보기()}${구운자국()}\n`);
   process.exit(0);
 }
 
 if (인자.includes('--help') || 인자.includes('-h')) {
   process.stdout.write([
-    `hwpx-mcp ${판읽어보기()} — 한글 문서(HWPX)를 한글 없이 읽고 쓰는 MCP 서버`,
+    `hwpx-mcp ${판읽어보기()}${구운자국()} — 한글 문서(HWPX)를 한글 없이 읽고 쓰는 MCP 서버`,
     '',
     '이 프로그램은 **혼자 쓰는 것이 아니다.** MCP 클라이언트가 띄워서',
     'stdio 로 말을 건다. 손으로 실행하면 입력을 기다리며 멈춰 있는 것처럼 보인다.',

@@ -80,3 +80,47 @@ ${r.말}`).toBe(0);
       .toEqual([]);
   }, 180_000);
 });
+
+describe('구운 자국 — 어느 소스에서 구웠나', () => {
+  /**
+   * **판 번호로는 번들을 못 가린다.** 개발 중에는 판을 안 올리고 소스만 고치는 게
+   * 흔해서, 어제 것과 오늘 것이 둘 다 `0.5.0` 이라 답하면서 동작이 다르다.
+   *
+   * 실제로 그것 때문에 「이 번들에 그 고침이 들었나」 를 알아내려고
+   * **도구 지문을 뜨고 stdio 로 두드려야** 했다. 굽는 자리에 커밋을 찍으면 끝날 일이었다.
+   */
+  const 자국길 = path.join(뿌리, 'dist', '구운것.json');
+
+  it('**굽고 나면 자국이 남는다**', () => {
+    expect(fs.existsSync(자국길), '자국이 없으면 어느 소스에서 구웠는지 모른다').toBe(true);
+  });
+
+  it('이름·판이 package.json 과 같다', () => {
+    const 자국 = JSON.parse(fs.readFileSync(자국길, 'utf8')) as
+      { name: string; version: string };
+    const 꾸러미 = JSON.parse(fs.readFileSync(path.join(뿌리, 'package.json'), 'utf8')) as
+      { name: string; version: string };
+    expect(자국.name).toBe(꾸러미.name);
+    expect(자국.version).toBe(꾸러미.version);
+  });
+
+  it('**커밋이 찍힌다** (git 저장소일 때)', () => {
+    const 자국 = JSON.parse(fs.readFileSync(자국길, 'utf8')) as { commit?: string };
+    // git 저장소가 아니면 안 찍는 것이 맞다 — 지어내지 않는다
+    if (fs.existsSync(path.join(뿌리, '.git'))) {
+      expect(자국.commit, 'git 저장소인데 커밋이 없다').toMatch(/^[0-9a-f]{7,}$/);
+    } else {
+      expect(자국.commit, 'git 저장소가 아닌데 커밋을 지어냈다').toBeUndefined();
+    }
+  });
+
+  it('**안 올린 변경이 있으면 dirty 를 켠다**', () => {
+    const 자국 = JSON.parse(fs.readFileSync(자국길, 'utf8')) as { dirty?: boolean };
+    // 여기서 못 박는다. 안 그러면 git 저장소가 아닌 기계에서 **조용히 건너뛴다** —
+    // 헛도는 시험 훑기가 이걸 잡아 줬다.
+    expect(fs.existsSync(path.join(뿌리, '.git')),
+      'git 저장소가 아니면 이 시험은 아무것도 안 본다').toBe(true);
+    // 커밋만 찍으면 **고치는 중인 것을 그 커밋 그대로라고 말하게 된다**
+    expect(typeof 자국.dirty, 'dirty 가 없으면 자국이 거짓말을 할 수 있다').toBe('boolean');
+  });
+});

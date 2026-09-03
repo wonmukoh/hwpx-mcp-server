@@ -12,6 +12,7 @@
     "@hwpx/container": "*",
     "@hwpx/doc": "*",
     "@hwpx/compose": "*",
+    "@hwpx/render": "*",
     "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "scripts": { "build": "tsc -p tsconfig.json" }

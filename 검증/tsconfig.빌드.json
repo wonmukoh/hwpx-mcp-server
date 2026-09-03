@@ -15,6 +15,7 @@
       "@hwpx/container": ["packages/hwpx/src/index.ts"],
       "@hwpx/doc": ["packages/doc/src/index.ts"],
       "@hwpx/compose": ["packages/compose/src/index.ts"],
+      "@hwpx/render": ["packages/render/src/index.ts"],
       "@hwpx/server": ["packages/server/src/index.ts"]
     }
   },

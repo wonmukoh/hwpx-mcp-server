@@ -20,6 +20,7 @@ import * as path from 'node:path';
 
 import { 문서, 표, 문단, 됨, 안됨, type 결과, type 글자모양패치, 그림들이기 } from '@hwpx/doc';
 import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각 } from '@hwpx/compose';
+import { 엮기 } from '@hwpx/render';
 import { childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp, appendChild, type ElementNode } from '@hwpx/owpml';
 
 import {
@@ -125,6 +126,15 @@ const 찾기스키마 = 묶음('글이나 종류로 요소를 찾는다', {
 }, ['doc_id']);
 
 const 서식스키마 = 묶음('문서에 정의된 서식을 본다', { doc_id }, ['doc_id']);
+
+const 엮기스키마 = 묶음('문서를 HTML 한 장으로 엮는다', {
+  doc_id,
+  // **큰 문서는 글자로 돌려주면 안 된다.** 그림을 박으면 3MB 가 넘는 것이 있다.
+  // 그런 것을 답에 실으면 부르는 쪽 컨텍스트가 통째로 먹힌다.
+  path: 절대경로('HTML 을 저장할 곳. 주면 파일로 쓰고 경로만 돌려준다'),
+  images: 참거짓('그림을 파일 안에 박을까 (기본 true). false 면 자리만 잡아 가볍게 만든다'),
+  title: 글자('<title>. 안 주면 첫 글줄을 쓴다'),
+}, ['doc_id']);
 
 // ── 조판 (1) ───────────────────────────────────────────────────────────────
 
@@ -841,6 +851,90 @@ export const 도구들: 도구[] = [
         },
       );
     }),
+  },
+
+  {
+    name: 'render_html',
+    description:
+      '문서를 **HTML 한 장**으로 엮는다 — 딸린 폴더 없이 그림까지 안에 박는다. '
+      + '`.hwpx` 는 브라우저가 못 열어서, 이걸로 **미리보기 · PDF · 워드 붙여넣기**가 풀린다. '
+      + '브라우저의 인쇄(printToPDF)로 구우면 한글 없이 PDF 가 된다. '
+      + '**쪽이 어디서 넘어가는지는 한글과 다를 수 있다** — 미리보기·검토용이다. '
+      + '큰 문서는 `path` 를 줘라. 안 주면 HTML 을 그대로 돌려주는데 몇 MB 가 될 수 있다.',
+    inputSchema: 엮기스키마,
+    outputSchema: 묶음('엮은 것', {
+      ok: 참거짓('됐나'),
+      html: 글자('HTML 전체. path 를 줬으면 없다'),
+      path: 글자('저장한 곳. path 를 줬을 때만'),
+      bytes: 정수('HTML 크기'),
+      sections: 정수('구역 수'),
+      paragraphs: 정수('문단 수'),
+      tables: 정수('표 수'),
+      images: 정수('그림 수'),
+      chars: 정수('글자 수'),
+      not_rendered: 목록('못 옮긴 것들. 비어 있으면 다 옮겼다', 글자('무엇')),
+    }, ['ok']),
+    annotations: { title: 'HTML 로 엮기', readOnlyHint: true, idempotentHint: true },
+    처리: 검사하고<{ doc_id: string; path?: string; images?: boolean; title?: string }>(
+      엮기스키마, (인자, 방) => {
+        const 것 = 문서꺼내기(방, 인자.doc_id);
+        if (!것.ok) return 것.결과;
+
+        if (인자.path !== undefined) {
+          const 검 = 절대경로검사(인자.path);
+          if (!검.ok) return 못함(검.이유, 검.어떻게);
+        }
+
+        const r = 엮기(것.it.d, {
+          ...(인자.title !== undefined ? { 제목: 인자.title } : {}),
+          ...(인자.images !== undefined ? { 그림: 인자.images } : {}),
+        });
+        const 크기 = Buffer.byteLength(r.html, 'utf8');
+        const 잰것 = {
+          bytes: 크기,
+          sections: r.구역수,
+          paragraphs: r.문단수,
+          tables: r.표수,
+          images: r.그림수,
+          chars: r.글자수,
+          not_rendered: r.못옮긴것,
+        };
+        const 덧 = r.못옮긴것.length === 0 ? '' : ` · 못 옮긴 것: ${r.못옮긴것.join(', ')}`;
+
+        if (인자.path !== undefined) {
+          try {
+            fs.mkdirSync(path.dirname(인자.path), { recursive: true });
+            fs.writeFileSync(인자.path, r.html, 'utf8');
+          } catch (e) {
+            return 못함(
+              `HTML 을 못 썼다: ${e instanceof Error ? e.message : String(e)}`,
+              '폴더가 있는지, 쓸 수 있는 자리인지 봐라.',
+            );
+          }
+          return 잘됨(
+            `${인자.path} 에 썼다 — 문단 ${r.문단수}개 · 표 ${r.표수}개 · 그림 ${r.그림수}개`
+            + ` · ${Math.round(크기 / 1024)}KB${덧}`,
+            { ok: true, path: 인자.path, ...잰것 },
+          );
+        }
+
+        // **글자로 돌려줄 때는 한도를 둔다.** 답이 몇 MB 면 부르는 쪽이 감당 못 한다.
+        const 한도 = 2 * 1024 * 1024;
+        if (크기 > 한도) {
+          return 못함(
+            `엮은 HTML 이 ${Math.round(크기 / 1024 / 1024 * 10) / 10}MB 라 답에 못 싣는다`,
+            'path 에 절대 경로를 줘서 파일로 받아라. '
+            + '그림이 커서 그런 것이면 images: false 로도 줄어든다.',
+            잰것,
+          );
+        }
+
+        return 잘됨(
+          `HTML 로 엮었다 — 문단 ${r.문단수}개 · 표 ${r.표수}개 · 그림 ${r.그림수}개`
+          + ` · ${Math.round(크기 / 1024)}KB${덧}`,
+          { ok: true, html: r.html, ...잰것 },
+        );
+      }),
   },
 
   {

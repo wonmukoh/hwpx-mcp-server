@@ -95,6 +95,21 @@ let 연것;
     적기(도구, 알맹이, 알맹이 ? '읽었다' : '**빈 것을 돌려준다**');
   }
 
+  // render_html — **글이 진짜 실렸나까지 본다.** HTML 은 어지간하면 나오니
+  // 「돌려줬다」 만 보면 빈 껍데기도 통과한다.
+  {
+    const 뼈 = await 부르기('get_content', { doc_id: 연것 }, 방);
+    const 문서글 = String(뼈.structuredContent?.text ?? '');
+    const 낱말 = (문서글.match(/[가-힣A-Za-z0-9]{4,}/g) ?? [])[0];
+    const r = await 부르기('render_html', { doc_id: 연것 }, 방);
+    const html = String(r.structuredContent?.html ?? '');
+    const 됐나 = !r.isError && html.startsWith('<!doctype html>')
+      && (낱말 === undefined || html.includes(낱말));
+    적기('render_html', 됐나, 됐나
+      ? `엮었다 (${Math.round(html.length / 1024)}KB)`
+      : '**엮었다면서 문서 글이 안 들어 있다**');
+  }
+
   // 읽기만 했는데 저장하면 바이트가 달라지나 — 달라지면 읽기가 문서를 건드린 것이다
   const 되쓴곳 = path.join(무대, 'after-read.hwpx');
   const s = await 부르기('save_document', { doc_id: 연것, path: 되쓴곳 }, 방);

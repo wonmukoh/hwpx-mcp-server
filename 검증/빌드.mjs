@@ -71,6 +71,7 @@ const 꾸러미 = {
   '@hwpx/container': path.join(굽는곳, 'packages', 'hwpx', 'src', 'index.js'),
   '@hwpx/doc': path.join(굽는곳, 'packages', 'doc', 'src', 'index.js'),
   '@hwpx/compose': path.join(굽는곳, 'packages', 'compose', 'src', 'index.js'),
+  '@hwpx/render': path.join(굽는곳, 'packages', 'render', 'src', 'index.js'),
   '@hwpx/server': path.join(굽는곳, 'packages', 'server', 'src', 'index.js'),
 };
 

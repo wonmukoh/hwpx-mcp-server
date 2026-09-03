@@ -24,6 +24,62 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    '취소선을 「있으면 켜진 것」 으로 읽는다 (문서 전체에 줄이 그어진다)',
+    'packages/render/src/서식읽기.ts',
+    "  return 꼴 !== 'NONE' && 꼴 !== '3D';",
+    '  return true;',
+    'packages/render',
+  ],
+  [
+    '취소선 shape=3D 를 진짜 취소선으로 친다 (업무계획 charPr 124/125 가 그것이다)',
+    'packages/render/src/서식읽기.ts',
+    "  return 꼴 !== 'NONE' && 꼴 !== '3D';",
+    "  return 꼴 !== 'NONE';",
+    'packages/render',
+  ],
+  [
+    '문단 여백을 hp:case 에서 읽는다 (값이 절반이 된다)',
+    'packages/render/src/서식읽기.ts',
+    "  return firstChildNamed(sw, 'hp:default') ?? firstChildNamed(sw, 'hp:case');",
+    "  return firstChildNamed(sw, 'hp:case') ?? firstChildNamed(sw, 'hp:default');",
+    'packages/render',
+  ],
+  [
+    'landscape=WIDELY 를 가로로 읽어 용지를 뒤집는다 (A4 세로가 가로로 나온다)',
+    'packages/render/src/엮기.ts',
+    '  return `@page { size: ${mm(크기.너비)} ${mm(크기.높이)}; margin: 0 }`;',
+    '  return `@page { size: ${mm(크기.높이)} ${mm(크기.너비)}; margin: 0 }`;',
+    'packages/render',
+  ],
+  [
+    '묶은 개체를 건너뛴다 (제목 띠 안의 절 제목이 통째로 사라진다)',
+    'packages/render/src/엮기.ts',
+    '      return 떠있으면감싸기(것, 묶음엮기(것, c));',
+    "      return '';",
+    'packages/render',
+  ],
+  [
+    '뜬 개체를 줄 안에 그냥 둔다 (문단 내어쓰기를 따라가 쪽 밖으로 밀린다)',
+    'packages/render/src/엮기.ts',
+    '  return `<div class="뜬것">${속}</div>`;',
+    '  return 속;',
+    'packages/render',
+  ],
+  [
+    '표 제목(hp:caption)을 안 낸다 (그림·표 설명이 사라진다)',
+    'packages/render/src/엮기.ts',
+    '    + `${표제목(el, c)}<colgroup>${열}</colgroup><tbody>${줄들}</tbody></table>`;',
+    '    + `<colgroup>${열}</colgroup><tbody>${줄들}</tbody></table>`;',
+    'packages/render',
+  ],
+  [
+    '문단을 <div> 가 아니라 <p> 로 낸다 (문단 안의 표가 밖으로 끌려 나간다)',
+    'packages/render/src/엮기.ts',
+    '  return `<div class="p"${문단스타일(모양, p)}>${알맹이}</div>`;',
+    '  return `<p class="p"${문단스타일(모양, p)}>${알맹이}</p>`;',
+    'packages/render',
+  ],
+  [
     '본뜬 줄에서 안쪽 표를 안 빼낸다 (겹친 표가 복제되고 무너진다)',
     'packages/doc/src/표.ts',
     '            if (개체) removeNode(r);',

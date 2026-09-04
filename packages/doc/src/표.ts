@@ -509,6 +509,285 @@ export class 표 {
     return 됨({ 지운수 });
   }
 
+  /**
+   * **칸 주소를 다시 매긴다.** 칸을 넣거나 뺀 뒤에는 꼭 불러야 한다.
+   *
+   * 그냥 0,1,2… 로 매기면 안 된다. `colAddr` 은 **절대 열 번호**이고,
+   * 위 줄에서 세로로 덮은 자리는 **건너뛴다.** 실측 —
+   *
+   *     줄3: col0(×1/3) col1 col2(×1/3) col3(×1/3) col4(×1/3) col5 col6
+   *     줄4: col1              col5 col6          ← 0·2·3·4 는 위가 덮었다
+   *
+   * 그래서 자리표를 만들어 놓고 빈 자리에만 셀을 앉힌다.
+   */
+  private 칸주소다시(): void {
+    const 줄들 = childrenNamed(this.el, 'hp:tr');
+    /** 위에서 덮어 내려온 자리. `덮임[r][c]` */
+    const 덮임: boolean[][] = 줄들.map(() => []);
+    let 넓이 = 0;
+
+    for (const [r, tr] of 줄들.entries()) {
+      let c = 0;
+      for (const tc of childrenNamed(tr, 'hp:tc')) {
+        while (덮임[r]?.[c]) c++;
+        const addr = firstChildNamed(tc, 'hp:cellAddr');
+        if (addr) {
+          setAttr(addr, 'rowAddr', String(r));
+          setAttr(addr, 'colAddr', String(c));
+        }
+        const span = firstChildNamed(tc, 'hp:cellSpan');
+        const cs = Math.max(1, Number(span && getAttr(span, 'colSpan')) || 1);
+        const rs = Math.max(1, Number(span && getAttr(span, 'rowSpan')) || 1);
+        for (let rr = r; rr < r + rs && rr < 줄들.length; rr++) {
+          for (let cc = c; cc < c + cs; cc++) {
+            const 줄 = 덮임[rr];
+            if (줄) 줄[cc] = true;
+          }
+        }
+        c += cs;
+        if (c > 넓이) 넓이 = c;
+      }
+    }
+
+    // **`칸수` 를 그대로 쓰면 안 된다.** 그것은 `colCnt` 를 읽는 것이라
+    // `colCnt = 칸수` 는 제자리를 맴돈다 — 칸을 지워도 수가 안 줄어,
+    // 폭을 다시 나눌 때 「열이 3개인데 폭을 2개 줬다」 로 걸렸다.
+    // 격자를 훑어 **실제로 몇 칸인지** 세서 넣는다.
+    setAttr(this.el, 'colCnt', String(넓이));
+  }
+
+  /**
+   * 한 줄에서 **주어진 칸 번호 이후 첫 셀**을 찾는다. 없으면 `undefined`.
+   *
+   * 칸을 넣을 때 어느 셀 **앞**에 끼울지 잡는 데 쓴다.
+   */
+  private 줄에서칸(tr: ElementNode, 칸: number): ElementNode | undefined {
+    for (const tc of childrenNamed(tr, 'hp:tc')) {
+      const addr = firstChildNamed(tc, 'hp:cellAddr');
+      const c = Number(addr && getAttr(addr, 'colAddr'));
+      if (Number.isFinite(c) && c >= 칸) return tc;
+    }
+    return undefined;
+  }
+
+  /** 셀 하나를 본떠 **빈 1×1 셀**로 만든다 */
+  private 빈셀본뜨기(본: ElementNode): ElementNode {
+    const 새칸 = 복제하기(본, this.source ?? '');
+    // 본뜬 셀에 든 개체(안쪽 표·그림)는 통째로 뺀다 — 딸려 오면 격자가 무너진다
+    for (const p of findAll(새칸, 'hp:p')) {
+      for (const run of childrenNamed(p, 'hp:run')) {
+        const 개체 = run.children.some((x) => x.kind === 'element'
+          && !['hp:t', 'hp:ctrl', 'hp:linesegarray'].includes((x as ElementNode).name));
+        if (개체) removeNode(run);
+      }
+    }
+    for (const t of findAll(새칸, 'hp:t')) setText(t, '');
+    const span = firstChildNamed(새칸, 'hp:cellSpan');
+    if (span) { setAttr(span, 'colSpan', '1'); setAttr(span, 'rowSpan', '1'); }
+    return 새칸;
+  }
+
+  /**
+   * **칸(열)을 넣는다.** `줄넣기` 의 가로 짝이다.
+   *
+   * 줄은 넣고 뺄 수 있는데 **칸은 아무것도 없었다.** 양식에 항목이 하나 늘면
+   * 열을 더해야 하는데 그럴 길이 없어 표를 통째로 새로 짜야 했다.
+   *
+   * ## 표 전체 폭은 그대로 두고 **나눠 가진다**
+   *
+   * 새 칸에 이웃 폭을 그대로 주면 표가 그만큼 넓어져 **쪽 밖으로 나간다.**
+   * 양식은 폭이 정해진 것이라, 있던 폭을 줄여 자리를 낸다.
+   *
+   * ## 막는 것
+   *
+   * **가로로 합쳐진 셀이 그 자리를 가로지르면** 손대지 않는다.
+   * 넣으면 그 셀이 몇 칸을 덮는지가 어긋나 격자가 무너진다.
+   */
+  칸넣기(자리: number, 몇칸 = 1): 결과<{ 넣은수: number }> {
+    if (몇칸 < 1) return 안됨(`${몇칸}칸을 넣으라 한다`, '1 이상이어야 한다.');
+    if (자리 < 0 || 자리 > this.칸수) {
+      return 안됨(
+        `${자리}번 자리에 못 넣는다 (표는 ${this.칸수}칸이다)`,
+        `0~${this.칸수} 사이여야 한다 (${this.칸수} 는 맨 뒤에 붙이는 것이다).`,
+      );
+    }
+    const 줄들 = this.줄들;
+    if (줄들.length === 0) return 안됨('빈 표다 (줄이 없다)', '줄이 하나는 있어야 한다.');
+
+    for (const c of this.셀들) {
+      const a = c.자리;
+      if (a.colSpan > 1 && a.col < 자리 && 자리 < a.col + a.colSpan) {
+        return 안됨(
+          `(${a.row},${a.col}) 셀이 ${a.colSpan}칸에 걸쳐 있어 ${자리}번 자리를 가로지른다`,
+          '합친 셀 안으로는 칸을 못 넣는다. 합침을 먼저 풀거나 다른 자리를 골라라.',
+        );
+      }
+    }
+
+    const 옛폭 = this.열폭;
+    const 총폭 = 옛폭.reduce<number>((a, b) => a + (b ?? 0), 0);
+
+    for (const tr of 줄들) {
+      const 뒤 = this.줄에서칸(tr, 자리);
+      const 이줄셀들 = childrenNamed(tr, 'hp:tc');
+      const 본 = 뒤 ?? 이줄셀들[이줄셀들.length - 1];
+      if (!본) continue;   // 셀이 하나도 없는 줄은 안 건드린다
+      for (let k = 0; k < 몇칸; k++) {
+        const 새칸 = this.빈셀본뜨기(본);
+        if (뒤) insertBefore(뒤, 새칸);
+        else appendChild(tr, 새칸);
+      }
+    }
+
+    this.칸주소다시();
+
+    // 폭을 다시 나눈다 — 표 전체 폭은 그대로
+    if (총폭 > 0 && 옛폭.every((w) => w !== undefined)) {
+      const 새수 = this.칸수;
+      const 고르게 = Math.floor(총폭 / 새수);
+      const 새폭: number[] = new Array<number>(새수).fill(고르게);
+      // 마지막 칸이 나머지를 받는다 — 합이 총폭과 어긋나면 표가 삐져나온다
+      새폭[새수 - 1] = 총폭 - 고르게 * (새수 - 1);
+      const r = this.열폭주기(새폭);
+      if (!r.ok) return 안됨(`칸은 넣었는데 폭을 못 맞췄다: ${r.이유}`, r.어떻게);
+    }
+
+    return 됨({ 넣은수: 몇칸 });
+  }
+
+  /**
+   * **칸(열)을 지운다.** `칸넣기` 의 짝이다.
+   *
+   * 되돌릴 수 없어 `줄지우기` 와 같은 셋을 막는다 —
+   * 마지막 칸, 합친 칸을 반만 지우는 것, **글이 든 칸**.
+   */
+  칸지우기(자리: number, 몇칸 = 1, 비어야만 = true): 결과<{ 지운수: number }> {
+    if (몇칸 < 1) return 안됨(`${몇칸}칸을 지우라 한다`, '1 이상이어야 한다.');
+    if (자리 < 0 || 자리 >= this.칸수) {
+      return 안됨(
+        `${자리}번 칸이 없다 (표는 ${this.칸수}칸이다)`,
+        `0~${this.칸수 - 1} 사이여야 한다.`,
+      );
+    }
+    const 끝 = Math.min(자리 + 몇칸, this.칸수);
+    if (끝 - 자리 >= this.칸수) {
+      return 안됨(
+        '표의 칸을 다 지우려 한다',
+        '칸이 하나도 없는 표는 한글이 안 연다. 표를 통째로 없애려면 다른 길을 써라.',
+      );
+    }
+
+    for (const c of this.셀들) {
+      const a = c.자리;
+      if (a.colSpan === 1) continue;
+      const 셀끝 = a.col + a.colSpan;
+      const 겹침 = a.col < 끝 && 자리 < 셀끝;
+      const 다덮임 = 자리 <= a.col && 셀끝 <= 끝;
+      if (겹침 && !다덮임) {
+        return 안됨(
+          `(${a.row},${a.col}) 셀이 ${a.colSpan}칸에 걸쳐 있어 반만 지우게 된다`,
+          '합침을 먼저 풀거나, 지우는 범위를 그 셀까지 넓혀라.',
+        );
+      }
+    }
+
+    if (비어야만) {
+      for (const c of this.셀들) {
+        const a = c.자리;
+        if (a.col < 자리 || a.col >= 끝) continue;
+        const 글 = findAll(c.el, 'hp:t')
+          .map((t) => t.children.map((x) => (x.kind === 'text' ? x.raw : '')).join(''))
+          .join('').trim();
+        if (글 !== '') {
+          return 안됨(
+            `(${a.row},${a.col}) 칸에 글이 있다 — «${글.slice(0, 20)}»`,
+            '지운 글은 못 되돌린다. 정말 지우려면 force 를 켜라.',
+          );
+        }
+      }
+    }
+
+    const 옛폭 = this.열폭;
+    const 총폭 = 옛폭.reduce<number>((a, b) => a + (b ?? 0), 0);
+
+    let 지운수 = 0;
+    for (const c of this.셀들) {
+      const a = c.자리;
+      if (a.col >= 자리 && a.col < 끝) { removeNode(c.el); 지운수++; }
+    }
+
+    this.칸주소다시();
+
+    if (총폭 > 0 && 옛폭.every((w) => w !== undefined)) {
+      const 남은 = 옛폭.filter((_, i) => i < 자리 || i >= 끝) as number[];
+      const 남은합 = 남은.reduce((a, b) => a + b, 0);
+      const 새폭 = 남은합 > 0
+        ? 남은.map((w) => Math.round(w * 총폭 / 남은합))
+        : new Array<number>(this.칸수).fill(Math.floor(총폭 / this.칸수));
+      const 마지막 = 새폭.length - 1;
+      if (마지막 >= 0) {
+        새폭[마지막] = 총폭 - 새폭.slice(0, 마지막).reduce((a, b) => a + b, 0);
+      }
+      const r = this.열폭주기(새폭);
+      if (!r.ok) return 안됨(`칸은 지웠는데 폭을 못 맞췄다: ${r.이유}`, r.어떻게);
+    }
+
+    return 됨({ 지운수 });
+  }
+
+  /**
+   * **합친 셀을 도로 푼다.** `합치기` 의 짝이다.
+   *
+   * 합칠 수만 있고 풀 수는 없었다. 고치다 잘못 합치면 되돌릴 길이 없어
+   * 표를 새로 짜야 했다.
+   *
+   * 덮여 있던 자리마다 셀을 다시 세운다. 새 셀은 합친 셀을 본뜨되 **글은 비운다** —
+   * 글은 합친 셀에 그대로 남는다. 나눠 담을 방법이 없어 지어내지 않는다.
+   */
+  합침풀기(row: number, col: number): 결과<{ 세운수: number }> {
+    const 시작 = this.시작셀(row, col);
+    if (!시작) {
+      return 안됨(
+        `(${row},${col}) 에서 시작하는 셀이 없다`,
+        '덮인 자리가 아니라 **합친 셀의 왼쪽 위**를 가리켜라.',
+      );
+    }
+    const a = 시작.자리;
+    if (a.rowSpan === 1 && a.colSpan === 1) {
+      return 안됨(
+        `(${row},${col}) 은 합쳐진 셀이 아니다 (1×1)`,
+        '풀 것이 없다. 합친 셀의 왼쪽 위 칸을 가리켜라.',
+      );
+    }
+
+    const 폭들 = this.열폭;
+    const 줄들 = this.줄들;
+    const span = firstChildNamed(시작.el, 'hp:cellSpan')!;
+    setAttr(span, 'rowSpan', '1');
+    setAttr(span, 'colSpan', '1');
+    const 제폭 = 폭들[a.col];
+    if (제폭 !== undefined) 시작.크기주기(제폭, undefined);
+
+    let 세운수 = 0;
+    for (let r = a.row; r < a.row + a.rowSpan; r++) {
+      const tr = 줄들[r];
+      if (!tr) continue;
+      for (let c = a.col; c < a.col + a.colSpan; c++) {
+        if (r === a.row && c === a.col) continue;
+        const 새칸 = this.빈셀본뜨기(시작.el);
+        const w = 폭들[c];
+        if (w !== undefined) new 셀(새칸).크기주기(w, undefined);
+        const 뒤 = this.줄에서칸(tr, c);
+        if (뒤) insertBefore(뒤, 새칸);
+        else appendChild(tr, 새칸);
+        세운수++;
+      }
+    }
+
+    this.칸주소다시();
+    return 됨({ 세운수 });
+  }
+
   높이맞추기(): 결과<{ 바뀐수: number }> {
     const 높이 = this.줄높이;
     if (높이.some((h) => h === undefined)) {

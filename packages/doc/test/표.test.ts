@@ -26,7 +26,8 @@ function 표읽기(파일: string) {
   const doc = parseXml(xml);
   const el = findFirst(doc.root, 'hp:tbl');
   if (!el) throw new Error(`${파일} 에 표가 없다`);
-  return { xml, doc, t: new 표(el) };
+  // **source 를 물려준다.** 없으면 줄·칸을 복제할 때 빈 것이 나온다
+  return { xml, doc, t: new 표(el, xml) };
 }
 
 describe('표를 읽는다', () => {
@@ -462,5 +463,146 @@ describe('안쪽 표를 안 건드린다', () => {
         expect(getAttr(firstChildNamed(tc, 'hp:cellAddr')!, 'rowAddr')).toBe(String(r));
       }
     }
+  });
+});
+
+/**
+ * **칸(열)을 넣고 뺀다.**
+ *
+ * 줄은 넣고 뺄 수 있는데 칸은 아무것도 없었다 — 짝이 반쪽이었다.
+ * 여기서 제일 조심할 것은 **`colAddr` 이 절대 열 번호**라는 것이다.
+ * 0,1,2… 로 다시 매기면 세로로 덮인 자리에서 어긋난다.
+ */
+describe('칸을 넣고 뺀다', () => {
+  /** 줄마다 셀들의 `colAddr` 을 읽는다 */
+  function 칸주소들(t: 표): number[][] {
+    return childrenNamed(t.el, 'hp:tr').map((tr) =>
+      childrenNamed(tr, 'hp:tc').map((tc) =>
+        Number(getAttr(firstChildNamed(tc, 'hp:cellAddr')!, 'colAddr'))));
+  }
+
+  const 총폭 = (t: 표): number => t.열폭.reduce<number>((a, b) => a + (b ?? 0), 0);
+
+  it('칸을 넣으면 **칸 수가 늘고 격자가 성하다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞칸 = t.칸수;
+    const 앞줄 = t.줄수;
+    꺼내기(t.칸넣기(1, 1));
+    expect(t.칸수).toBe(앞칸 + 1);
+    expect(t.줄수, '줄 수는 그대로여야 한다').toBe(앞줄);
+    expect(t.셀들.length).toBe(앞줄 * (앞칸 + 1));
+    expect(t.탈만).toEqual([]);
+    // 줄마다 0,1,2,… 로 빠짐없이 이어져야 한다
+    for (const 줄 of 칸주소들(t)) {
+      expect(줄).toEqual([...줄.keys()]);
+    }
+  });
+
+  /**
+   * **표가 쪽 밖으로 나가면 안 된다.**
+   *
+   * 새 칸에 이웃 폭을 그대로 주면 표가 그만큼 넓어진다. 양식은 폭이 정해진 것이라
+   * 있던 폭을 줄여 자리를 낸다.
+   */
+  it('**칸을 넣어도 표 전체 폭은 그대로다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞 = 총폭(t);
+    expect(앞, '폭을 못 읽으면 이 시험은 아무것도 안 본다').toBeGreaterThan(0);
+    꺼내기(t.칸넣기(0, 2));
+    expect(총폭(t)).toBe(앞);
+  });
+
+  it('칸을 지우면 **칸 수가 줄고 폭은 그대로다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞칸 = t.칸수;
+    const 앞폭 = 총폭(t);
+    // 기준 파일에는 글이 들어 있어 기본으로는 막힌다
+    const 막힘 = t.칸지우기(0, 1);
+    expect(막힘.ok, '글이 든 칸을 그냥 지우면 안 된다').toBe(false);
+
+    꺼내기(t.칸지우기(0, 1, false));
+    expect(t.칸수).toBe(앞칸 - 1);
+    expect(총폭(t)).toBe(앞폭);
+    expect(t.탈만).toEqual([]);
+    for (const 줄 of 칸주소들(t)) expect(줄).toEqual([...줄.keys()]);
+  });
+
+  it('**합친 칸을 가로지르는 자리에는 못 넣는다**', () => {
+    const { t } = 표읽기('ref-table-merge.hwpx');
+    const 합친것 = t.셀들.find((c) => c.자리.colSpan > 1);
+    expect(합친것, '가로로 합친 셀이 없으면 이 시험은 아무것도 안 본다').toBeDefined();
+    const a = 합친것!.자리;
+    const r = t.칸넣기(a.col + 1, 1);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.이유).toContain('가로지른다');
+  });
+
+  it('**합친 칸을 반만 지우려 하면 막는다**', () => {
+    const { t } = 표읽기('ref-table-merge.hwpx');
+    const a = t.셀들.find((c) => c.자리.colSpan > 1)!.자리;
+    const r = t.칸지우기(a.col, 1, false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.이유).toContain('반만');
+  });
+
+  it('**칸을 다 지우려 하면 막는다** (칸 없는 표는 한글이 안 연다)', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const r = t.칸지우기(0, t.칸수, false);
+    expect(r.ok).toBe(false);
+  });
+
+  /**
+   * **여기가 이 갈래의 핵심이다.**
+   *
+   * `colAddr` 은 절대 열 번호이고, 위 줄에서 세로로 덮은 자리는 **건너뛴다.**
+   * 실측 — 줄4 가 `col1 col5 col6` 만 갖고 0·2·3·4 는 위가 덮은 자리였다.
+   * 0,1,2… 로 다시 매기면 그 줄이 통째로 왼쪽으로 밀린다.
+   */
+  it('**세로로 덮인 자리를 건너뛰고 주소를 매긴다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    // 세로 합침을 만들어 둔다 — 기준 파일에는 가로 합침만 있다
+    꺼내기(t.합치기(0, 0, 2, 1));
+    expect(t.시작셀(0, 0)!.자리.rowSpan, '합쳐 둬야 이 시험이 뜻이 있다').toBe(2);
+
+    꺼내기(t.칸넣기(2, 1));
+    expect(t.탈만).toEqual([]);
+
+    const 주소 = 칸주소들(t);
+    // 0째 줄은 합친 셀(0)과 나머지가 다 있다
+    expect(주소[0]).toEqual([0, 1, 2, 3]);
+    // **1째 줄은 0 이 위에서 덮여 1 부터 시작해야 한다**
+    expect(주소[1], '덮인 자리를 건너뛰지 않으면 여기서 0 부터 나온다').toEqual([1, 2, 3]);
+    expect(주소[2]).toEqual([0, 1, 2, 3]);
+  });
+
+  it('합친 칸을 **도로 푼다**', () => {
+    const { t } = 표읽기('ref-table-merge.hwpx');
+    const a = t.셀들.find((c) => c.자리.colSpan > 1 || c.자리.rowSpan > 1)!.자리;
+    const 덮는수 = a.rowSpan * a.colSpan;
+    const 앞셀수 = t.셀들.length;
+
+    const r = t.합침풀기(a.row, a.col);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.세운수).toBe(덮는수 - 1);
+    expect(t.셀들.length).toBe(앞셀수 + 덮는수 - 1);
+    expect(t.시작셀(a.row, a.col)!.자리.colSpan).toBe(1);
+    expect(t.시작셀(a.row, a.col)!.자리.rowSpan).toBe(1);
+    expect(t.탈만).toEqual([]);
+    for (const 줄 of 칸주소들(t)) expect(줄).toEqual([...줄.keys()]);
+  });
+
+  it('합쳐지지 않은 칸은 **풀 것이 없다고 말한다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const r = t.합침풀기(1, 1);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.이유).toContain('1×1');
+  });
+
+  it('덮인 자리를 가리키면 **왼쪽 위를 가리키라고 한다**', () => {
+    const { t } = 표읽기('ref-table-merge.hwpx');
+    const a = t.셀들.find((c) => c.자리.colSpan > 1)!.자리;
+    const r = t.합침풀기(a.row, a.col + 1);   // 덮인 자리
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.어떻게).toContain('왼쪽 위');
   });
 });

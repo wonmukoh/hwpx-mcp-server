@@ -303,7 +303,8 @@ function 칸엮기(tc: ElementNode, c: 엮는이): string {
     'border-right': 선값(테?.오른),
     'border-top': 선값(테?.위),
     'border-bottom': 선값(테?.아래),
-    'background-color': 색값(테?.바탕색),
+    // **`background` 다.** 색만 오는 게 아니라 그러데이션도 온다
+    background: 테?.바탕,
     'vertical-align': 세로 === undefined ? undefined : 세로정렬표[세로],
     'padding-left': 안('left'),
     'padding-right': 안('right'),

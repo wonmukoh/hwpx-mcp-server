@@ -18,7 +18,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { 문서, 표, 문단, 됨, 안됨, type 결과, type 글자모양패치, 그림들이기 } from '@hwpx/doc';
+import {
+  문서, 표, 문단, 됨, 안됨, 셀아이디풀기,
+  type 결과, type 글자모양패치, 그림들이기,
+} from '@hwpx/doc';
 import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각 } from '@hwpx/compose';
 import { 엮기 } from '@hwpx/render';
 import { childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp, appendChild, type ElementNode } from '@hwpx/owpml';
@@ -165,7 +168,30 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   cell_size: 숫자('table 안 글자 크기 pt. 기본 10'),
   cell_padding: 숫자('셀 안쪽 여백 pt'),
   header_background: 글자('table 머리 줄 배경색 #RRGGBB. 기본 #E8EEF7'),
-  border_width: 글자("table 테두리 굵기 (예: '0.12 mm', '0.4 mm')"),
+  border_width: 글자(
+    "table 테두리 굵기 (예: '0.12 mm', '0.4 mm'). "
+    + "'none' 이면 격자를 아예 안 그린다 — 그러고 cells 로 그을 선만 긋는다",
+  ),
+  // 표 하나에 테두리 하나만 걸면 **격자**가 된다. 격자를 걷어내고 가로선·배경으로
+  // 가르는 표는 칸마다 borderFill 이 달라야 나온다. 그게 없어 사례집 양식을 못 만들었다.
+  cells: 목록(
+    'table 에서 칸마다 다르게 줄 것. row 만 주면 그 줄 전체, col 만 주면 그 열 전체, '
+    + '둘 다 주면 그 칸 하나. 적은 차례대로 덮어쓴다 (넓은 것 먼저, 좁은 것 나중에)',
+    묶음('칸 꾸밈', {
+      row: 정수('몇 번째 줄 (0부터). headers 를 줬으면 머리 줄이 0번. 빼면 모든 줄'),
+      col: 정수('몇 번째 칸 (0부터). 빼면 모든 칸'),
+      background: 글자("칸 배경색 #RRGGBB. 'none' 이면 안 채운다"),
+      top: 글자("위 선. \"0.4 mm #2A5DA8\" 처럼 굵기와 색. 지우려면 \"none\""),
+      bottom: 글자('아래 선'),
+      left: 글자('왼쪽 선'),
+      right: 글자('오른쪽 선'),
+      align: 고름('이 칸만 가로 정렬', ['left', 'center', 'right']),
+      valign: 고름('세로 정렬', ['top', 'center', 'bottom']),
+      bold: 참거짓('굵게'),
+      color: 글자('글자색 #RRGGBB'),
+      size: 숫자('글자 크기 pt'),
+    }),
+  ),
   // 실측: 문서 161편 가운데 122편(76%)이 셀을 합친다. 이게 없으면 정부 문서 표를 못 만든다.
   caption_side: 고름('table 캡션 자리. 기본 top', ['top', 'bottom', 'left', 'right']),
   merges: 목록('table 에서 합칠 칸들', 묶음('합칠 칸', {
@@ -187,7 +213,7 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   width_ratio: 숫자('장평 — 글자 너비 %. 100 이 보통'),
   outer_margin: 숫자('table 바깥 여백 pt'),
   // shape 블록. 실측: 도형 쓰는 34편 가운데 33편이 hp:rect 다 (254개).
-  border_color: 글자('shape 테두리 색 #RRGGBB'),
+  border_color: 글자('shape 테두리 색 · table 테두리 색 #RRGGBB'),
   line_width: 숫자('shape 테두리 굵기 pt'),
   indent: 참거짓('body 의 첫 줄 들여쓰기. 기본 true'),
   line_spacing: 숫자('줄 간격 %. 기본 160'),
@@ -225,7 +251,8 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
  */
 const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   op: 고름('무엇을 할까',
-    ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row', 'insert_image']),
+    ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row',
+      'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'insert_image']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -238,11 +265,14 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   color: 글자('set_style — 글자색 #RRGGBB'),
   font: 글자('set_style — 글꼴 이름'),
   align: 고름('set_style — 정렬', ['left', 'center', 'right', 'justify']),
-  at: 정수('insert_row — 몇 번째 자리에 넣을까 (0부터). 안 주면 맨 뒤. '
-    + 'delete_row — 몇 번째 줄부터 지울까 (0부터). **이건 꼭 줘야 한다**'),
-  count: 정수('insert_row · delete_row — 몇 줄. 기본 1'),
-  // **지우는 것은 되돌릴 수 없다.** 그래서 기본은 빈 줄만 지운다.
-  force: 참거짓('delete_row — 글이 든 줄도 지울까. 기본 false (빈 줄만 지운다)'),
+  at: 정수('insert_row·insert_col — 몇 번째 자리에 넣을까 (0부터). 안 주면 맨 뒤. '
+    + 'delete_row·delete_col — 몇 번째부터 지울까 (0부터). **이건 꼭 줘야 한다**'),
+  count: 정수('insert_row·delete_row 는 줄 수, insert_col·delete_col 은 칸 수. 기본 1'),
+  // **지우는 것은 되돌릴 수 없다.** 그래서 기본은 빈 것만 지운다.
+  force: 참거짓('delete_row·delete_col — 글이 든 것도 지울까. 기본 false (빈 것만 지운다)'),
+  // 합치기·풀기는 **칸 ID** 로 가리킨다. 합친 칸은 늘 왼쪽 위가 대표다.
+  rowspan: 정수('merge_cells — 세로로 몇 줄을 합칠까. 기본 1'),
+  colspan: 정수('merge_cells — 가로로 몇 칸을 합칠까. 기본 1'),
   path: 글자('insert_image — 그림 파일 **절대 경로** (png·jpg·gif·bmp)'),
   // **하나만 주는 것이 낫다.** 하나만 주면 비율을 지켜 나머지를 잡는다.
   // 둘 다 주면 그대로 늘려서 찌그러진다 — 그럴 뜻이 있을 때만 둘을 줘라.
@@ -1088,7 +1118,8 @@ export const 도구들: 도구[] = [
 
 /** 고침 하나의 꼴 */
 interface 고침 {
-  op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row' | 'insert_image';
+  op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row'
+  | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell' | 'insert_image';
   id?: string;
   text?: string;
   find?: string;
@@ -1097,6 +1128,7 @@ interface 고침 {
   bold?: boolean; italic?: boolean; underline?: boolean;
   size?: number; color?: string; font?: string; align?: string;
   at?: number; count?: number; force?: boolean;
+  rowspan?: number; colspan?: number;
   path?: string; width?: number; height?: number;
 }
 
@@ -1237,6 +1269,61 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       return 됨(지우기.value.지운수);
     }
 
+    case 'insert_col': {
+      if (!e.id) return 안됨('insert_col 에 id 가 없다', 'get_outline 이 준 표 ID(tbl_…)를 줘라.');
+      const t = 표꺼내기(d, e.id, 'insert_col');
+      if (!t.ok) return t;
+      const 넣기 = t.value.칸넣기(e.at ?? t.value.칸수, e.count ?? 1);
+      if (!넣기.ok) return 넣기;
+      const 탈 = 표어긋남(t.value, '칸을 넣었더니');
+      if (탈) return 탈;
+      return 됨(넣기.value.넣은수);
+    }
+
+    case 'delete_col': {
+      if (!e.id) return 안됨('delete_col 에 id 가 없다', 'get_outline 이 준 표 ID(tbl_…)를 줘라.');
+      // **자리를 꼭 받는다.** `delete_row` 와 같은 까닭이다 —
+      // 기본값을 두면 엉뚱한 칸이 말없이 날아간다.
+      if (e.at === undefined) {
+        return 안됨(
+          'delete_col 에 at 이 없다',
+          '몇 번째 칸부터 지울지 꼭 줘라 (0부터). '
+          + 'get_content(id: 표ID) 로 줄·칸을 먼저 보라.',
+        );
+      }
+      const t = 표꺼내기(d, e.id, 'delete_col');
+      if (!t.ok) return t;
+      const 지우기 = t.value.칸지우기(e.at, e.count ?? 1, e.force !== true);
+      if (!지우기.ok) return 지우기;
+      const 탈 = 표어긋남(t.value, '칸을 지웠더니');
+      if (탈) return 탈;
+      return 됨(지우기.value.지운수);
+    }
+
+    case 'merge_cells': {
+      const 자리 = 칸자리(e.id, 'merge_cells');
+      if (!자리.ok) return 자리;
+      const t = 표꺼내기(d, `tbl_${자리.value.표아이디}`, 'merge_cells');
+      if (!t.ok) return t;
+      const 합 = t.value.합치기(자리.value.row, 자리.value.col, e.rowspan ?? 1, e.colspan ?? 1);
+      if (!합.ok) return 합;
+      const 탈 = 표어긋남(t.value, '칸을 합쳤더니');
+      if (탈) return 탈;
+      return 됨(합.value.지운수);
+    }
+
+    case 'split_cell': {
+      const 자리 = 칸자리(e.id, 'split_cell');
+      if (!자리.ok) return 자리;
+      const t = 표꺼내기(d, `tbl_${자리.value.표아이디}`, 'split_cell');
+      if (!t.ok) return t;
+      const 풀기 = t.value.합침풀기(자리.value.row, 자리.value.col);
+      if (!풀기.ok) return 풀기;
+      const 탈 = 표어긋남(t.value, '합침을 풀었더니');
+      if (탈) return 탈;
+      return 됨(풀기.value.세운수);
+    }
+
     case 'insert_image': {
       if (!e.id) return 안됨('insert_image 에 id 가 없다', '그림을 넣을 셀·문단 ID 를 줘라.');
       if (!e.path) return 안됨('insert_image 에 path 가 없다', '그림 파일 절대 경로를 줘라.');
@@ -1275,9 +1362,54 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
     default:
       return 안됨(
         `모르는 op: ${(e as { op?: string }).op}`,
-        'set_text · replace · set_style · insert_row · insert_image 가운데 하나여야 한다.',
+        'set_text · replace · set_style · insert_row · delete_row · insert_col · delete_col'
+        + ' · merge_cells · split_cell · insert_image 가운데 하나여야 한다.',
       );
   }
+}
+
+/**
+ * 표 ID 로 `표` 를 꺼낸다.
+ *
+ * **`source` 를 꼭 물려준다** — 없으면 복제한 줄·칸이 빈 채로 나온다.
+ * 줄·칸을 넣는 자리마다 이걸 되풀이하고 있어서 한곳에 모았다.
+ */
+function 표꺼내기(d: 문서, id: string, op: string): 결과<표> {
+  const r = d.찾기(id);
+  if (!r.ok) return r;
+  if (r.value.갈래 !== '표') {
+    return 안됨(`${id} 는 표가 아니다 (${r.value.갈래})`,
+      `${op} 에는 tbl_ 로 시작하는 ID 를 줘라.`);
+  }
+  return 됨(new 표(r.value.표.el, r.value.구역.source));
+}
+
+/** 칸 ID(`cell_…`) 를 줄·칸 자리로 푼다 */
+function 칸자리(id: string | undefined, op: string):
+결과<{ 표아이디: string; row: number; col: number }> {
+  if (!id) {
+    return 안됨(`${op} 에 id 가 없다`,
+      '가리킬 칸 ID(cell_…)를 줘라. 합친 칸은 **왼쪽 위**를 가리킨다.');
+  }
+  const 자리 = 셀아이디풀기(id);
+  if (!자리) {
+    return 안됨(`${id} 는 칸 ID 가 아니다`,
+      'cell_표ID_줄_칸 꼴이어야 한다. get_content(id: 표ID) 가 준 값을 그대로 써라.');
+  }
+  return 됨(자리);
+}
+
+/**
+ * 고친 뒤 표가 어긋났나 본다. 어긋났으면 **우리 잘못**이라고 말한다.
+ *
+ * 격자가 무너진 표를 저장하면 한글이 못 연다. 여기서 잡아 되돌리게 한다.
+ */
+function 표어긋남(t: 표, 무엇: string): 결과<number> | undefined {
+  if (t.탈만.length === 0) return undefined;
+  return 안됨(
+    `${무엇} 표가 어긋났다: ${t.탈만[0]}`,
+    '이건 우리 잘못이다. 되돌리고 다시 열어라.',
+  );
 }
 
 /**

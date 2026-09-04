@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { 문서 } from '@hwpx/doc';
-import { parseXml, findAll, getAttr, firstChildNamed, type ElementNode } from '@hwpx/owpml';
+import { parseXml, findAll, getAttr, firstChildNamed, childrenNamed, type ElementNode } from '@hwpx/owpml';
 import { 엮기, 서식장 } from '../src/index.js';
 
 const 뿌리 = path.resolve(__dirname, '../../..');
@@ -193,6 +193,96 @@ describe('표', () => {
     expect(셀들.length).toBeGreaterThan(0);
     // NONE 인 자리에 선을 그으면 원본에 없는 격자가 생긴다
     expect(엮기(d).html).not.toContain('border-left:0.12mm solid #000000;border-right:0.12mm solid #000000;border-top:0.12mm solid #000000;border-bottom:0.12mm solid #000000;background');
+  });
+
+  /**
+   * **여기 있는 시험이 없어서 칸 959개가 배경을 잃은 채 나갔다.**
+   *
+   * `hc:solidFill` · `hc:gradFill` 이라는 그럴듯한 이름을 찾고 있었는데,
+   * 표본 33편에 그 이름은 **한 번도 안 나온다.** 실제로 쓰는 것은
+   * `hc:winBrush` 387 · `hc:imgBrush` 17 · `hc:gradation` 11 이다.
+   *
+   * 글은 다 있으니 글자 수로는 안 걸렸고, 디자인 닮음은 칸 배경을 안 본다.
+   * 그래서 갈래 스물셋이 다 파랬다.
+   */
+  describe('칸 바탕 — 이름을 짐작하지 않는다', () => {
+    const 표많음 = () => 열기(path.join(표본, '로컬'), '표많음-교육혁신선도지역.hwpx');
+
+    it('**`hc:solidFill`·`hc:gradFill` 은 실제 문서에 없는 이름이다**', () => {
+      const d = 표많음();
+      const 머리 = parseXml(d.머리.toXml()).root;
+      expect(findAll(머리, 'hc:solidFill').length).toBe(0);
+      expect(findAll(머리, 'hc:gradFill').length).toBe(0);
+      // 실제로 쓰는 것
+      expect(findAll(머리, 'hc:winBrush').length).toBeGreaterThan(0);
+    });
+
+    it('**`hc:winBrush` 의 면색이 실린다**', () => {
+      const d = 표많음();
+      const 머리 = parseXml(d.머리.toXml()).root;
+      const 색들 = findAll(머리, 'hc:winBrush')
+        .map((w) => getAttr(w, 'faceColor'))
+        .filter((v): v is string => v !== undefined && v !== 'none' && /^#[0-9A-Fa-f]{6}$/.test(v));
+      expect(색들.length, '면색이 든 winBrush 가 없으면 이 시험은 아무것도 안 본다')
+        .toBeGreaterThan(3);
+      const html = 엮기(d, { 그림: false }).html;
+      const 실린것 = 색들.filter((c) => html.includes(`background:${c}`));
+      expect(실린것.length, `면색 ${색들.length}개 가운데 ${실린것.length}개만 실렸다`)
+        .toBeGreaterThan(색들.length / 2);
+    });
+
+  /**
+   * **`faceColor="none"` 은 문서로는 못 잰다.**
+   *
+   * 대화상자에 「색 채우기 없음」이 있으니 나올 수 있는 값인데,
+   * 표본 33편을 다 뒤져도 **그 채움을 쓰는 칸이 0개**다
+   * (`none` 인 borderFill 자체는 있지만 문단·쪽 테두리용이라 칸이 안 가리킨다).
+   *
+   * 문서로 재려 했더니 고장을 내도 시험이 통과했다 — 아무것도 안 보고 있었다.
+   * 그래서 XML 조각을 손으로 지어 **그 갈래만 곧장** 찌른다.
+   */
+    it('`faceColor="none"` 은 안 칠한다', () => {
+      const 머리 = parseXml(
+        '<hh:head xmlns:hh="h" xmlns:hc="c"><hh:borderFills>'
+        + '<hh:borderFill id="1"><hc:fillBrush>'
+        + '<hc:winBrush faceColor="none" hatchColor="#999999" alpha="0"/>'
+        + '</hc:fillBrush></hh:borderFill>'
+        + '<hh:borderFill id="2"><hc:fillBrush>'
+        + '<hc:winBrush faceColor="#C0D8F0" hatchColor="#999999" alpha="0"/>'
+        + '</hc:fillBrush></hh:borderFill>'
+        + '</hh:borderFills></hh:head>',
+      ).root;
+      const 장 = new 서식장(머리);
+      expect(장.테두리모양('1')!.바탕, 'none 을 색으로 읽으면 안 칠한 칸까지 칠해진다')
+        .toBeUndefined();
+      // 진짜 색은 살아야 한다 — none 을 세게 거르다 색까지 지우면 반대로 틀린다
+      expect(장.테두리모양('2')!.바탕).toBe('#C0D8F0');
+    });
+
+    it('**그러데이션이 CSS 로 간다**', () => {
+      const d = 표많음();
+      const 머리 = parseXml(d.머리.toXml()).root;
+      const 그라 = findAll(머리, 'hc:gradation');
+      expect(그라.length, '그러데이션이 없으면 이 시험은 아무것도 안 본다').toBeGreaterThan(0);
+      const html = 엮기(d, { 그림: false }).html;
+      expect(html).toMatch(/background:(linear|radial|conic)-gradient\(/);
+      // 적힌 색이 그대로 실려야 한다 — 첫 색만 쓰고 마는 것이 아니다
+      const 색들 = childrenNamed(그라[0]!, 'hc:color')
+        .map((c) => getAttr(c, 'value'))
+        .filter((v): v is string => v !== undefined);
+      expect(색들.length).toBeGreaterThanOrEqual(2);
+      for (const c of 색들) expect(html).toContain(c);
+    });
+
+    it('그림 채우기는 **색으로 흉내 내지 않는다**', () => {
+      // 엉뚱한 색을 칠하느니 비워 두는 편이 낫다
+      const d = 열기(path.join(표본, '로컬'), '그림많음-돌봄교실계획.hwpx');
+      const 머리 = parseXml(d.머리.toXml()).root;
+      expect(findAll(머리, 'hc:imgBrush').length,
+        'imgBrush 가 없으면 이 시험은 아무것도 안 본다').toBeGreaterThan(0);
+      // 터지지 않고 엮이기만 하면 된다
+      expect(엮기(d, { 그림: false }).문단수).toBeGreaterThan(0);
+    });
   });
 
   it('**표를 `<p>` 안에 넣지 않는다**', () => {

@@ -61,7 +61,8 @@ export interface 테두리모양 {
   오른: 선 | undefined;
   위: 선 | undefined;
   아래: 선 | undefined;
-  바탕색: string | undefined;
+  /** CSS `background` 로 그대로 쓸 값. 색이든 그러데이션이든 */
+  바탕: string | undefined;
 }
 
 export interface 선 {
@@ -185,7 +186,7 @@ export class 서식장 {
       오른: 읽기('hh:rightBorder'),
       위: 읽기('hh:topBorder'),
       아래: 읽기('hh:bottomBorder'),
-      바탕색: 바탕색읽기(el),
+      바탕: 바탕읽기(el),
     };
   }
 }
@@ -233,23 +234,84 @@ function 값가지(paraPr: ElementNode): ElementNode | undefined {
 }
 
 /**
- * 칸 바탕색.
+ * 칸 바탕 — 색이든 그러데이션이든 CSS `background` 값으로.
  *
- * `hc:solidFill > hc:color/@value` 인 꼴과 `hc:solidFill/@value` 인 꼴이 둘 다 있다.
- * 그라데이션(`hc:gradFill`)은 첫 색만 쓴다 — HTML 로 옮기면 어차피 근사다.
+ * ## 처음에 **이름을 지어내서 하나도 못 읽었다**
+ *
+ * `hc:solidFill` 과 `hc:gradFill` 을 찾고 있었다. 그럴듯한 이름이지만
+ * **표본 33편에 그 이름은 한 번도 안 나온다.** 실제로 쓰는 것은 —
+ *
+ *     hc:winBrush 387 · hc:imgBrush 17 · hc:gradation 11
+ *
+ * 그 바람에 **칸 959개가 배경을 잃은 채** HTML 로 나갔다. 표 머리 줄의
+ * 띠 색이 통째로 빠지는데, 글은 다 있으니 글자 수로는 안 걸린다.
+ *
+ * 이름은 짐작하지 말고 **문서를 열어 세어 본다.**
  */
-function 바탕색읽기(borderFill: ElementNode): string | undefined {
-  const solid = findAll(borderFill, 'hc:solidFill')[0];
-  if (solid !== undefined) {
-    const c = firstChildNamed(solid, 'hc:color');
-    const v = (c && getAttr(c, 'value')) ?? getAttr(solid, 'value');
-    if (v !== undefined && v !== 'none') return v;
-  }
-  const grad = findAll(borderFill, 'hc:gradFill')[0];
+function 바탕읽기(borderFill: ElementNode): string | undefined {
+  const 통 = firstChildNamed(borderFill, 'hc:fillBrush');
+  if (통 === undefined) return undefined;
+
+  const grad = firstChildNamed(통, 'hc:gradation');
   if (grad !== undefined) {
-    const c = findAll(grad, 'hc:color')[0];
-    const v = c && getAttr(c, 'value');
-    if (v !== undefined && v !== 'none') return v;
+    const css = 그러데이션값(grad);
+    if (css !== undefined) return css;
   }
+
+  const win = firstChildNamed(통, 'hc:winBrush');
+  if (win !== undefined) {
+    // `faceColor="none"` 이 「색 채우기 없음」이다. 표본 winBrush 387개 가운데
+    // 그냥 `none` 인 것이 대부분이라, 이걸 안 거르면 온 칸이 검게 칠해진다.
+    const v = getAttr(win, 'faceColor');
+    if (v !== undefined && v !== 'none' && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  }
+
+  // `hc:imgBrush`(그림으로 채우기)는 아직 못 옮긴다. 색으로 흉내 내지 않는다 —
+  // 엉뚱한 색을 칠하느니 비워 두는 편이 낫다.
   return undefined;
+}
+
+/**
+ * 그러데이션(`hc:gradation`) → CSS.
+ *
+ * 규격이 대화상자와 하나씩 맞물린다.
+ *
+ * | 대화상자 | 속성 |
+ * |---|---|
+ * | 유형 | `@type` — `LINEAR` `RADIAL` `CONICAL` `SQUARE` |
+ * | 기울임 | `@angle` (시작각) |
+ * | 가로·세로 중심 | `@centerX` `@centerY` |
+ * | 번짐 정도 | `@step` |
+ * | 번짐 중심 | `@stepCenter` |
+ * | 시작·끝 색 | `hc:color` 여럿 (`@colorNum` 개) |
+ *
+ * **각도는 재서 맞췄다.** 한글 `angle=90` 이 대화상자의 「세로」다.
+ * CSS `linear-gradient` 는 180deg 가 위→아래(세로)라 **90을 더한다.**
+ */
+function 그러데이션값(grad: ElementNode): string | undefined {
+  const 색들 = childrenNamed(grad, 'hc:color')
+    .map((c) => getAttr(c, 'value'))
+    .filter((v): v is string => v !== undefined && /^#[0-9a-fA-F]{6}$/.test(v));
+  if (색들.length < 2) return 색들[0];
+
+  const 멈춤 = 색들.join(', ');
+  const 종류 = (getAttr(grad, 'type') ?? 'LINEAR').toUpperCase();
+  const 수 = (이름: string, 기본: number): number => {
+    const v = Number(getAttr(grad, 이름));
+    return Number.isFinite(v) ? v : 기본;
+  };
+  const cx = 수('centerX', 0);
+  const cy = 수('centerY', 0);
+
+  switch (종류) {
+    case 'RADIAL':
+      return `radial-gradient(circle at ${cx}% ${cy}%, ${멈춤})`;
+    case 'CONICAL':
+      return `conic-gradient(from ${수('angle', 90)}deg at ${cx}% ${cy}%, ${멈춤})`;
+    case 'SQUARE':
+      // 사각형 번짐은 CSS 에 짝이 없다. 원형으로 근사한다
+      return `radial-gradient(${멈춤})`;
+    default:
+      return `linear-gradient(${(수('angle', 90) + 90) % 360}deg, ${멈춤})`;
+  }
 }

@@ -24,6 +24,55 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    '표를 가를 때 위아래 어느 쪽이 비어도 둔다 (줄 없는 표는 한글이 안 연다)',
+    'packages/doc/src/표.ts',
+    '    if (자리 < 1 || 자리 >= this.줄수) {',
+    '    if (false) {',
+    'packages/doc',
+  ],
+  [
+    '표를 가르고 위쪽에서 아래 줄을 안 걷어낸다 (같은 줄이 두 표에 있다)',
+    'packages/doc/src/표.ts',
+    '    for (let r = 원본줄.length - 1; r >= 자리; r--) removeNode(원본줄[r]!);',
+    '    void 원본줄;',
+    'packages/doc',
+  ],
+  [
+    '칸 수가 달라도 표를 붙인다 (격자가 어긋나 한글이 잘못 그린다)',
+    'packages/doc/src/표.ts',
+    '    if (아래.칸수 !== this.칸수) {',
+    '    if (false) {',
+    'packages/doc',
+  ],
+  [
+    '셀을 나눈 뒤 다른 줄을 도로 안 합친다 (표 전체가 갈라진다)',
+    'packages/doc/src/표.ts',
+    '        const 합 = this.합치기(r, col, 시작.자리.rowSpan, 시작.자리.colSpan + (칸수 - 1));',
+    '        const 합 = { ok: true };',
+    'packages/doc',
+  ],
+  [
+    '세로로 나눌 때 가로로 나눈 짝을 남의 칸으로 본다 (오른쪽 반이 덮인다)',
+    'packages/doc/src/표.ts',
+    '        if (c >= col && c < col + 칸수) continue;',
+    '        if (c === col) continue;',
+    'packages/doc',
+  ],
+  [
+    '나눈 칸의 폭을 안 쪼갠다 (표가 넓어져 쪽 밖으로 나간다)',
+    'packages/doc/src/표.ts',
+    '        새폭[col + 칸수 - 1] = 내폭 - 몫 * (칸수 - 1);',
+    '        새폭[col + 칸수 - 1] = 내폭;',
+    'packages/doc',
+  ],
+  [
+    'pageBreak 이 안 적혀 있으면 나눔으로 친다 (규격 기본은 셀 단위다)',
+    'packages/doc/src/표.ts',
+    "      default: return '셀단위';   // 규격 기본값이 Cell 이다",
+    "      default: return '나눔';",
+    'packages/doc',
+  ],
+  [
     '칸 주소를 0,1,2… 로 다시 매긴다 (세로로 덮인 줄이 왼쪽으로 밀린다)',
     'packages/doc/src/표.ts',
     '        while (덮임[r]?.[c]) c++;',

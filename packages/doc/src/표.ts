@@ -570,6 +570,27 @@ export class 표 {
     return undefined;
   }
 
+  /**
+   * 줄마다 그 자리에 **빈 칸을 끼운다.** 폭은 안 건드린다.
+   *
+   * `칸넣기` 는 이걸 하고 나서 폭을 고르게 다시 나눈다.
+   * `셀나누기` 는 나눈 칸만 쪼개고 나머지 폭은 그대로 둬야 해서, 갈라 놓았다.
+   */
+  private 칸끼우기(자리: number, 몇칸: number): void {
+    for (const tr of this.줄들) {
+      const 뒤 = this.줄에서칸(tr, 자리);
+      const 이줄셀들 = childrenNamed(tr, 'hp:tc');
+      const 본 = 뒤 ?? 이줄셀들[이줄셀들.length - 1];
+      if (!본) continue;   // 셀이 하나도 없는 줄은 안 건드린다
+      for (let k = 0; k < 몇칸; k++) {
+        const 새칸 = this.빈셀본뜨기(본);
+        if (뒤) insertBefore(뒤, 새칸);
+        else appendChild(tr, 새칸);
+      }
+    }
+    this.칸주소다시();
+  }
+
   /** 셀 하나를 본떠 **빈 1×1 셀**로 만든다 */
   private 빈셀본뜨기(본: ElementNode): ElementNode {
     const 새칸 = 복제하기(본, this.source ?? '');
@@ -627,19 +648,7 @@ export class 표 {
     const 옛폭 = this.열폭;
     const 총폭 = 옛폭.reduce<number>((a, b) => a + (b ?? 0), 0);
 
-    for (const tr of 줄들) {
-      const 뒤 = this.줄에서칸(tr, 자리);
-      const 이줄셀들 = childrenNamed(tr, 'hp:tc');
-      const 본 = 뒤 ?? 이줄셀들[이줄셀들.length - 1];
-      if (!본) continue;   // 셀이 하나도 없는 줄은 안 건드린다
-      for (let k = 0; k < 몇칸; k++) {
-        const 새칸 = this.빈셀본뜨기(본);
-        if (뒤) insertBefore(뒤, 새칸);
-        else appendChild(tr, 새칸);
-      }
-    }
-
-    this.칸주소다시();
+    this.칸끼우기(자리, 몇칸);
 
     // 폭을 다시 나눈다 — 표 전체 폭은 그대로
     if (총폭 > 0 && 옛폭.every((w) => w !== undefined)) {
@@ -802,6 +811,226 @@ export class 표 {
     if (getAttr(sz, 'height') === String(합)) return 됨({ 바뀐수: 0 });
     setAttr(sz, 'height', String(합));
     return 됨({ 바뀐수: 1 });
+  }
+
+  /**
+   * **셀 하나를 여러 칸으로 나눈다.** 한글의 「셀 나누기」다.
+   *
+   * ## 표 전체에 금을 긋고 남은 줄은 도로 합친다
+   *
+   * HWPX 에는 「이 칸만 둘로」 라는 것이 없다. 격자가 표 전체에 걸리기 때문에,
+   * 칸 하나를 둘로 나누려면 **표에 열을 하나 더 만들고, 나머지 줄에서는
+   * 그 둘을 도로 합쳐야** 한다. 한글이 하는 것도 그것이다.
+   *
+   * 그래서 나눈 칸의 폭만 쪼개지고 **다른 열의 폭은 그대로**다.
+   *
+   * ## 막는 것
+   *
+   * 다른 셀의 가로 합침이 금 그을 자리를 가로지르면 손대지 않는다 —
+   * 그 셀이 몇 칸을 덮는지가 어긋난다.
+   *
+   * 합쳐진 셀을 도로 풀려면 이게 아니라 `합침풀기` 다.
+   */
+  셀나누기(row: number, col: number, 줄수 = 1, 칸수 = 1): 결과<{ 늘린칸: number; 늘린줄: number }> {
+    if (줄수 < 1 || 칸수 < 1) {
+      return 안됨(`${줄수}줄 ${칸수}칸으로 나누라 한다`, '둘 다 1 이상이어야 한다.');
+    }
+    if (줄수 === 1 && 칸수 === 1) {
+      return 안됨('1줄 1칸으로는 나눌 것이 없다', '줄수나 칸수 가운데 하나는 2 이상이어야 한다.');
+    }
+    const 대상 = this.시작셀(row, col);
+    if (!대상) {
+      return 안됨(
+        `(${row},${col}) 에서 시작하는 셀이 없다 — 덮인 자리다`,
+        '합친 셀의 **왼쪽 위**를 가리켜라. 합침을 풀려면 합침풀기를 써라.',
+      );
+    }
+    const 자리 = 대상.자리;
+    if (자리.rowSpan > 1 || 자리.colSpan > 1) {
+      return 안됨(
+        `(${row},${col}) 은 이미 ${자리.rowSpan}×${자리.colSpan} 로 합쳐진 셀이다`,
+        '합친 셀은 합침풀기로 먼저 풀어라. 그 뒤에 나눠라.',
+      );
+    }
+
+    let 늘린칸 = 0;
+    let 늘린줄 = 0;
+
+    // ── 가로로 나누기 ─────────────────────────────────────────────────────
+    if (칸수 > 1) {
+      const 금자리 = col + 1;
+      for (const c of this.셀들) {
+        const a = c.자리;
+        if (a.colSpan > 1 && a.col < 금자리 && 금자리 < a.col + a.colSpan) {
+          return 안됨(
+            `(${a.row},${a.col}) 셀이 ${a.colSpan}칸에 걸쳐 있어 금 그을 자리를 가로지른다`,
+            '그 셀의 합침을 먼저 풀어라.',
+          );
+        }
+      }
+      const 옛폭 = this.열폭;
+      const 내폭 = 옛폭[col];
+
+      this.칸끼우기(금자리, 칸수 - 1);
+      늘린칸 = 칸수 - 1;
+
+      // **다른 줄에서는 도로 합친다.** 안 그러면 표 전체가 쪼개진다
+      for (let r = 0; r < this.줄수; r++) {
+        if (r === row) continue;
+        const 시작 = this.시작셀(r, col);
+        if (!시작) continue;   // 위에서 덮인 자리
+        const 합 = this.합치기(r, col, 시작.자리.rowSpan, 시작.자리.colSpan + (칸수 - 1));
+        if (!합.ok) return 안됨(`${r}째 줄을 도로 못 합쳤다: ${합.이유}`, 합.어떻게);
+      }
+
+      // 폭 — 나눈 칸만 쪼개고 나머지는 그대로
+      if (내폭 !== undefined && 옛폭.every((w) => w !== undefined)) {
+        const 몫 = Math.floor(내폭 / 칸수);
+        const 새폭 = [...(옛폭 as number[])];
+        새폭.splice(col, 1, ...new Array<number>(칸수).fill(몫));
+        새폭[col + 칸수 - 1] = 내폭 - 몫 * (칸수 - 1);
+        const w = this.열폭주기(새폭);
+        if (!w.ok) return 안됨(`나누기는 했는데 폭을 못 맞췄다: ${w.이유}`, w.어떻게);
+      }
+    }
+
+    // ── 세로로 나누기 ─────────────────────────────────────────────────────
+    if (줄수 > 1) {
+      const 넣기 = this.줄넣기(row + 1, 줄수 - 1);
+      if (!넣기.ok) return 안됨(`세로로 못 나눴다: ${넣기.이유}`, 넣기.어떻게);
+      늘린줄 = 줄수 - 1;
+
+      // 다른 칸들은 도로 합친다.
+      //
+      // **가로로 이미 나눴으면 그 칸들도 「내 것」이다.** 나눈 칸 하나의
+      // `colSpan` 만 보고 건너뛰면, 짝이 되는 다른 반쪽이 남의 칸으로 몰려
+      // 세로 합침이 걸린다 — 2×2 로 나눌 때 오른쪽 반이 그렇게 됐다.
+      for (let c = 0; c < this.칸수; c++) {
+        if (c >= col && c < col + 칸수) continue;
+        const 시작 = this.시작셀(row, c);
+        if (!시작) continue;
+        const 합 = this.합치기(row, c, 시작.자리.rowSpan + (줄수 - 1), 시작.자리.colSpan);
+        if (!합.ok) return 안됨(`${c}째 칸을 도로 못 합쳤다: ${합.이유}`, 합.어떻게);
+      }
+      this.높이맞추기();
+    }
+
+    return 됨({ 늘린칸, 늘린줄 });
+  }
+
+  /**
+   * **표를 두 개로 가른다.** 한글의 「표 나누기」다.
+   *
+   * `자리` 줄부터 아래를 떼어 **새 `hp:tbl` 로 만들어 돌려준다.**
+   * 문서 어디에 놓을지는 여기서 정하지 않는다 — 표는 제가 어느 문단에
+   * 들어 있는지 모르기 때문이다. 넣는 것은 부르는 쪽 몫이다.
+   *
+   * 긴 표를 쪽마다 끊거나, 한 표에 뭉쳐 있던 것을 항목별로 가를 때 쓴다.
+   *
+   * **세로로 합쳐진 셀이 자르는 자리를 가로지르면 손대지 않는다** —
+   * 자르면 그 셀이 두 표에 걸쳐 격자가 무너진다.
+   */
+  줄떼어내기(자리: number): 결과<{ 새표: ElementNode; 옮긴줄: number }> {
+    if (자리 < 1 || 자리 >= this.줄수) {
+      return 안됨(
+        `${자리}번 자리에서는 못 가른다 (표는 ${this.줄수}줄이다)`,
+        `1~${this.줄수 - 1} 사이여야 한다 — 위아래 다 줄이 남아야 한다.`,
+      );
+    }
+    for (const c of this.셀들) {
+      const a = c.자리;
+      if (a.rowSpan > 1 && a.row < 자리 && 자리 < a.row + a.rowSpan) {
+        return 안됨(
+          `(${a.row},${a.col}) 셀이 ${a.rowSpan}줄에 걸쳐 있어 자르는 자리를 가로지른다`,
+          '그 셀의 합침을 먼저 풀거나 다른 자리에서 갈라라.',
+        );
+      }
+    }
+
+    const 새el = 복제하기(this.el, this.source ?? '');
+    const 새표 = new 표(새el, this.source);
+
+    // 위쪽은 원본에, 아래쪽은 새 표에 남긴다
+    const 원본줄 = childrenNamed(this.el, 'hp:tr');
+    for (let r = 원본줄.length - 1; r >= 자리; r--) removeNode(원본줄[r]!);
+    const 새줄 = childrenNamed(새el, 'hp:tr');
+    for (let r = 자리 - 1; r >= 0; r--) removeNode(새줄[r]!);
+
+    const 옮긴줄 = childrenNamed(새el, 'hp:tr').length;
+    for (const t of [this, 새표]) {
+      t.칸주소다시();
+      setAttr(t.el, 'rowCnt', String(childrenNamed(t.el, 'hp:tr').length));
+      t.높이맞추기();
+    }
+
+    return 됨({ 새표: 새el, 옮긴줄 });
+  }
+
+  /**
+   * **다른 표를 아래에 이어 붙인다.** 한글의 「표 붙이기」다.
+   *
+   * 붙일 표의 줄을 통째로 옮겨 온다. 옮긴 뒤 그 표는 **줄이 없는 껍데기**가
+   * 되므로 부르는 쪽이 없애야 한다 — 줄 없는 표는 한글이 안 연다.
+   *
+   * **칸 수가 다르면 안 붙인다.** 억지로 붙이면 격자가 어긋나 한글이 표를
+   * 잘못 그린다. 폭이 달라도 붙이되, 아래쪽 폭이 위쪽에 맞춰진다.
+   */
+  이어붙이기(아래: 표): 결과<{ 붙인줄: number }> {
+    if (아래.el === this.el) {
+      return 안됨('제 자신을 붙이려 한다', '다른 표를 줘라.');
+    }
+    if (아래.칸수 !== this.칸수) {
+      return 안됨(
+        `칸 수가 다르다 — 위는 ${this.칸수}칸, 아래는 ${아래.칸수}칸이다`,
+        '먼저 칸 수를 맞춰라 (insert_col · delete_col).',
+      );
+    }
+    const 옮길줄 = childrenNamed(아래.el, 'hp:tr');
+    if (옮길줄.length === 0) {
+      return 안됨('붙일 표에 줄이 없다', '빈 표는 붙일 것이 없다.');
+    }
+
+    const 폭들 = this.열폭;
+    // `childrenNamed` 는 새 배열을 주므로 옮기는 동안 흔들리지 않는다
+    for (const tr of 옮길줄) {
+      removeNode(tr);
+      appendChild(this.el, tr);
+    }
+
+    this.칸주소다시();
+    setAttr(this.el, 'rowCnt', String(childrenNamed(this.el, 'hp:tr').length));
+    setAttr(아래.el, 'rowCnt', '0');
+    // 붙인 줄의 폭을 위쪽에 맞춘다 — 안 맞추면 표가 들쭉날쭉해진다
+    if (폭들.every((w) => w !== undefined)) this.열폭주기(폭들 as number[]);
+    this.높이맞추기();
+
+    return 됨({ 붙인줄: 옮길줄.length });
+  }
+
+  /**
+   * **쪽 경계에서 표를 어떻게 나눌까.** 「표/셀 속성 → 표」의 「여러 쪽 지원」이다.
+   *
+   * | 대화상자 | 값 | 무슨 뜻인가 |
+   * |---|---|---|
+   * | 나눔 | `TABLE` | 표는 나누되 **셀은 안 나눈다** — 칸이 통째로 다음 쪽으로 |
+   * | 셀 단위로 나눔 | `CELL` | 셀 **안의 글까지** 나눈다 |
+   * | 나누지 않음 | `NONE` | 안 나눈다 — 표가 통째로 다음 쪽으로 넘어간다 |
+   *
+   * 실측에서 셋이 다 쓰인다 — `CELL` 333 · `NONE` 20 · `TABLE` 2.
+   * 그런데 우리 표 조각에는 `CELL` 이 박혀 있고 **바꿀 길이 없었다.**
+   * 한 쪽에 꼭 붙어 있어야 하는 결재란·서명란이 `NONE` 이라야 하는데 못 줬다.
+   */
+  쪽넘김주기(값: '나눔' | '셀단위' | '안나눔'): void {
+    const 표기 = { 나눔: 'TABLE', 셀단위: 'CELL', 안나눔: 'NONE' } as const;
+    setAttr(this.el, 'pageBreak', 표기[값]);
+  }
+
+  get 쪽넘김(): '나눔' | '셀단위' | '안나눔' {
+    switch (getAttr(this.el, 'pageBreak')) {
+      case 'TABLE': return '나눔';
+      case 'NONE': return '안나눔';
+      default: return '셀단위';   // 규격 기본값이 Cell 이다
+    }
   }
 
   /** 머리 줄을 쪽마다 되풀이할까 */

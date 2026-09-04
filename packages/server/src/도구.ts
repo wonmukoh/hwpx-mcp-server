@@ -24,7 +24,10 @@ import {
 } from '@hwpx/doc';
 import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각 } from '@hwpx/compose';
 import { 엮기 } from '@hwpx/render';
-import { childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp, appendChild, type ElementNode } from '@hwpx/owpml';
+import {
+  childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp,
+  appendChild, insertAfter, removeNode, closestNamed, textOf, type ElementNode,
+} from '@hwpx/owpml';
 
 import {
   글자, 숫자, 정수, 참거짓, 목록, 고름, 묶음, doc_id, 절대경로,
@@ -252,7 +255,8 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
 const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   op: 고름('무엇을 할까',
     ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row',
-      'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'insert_image']),
+      'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'set_table',
+      'split_table', 'join_tables', 'insert_image']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -273,6 +277,13 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   // 합치기·풀기는 **칸 ID** 로 가리킨다. 합친 칸은 늘 왼쪽 위가 대표다.
   rowspan: 정수('merge_cells — 세로로 몇 줄을 합칠까. 기본 1'),
   colspan: 정수('merge_cells — 가로로 몇 칸을 합칠까. 기본 1'),
+  // split_cell 은 **안 주면 합침 풀기**, 주면 성한 칸에 금을 긋는다.
+  rows: 정수('split_cell — 세로로 몇 줄로 나눌까. 안 주면 합침을 푼다'),
+  cols: 정수('split_cell — 가로로 몇 칸으로 나눌까. 안 주면 합침을 푼다'),
+  page_break: 고름('set_table — 쪽 경계에서 표를 어떻게 나눌까',
+    ['split', 'cell', 'none']),
+  repeat_header: 참거짓('set_table — 머리 줄을 쪽마다 되풀이할까'),
+  with_id: 글자('join_tables — 아래에 이어 붙일 표 ID (tbl_…)'),
   path: 글자('insert_image — 그림 파일 **절대 경로** (png·jpg·gif·bmp)'),
   // **하나만 주는 것이 낫다.** 하나만 주면 비율을 지켜 나머지를 잡는다.
   // 둘 다 주면 그대로 늘려서 찌그러진다 — 그럴 뜻이 있을 때만 둘을 줘라.
@@ -1119,7 +1130,8 @@ export const 도구들: 도구[] = [
 /** 고침 하나의 꼴 */
 interface 고침 {
   op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row'
-  | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell' | 'insert_image';
+  | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell'
+  | 'set_table' | 'split_table' | 'join_tables' | 'insert_image';
   id?: string;
   text?: string;
   find?: string;
@@ -1129,6 +1141,9 @@ interface 고침 {
   size?: number; color?: string; font?: string; align?: string;
   at?: number; count?: number; force?: boolean;
   rowspan?: number; colspan?: number;
+  rows?: number; cols?: number;
+  page_break?: string; repeat_header?: boolean;
+  with_id?: string;
   path?: string; width?: number; height?: number;
 }
 
@@ -1303,7 +1318,7 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
     case 'merge_cells': {
       const 자리 = 칸자리(e.id, 'merge_cells');
       if (!자리.ok) return 자리;
-      const t = 표꺼내기(d, `tbl_${자리.value.표아이디}`, 'merge_cells');
+      const t = 표꺼내기(d, 자리.value.표아이디, 'merge_cells');
       if (!t.ok) return t;
       const 합 = t.value.합치기(자리.value.row, 자리.value.col, e.rowspan ?? 1, e.colspan ?? 1);
       if (!합.ok) return 합;
@@ -1315,13 +1330,122 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
     case 'split_cell': {
       const 자리 = 칸자리(e.id, 'split_cell');
       if (!자리.ok) return 자리;
-      const t = 표꺼내기(d, `tbl_${자리.value.표아이디}`, 'split_cell');
+      const t = 표꺼내기(d, 자리.value.표아이디, 'split_cell');
       if (!t.ok) return t;
-      const 풀기 = t.value.합침풀기(자리.value.row, 자리.value.col);
-      if (!풀기.ok) return 풀기;
-      const 탈 = 표어긋남(t.value, '합침을 풀었더니');
+
+      // **한 op 로 둘을 받는다.** 사람 눈에는 「셀 나누기」 하나인데,
+      // 합친 것을 도로 푸는 것과 성한 칸에 금을 긋는 것은 서로 다른 일이다.
+      // `rows`·`cols` 를 안 주면 합침을 푼다.
+      if (e.rows === undefined && e.cols === undefined) {
+        const 풀기 = t.value.합침풀기(자리.value.row, 자리.value.col);
+        if (!풀기.ok) return 풀기;
+        const 탈 = 표어긋남(t.value, '합침을 풀었더니');
+        if (탈) return 탈;
+        return 됨(풀기.value.세운수);
+      }
+
+      const 나누기 = t.value.셀나누기(자리.value.row, 자리.value.col, e.rows ?? 1, e.cols ?? 1);
+      if (!나누기.ok) return 나누기;
+      const 탈 = 표어긋남(t.value, '셀을 나눴더니');
       if (탈) return 탈;
-      return 됨(풀기.value.세운수);
+      return 됨(나누기.value.늘린칸 + 나누기.value.늘린줄);
+    }
+
+    case 'split_table': {
+      if (!e.id) return 안됨('split_table 에 id 가 없다', 'get_outline 이 준 표 ID(tbl_…)를 줘라.');
+      if (e.at === undefined) {
+        return 안됨(
+          'split_table 에 at 이 없다',
+          '몇 번째 줄부터 떼어낼지 꼭 줘라 (0부터). '
+          + 'get_content(id: 표ID) 로 줄을 먼저 보라.',
+        );
+      }
+      const t = 표꺼내기(d, e.id, 'split_table');
+      if (!t.ok) return t;
+
+      // **표가 든 문단을 먼저 찾는다.** 떼어낸 표를 놓을 자리가 그 뒤다.
+      const 담긴문단 = closestNamed(t.value.el, 'hp:p');
+      if (!담긴문단) {
+        return 안됨('이 표가 어느 문단에 든 것인지 못 찾았다', '깨진 문서다. 다시 열어라.');
+      }
+
+      const 뗀것 = t.value.줄떼어내기(e.at);
+      if (!뗀것.ok) return 뗀것;
+
+      const 새문단 = 뜨기(조각.문단);
+      const 런 = 뜨기(조각.표런);
+      appendChild(런, 뗀것.value.새표);
+      appendChild(새문단, 런);
+      insertAfter(담긴문단, 새문단);
+
+      const 탈 = 표어긋남(t.value, '표를 갈랐더니');
+      if (탈) return 탈;
+      const 아래탈 = 표어긋남(new 표(뗀것.value.새표), '떼어낸 표가');
+      if (아래탈) return 아래탈;
+      return 됨(뗀것.value.옮긴줄);
+    }
+
+    case 'join_tables': {
+      if (!e.id || !e.with_id) {
+        return 안됨(
+          'join_tables 에는 id 와 with_id 가 다 있어야 한다',
+          '위 표와 아래 표의 ID(tbl_…)를 둘 다 줘라.',
+        );
+      }
+      const 위 = 표꺼내기(d, e.id, 'join_tables');
+      if (!위.ok) return 위;
+      const 아래 = 표꺼내기(d, e.with_id, 'join_tables');
+      if (!아래.ok) return 아래;
+
+      const 아래문단 = closestNamed(아래.value.el, 'hp:p');
+      const 붙임 = 위.value.이어붙이기(아래.value);
+      if (!붙임.ok) return 붙임;
+
+      // **껍데기가 된 표는 없앤다.** 줄 없는 표는 한글이 안 연다.
+      // 그 표만 들어 있던 문단이면 문단째로 걷어낸다.
+      removeNode(아래.value.el);
+      if (아래문단
+        && findAll(아래문단, 'hp:t').every((x) => textOf(x) === '')
+        && findAll(아래문단, 'hp:tbl').length === 0
+        && findAll(아래문단, 'hp:pic').length === 0) {
+        removeNode(아래문단);
+      }
+
+      const 탈 = 표어긋남(위.value, '표를 붙였더니');
+      if (탈) return 탈;
+      return 됨(붙임.value.붙인줄);
+    }
+
+    case 'set_table': {
+      if (!e.id) return 안됨('set_table 에 id 가 없다', 'get_outline 이 준 표 ID(tbl_…)를 줘라.');
+      const t = 표꺼내기(d, e.id, 'set_table');
+      if (!t.ok) return t;
+      let 바뀐수 = 0;
+      if (e.page_break !== undefined) {
+        const 표기: Record<string, '나눔' | '셀단위' | '안나눔'> = {
+          split: '나눔', cell: '셀단위', none: '안나눔',
+        };
+        const 값 = 표기[e.page_break];
+        if (값 === undefined) {
+          return 안됨(
+            `모르는 page_break: ${e.page_break}`,
+            'split(나눔) · cell(셀 단위로 나눔) · none(나누지 않음) 가운데 하나여야 한다.',
+          );
+        }
+        t.value.쪽넘김주기(값);
+        바뀐수++;
+      }
+      if (e.repeat_header !== undefined) {
+        t.value.머리행반복주기(e.repeat_header);
+        바뀐수++;
+      }
+      if (바뀐수 === 0) {
+        return 안됨(
+          'set_table 에 바꿀 것이 없다',
+          'page_break 나 repeat_header 가운데 하나는 줘라.',
+        );
+      }
+      return 됨(바뀐수);
     }
 
     case 'insert_image': {
@@ -1363,7 +1487,8 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       return 안됨(
         `모르는 op: ${(e as { op?: string }).op}`,
         'set_text · replace · set_style · insert_row · delete_row · insert_col · delete_col'
-        + ' · merge_cells · split_cell · insert_image 가운데 하나여야 한다.',
+        + ' · merge_cells · split_cell · set_table · split_table · join_tables'
+        + ' · insert_image 가운데 하나여야 한다.',
       );
   }
 }

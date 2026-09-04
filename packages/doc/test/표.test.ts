@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { HwpxContainer } from '@hwpx/container';
 import {
   parseXml, serializeXml, findFirst, findAll, childrenNamed, firstChildNamed,
-  getAttr, hwp, appendChild, 복제하기, type ElementNode,
+  getAttr, setAttr, hwp, appendChild, 복제하기, type ElementNode,
 } from '@hwpx/owpml';
 import { 문서, 표, 셀, 표자식넣기, 표자식순서, 꺼내기 } from '../src/index.js';
 import { createElement } from '@hwpx/owpml';
@@ -604,5 +604,159 @@ describe('칸을 넣고 뺀다', () => {
     const r = t.합침풀기(a.row, a.col + 1);   // 덮인 자리
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.어떻게).toContain('왼쪽 위');
+  });
+});
+
+/**
+ * **셀 나누기와 쪽 넘김.**
+ *
+ * HWPX 에는 「이 칸만 둘로」 가 없다. 격자가 표 전체에 걸려서, 칸 하나를
+ * 나누려면 표에 금을 긋고 **나머지 줄에서는 도로 합쳐야** 한다.
+ */
+describe('셀을 나눈다', () => {
+  const 총폭 = (t: 표): number => t.열폭.reduce<number>((a, b) => a + (b ?? 0), 0);
+  const 칸span = (t: 표, r: number, c: number): number => t.시작셀(r, c)?.자리.colSpan ?? 0;
+  const 줄span = (t: 표, r: number, c: number): number => t.시작셀(r, c)?.자리.rowSpan ?? 0;
+
+  it('가로로 나누면 **그 줄만 쪼개지고 나머지는 도로 합쳐진다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞폭 = 총폭(t);
+    const 앞칸 = t.칸수;
+    꺼내기(t.셀나누기(1, 1, 1, 2));
+
+    expect(t.칸수, '표에는 금이 하나 더 그어진다').toBe(앞칸 + 1);
+    expect(총폭(t), '표 폭은 그대로여야 한다').toBe(앞폭);
+    // 나눈 줄은 1×1 둘
+    expect(칸span(t, 1, 1)).toBe(1);
+    expect(칸span(t, 1, 2)).toBe(1);
+    // 나머지 줄은 둘을 도로 합쳐 하나로
+    expect(칸span(t, 0, 1), '안 나눈 줄까지 쪼개지면 표 전체가 갈라진다').toBe(2);
+    expect(칸span(t, 2, 1)).toBe(2);
+    expect(t.탈만).toEqual([]);
+  });
+
+  it('세로로 나누면 **다른 칸이 줄을 걸쳐 덮는다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞줄 = t.줄수;
+    꺼내기(t.셀나누기(1, 1, 2, 1));
+
+    expect(t.줄수).toBe(앞줄 + 1);
+    expect(줄span(t, 1, 1), '나눈 칸은 하나짜리로 남는다').toBe(1);
+    expect(줄span(t, 1, 0), '옆 칸이 두 줄을 덮어야 한다').toBe(2);
+    expect(줄span(t, 1, 2)).toBe(2);
+    expect(t.탈만).toEqual([]);
+  });
+
+  /**
+   * 2×2 에서 한 번 틀렸다. 세로로 나눌 때 「내 칸」을 나눈 칸 하나의 `colSpan`
+   * 으로 봤더니, **가로로 나눈 짝이 남의 칸으로 몰려** 세로 합침이 걸렸다.
+   */
+  it('**2×2 로 나누면 네 칸이 다 선다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞폭 = 총폭(t);
+    꺼내기(t.셀나누기(1, 1, 2, 2));
+
+    expect(총폭(t)).toBe(앞폭);
+    for (const [r, c] of [[1, 1], [1, 2], [2, 1], [2, 2]] as [number, number][]) {
+      const 셀 = t.시작셀(r, c);
+      expect(셀, `(${r},${c}) 에 칸이 서 있어야 한다`).toBeDefined();
+      expect(셀!.자리.rowSpan, `(${r},${c}) 는 하나짜리여야 한다`).toBe(1);
+      expect(셀!.자리.colSpan).toBe(1);
+    }
+    expect(t.탈만).toEqual([]);
+  });
+
+  it('합쳐진 칸은 **먼저 풀라고 한다**', () => {
+    const { t } = 표읽기('ref-table-merge.hwpx');
+    const a = t.셀들.find((c) => c.자리.colSpan > 1)!.자리;
+    const r = t.셀나누기(a.row, a.col, 1, 2);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.어떻게).toContain('합침풀기');
+  });
+
+  it('1줄 1칸으로는 **나눌 것이 없다고 한다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const r = t.셀나누기(1, 1, 1, 1);
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('쪽 경계에서 표를 어떻게 나눌까', () => {
+  it('셋을 다 줄 수 있다 — 규격 기본은 셀 단위다', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    for (const [값, 적힘] of [
+      ['나눔', 'TABLE'], ['셀단위', 'CELL'], ['안나눔', 'NONE'],
+    ] as ['나눔' | '셀단위' | '안나눔', string][]) {
+      t.쪽넘김주기(값);
+      expect(getAttr(t.el, 'pageBreak')).toBe(적힘);
+      expect(t.쪽넘김).toBe(값);
+    }
+  });
+
+  it('**적힌 것이 없으면 셀 단위다** (규격 기본값)', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    setAttr(t.el, 'pageBreak', '');
+    expect(t.쪽넘김).toBe('셀단위');
+  });
+});
+
+describe('표를 가르고 붙인다', () => {
+  it('가르면 **위아래로 줄이 나뉜다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞줄 = t.줄수;
+    const 앞칸 = t.칸수;
+    const r = t.줄떼어내기(1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    expect(t.줄수, '위쪽에는 자른 자리까지만 남는다').toBe(1);
+    const 아래 = new 표(r.value.새표);
+    expect(아래.줄수).toBe(앞줄 - 1);
+    expect(r.value.옮긴줄).toBe(앞줄 - 1);
+    expect(아래.칸수, '칸 수는 그대로다').toBe(앞칸);
+    expect(t.탈만).toEqual([]);
+    expect(아래.탈만).toEqual([]);
+  });
+
+  it('**위아래 다 줄이 남아야 한다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    expect(t.줄떼어내기(0).ok, '0 에서 자르면 위가 빈 표가 된다').toBe(false);
+    expect(t.줄떼어내기(t.줄수).ok, '끝에서 자르면 아래가 빈 표가 된다').toBe(false);
+  });
+
+  it('**세로로 합친 셀이 자르는 자리를 가로지르면 막는다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    꺼내기(t.합치기(0, 0, 2, 1));
+    const r = t.줄떼어내기(1);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.이유).toContain('가로지른다');
+  });
+
+  it('가른 것을 **도로 붙이면 처음으로 돌아온다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 앞줄 = t.줄수;
+    const 앞폭 = t.열폭.reduce<number>((a, b) => a + (b ?? 0), 0);
+    const 뗀것 = t.줄떼어내기(1);
+    expect(뗀것.ok).toBe(true);
+    if (!뗀것.ok) return;
+
+    const 붙임 = t.이어붙이기(new 표(뗀것.value.새표));
+    expect(붙임.ok).toBe(true);
+    expect(t.줄수).toBe(앞줄);
+    expect(t.열폭.reduce<number>((a, b) => a + (b ?? 0), 0)).toBe(앞폭);
+    expect(t.탈만).toEqual([]);
+  });
+
+  it('**칸 수가 다르면 안 붙인다**', () => {
+    const { t } = 표읽기('ref-table-basic.hwpx');
+    const 뗀것 = t.줄떼어내기(1);
+    expect(뗀것.ok).toBe(true);
+    if (!뗀것.ok) return;
+    const 아래 = new 표(뗀것.value.새표, 'x');
+    // 아래쪽 칸을 하나 지워 수를 어긋나게 한다
+    꺼내기(아래.칸지우기(0, 1, false));
+    const r = t.이어붙이기(아래);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.이유).toContain('칸 수가 다르다');
   });
 });

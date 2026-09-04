@@ -34,7 +34,7 @@ import * as path from 'node:path';
 import * as 조각 from './조각.js';
 import {
   정렬맞추기, 블록종류,
-  type 블록, type 개조식항목,
+  type 블록, type 개조식항목, type 칸꾸밈,
 } from './블록.js';
 import { 꾸밈풀기, 꾸밈걷기 } from './꾸밈.js';
 
@@ -913,6 +913,113 @@ export class 조판기 {
     return 됨({ 블록: 번호, kind: 'shape', ids: [this.d.이름표.아이디(문단el)] });
   }
 
+  /**
+   * 칸 하나의 테두리·배경을 만들어 borderFill id 를 준다.
+   *
+   * 네 면이 서로 다를 수 있으니 **면마다 한 번씩 갈라 낸다** —
+   * `borderFill확보` 는 한 번에 한 가지 선만 걸기 때문이다.
+   * 갈라 낸 것은 지문으로 대조돼 같은 모양이면 되쓰인다.
+   */
+  private 칸테두리(
+    밑번호: string,
+    꾸밈: 칸꾸밈,
+    캐시: Map<string, string>,
+  ): 결과<string> {
+    const 열쇠 = `${밑번호}|${꾸밈.top ?? ''}|${꾸밈.bottom ?? ''}|${꾸밈.left ?? ''}`
+      + `|${꾸밈.right ?? ''}|${꾸밈.background ?? ''}`;
+    const 있는것 = 캐시.get(열쇠);
+    if (있는것 !== undefined) return 됨(있는것);
+
+    let id = 밑번호;
+    const 면들 = [
+      ['top', 꾸밈.top], ['bottom', 꾸밈.bottom],
+      ['left', 꾸밈.left], ['right', 꾸밈.right],
+    ] as const;
+    for (const [면, 값] of 면들) {
+      if (값 === undefined) continue;
+      const { 종류, 굵기, 색 } = 면풀기(값);
+      const r = this.d.머리.borderFill확보(id, { 면: [면], 종류, 굵기, 색 });
+      if (!r.ok) return r;
+      id = r.value.id;
+    }
+    if (꾸밈.background !== undefined) {
+      const r = this.d.머리.borderFill확보(id, { 채움: 꾸밈.background });
+      if (!r.ok) return r;
+      id = r.value.id;
+    }
+
+    캐시.set(열쇠, id);
+    return 됨(id);
+  }
+
+  /**
+   * 칸 안에 글을 넣는다. **줄바꿈과 꾸밈 표시를 푼다.**
+   *
+   * 글자 칸(`hp:t`)에 `
+` 을 그대로 넣으면 한글이 줄을 안 바꾼다 —
+   * 칸 안에서 줄을 바꾸려면 문단(`hp:p`)이 여럿이어야 한다.
+   * 표 칸에서 `**굵게**` 도 안 먹었다. 지도안·사례집 표는 한 칸이 여러 줄이고
+   * 그 안에서 머리말만 굵은 것이 보통이라, 둘 다 없으면 표를 못 쓴다.
+   */
+  private 칸글넣기(
+    tcEl: ElementNode,
+    글: string,
+    글자바탕: string,
+    글자: 글자모양패치,
+    문단서식id: string,
+  ): 결과<void> {
+    const subList = firstChildNamed(tcEl, 'hp:subList');
+    if (!subList) return 안됨('셀 조각에 subList 가 없다', '조각을 다시 구워라.');
+    const 첫문단 = childrenNamed(subList, 'hp:p')[0];
+    if (!첫문단) return 안됨('셀 조각에 문단이 없다', '조각을 다시 구워라.');
+    const 본문단 = 복제하기(첫문단, '');
+
+    // 두 벌 이상 있으면 걷어낸다 (조각은 하나지만 못 박지 않는다)
+    for (const 남은 of childrenNamed(subList, 'hp:p').slice(1)) removeNode(남은);
+
+    const 줄들 = 글.split(String.fromCharCode(10));
+    let 앞문단: ElementNode | undefined;
+    for (const [i, 줄] of 줄들.entries()) {
+      const 문단el = i === 0 ? 첫문단 : 복제하기(본문단, '');
+      setAttr(문단el, 'paraPrIDRef', 문단서식id);
+
+      const 첫런 = childrenNamed(문단el, 'hp:run')[0];
+      if (!첫런) return 안됨('셀 문단에 런이 없다', '조각을 다시 구워라.');
+      for (const 남은 of childrenNamed(문단el, 'hp:run').slice(1)) removeNode(남은);
+
+      const 조각들r = 꾸밈풀기(줄, { 강조색: this.설정.highlight_color ?? undefined });
+      if (!조각들r.ok) return 조각들r;
+
+      const 런들: { 글: string; charPrId: string }[] = [];
+      for (const 조각글 of 조각들r.value) {
+        const 패치: 글자모양패치 = {
+          ...글자,
+          ...(조각글.굵게 ? { 굵게: true } : {}),
+          ...(조각글.색 !== undefined ? { 색: 조각글.색 } : {}),
+        };
+        const r = this.d.머리.charPr확보(글자바탕, this.글꼴채우기(패치));
+        if (!r.ok) return r;
+        런들.push({ 글: 조각글.글, charPrId: r.value.id });
+      }
+      if (런들.length === 0) 런들.push({ 글: '', charPrId: 글자바탕 });
+
+      setText(childrenNamed(첫런, 'hp:t')[0]!, 런들[0]!.글);
+      setAttr(첫런, 'charPrIDRef', 런들[0]!.charPrId);
+      let 앞런 = 첫런;
+      for (const 뒤 of 런들.slice(1)) {
+        const 새런 = 복제하기(첫런, '');
+        setText(childrenNamed(새런, 'hp:t')[0]!, 뒤.글);
+        setAttr(새런, 'charPrIDRef', 뒤.charPrId);
+        insertAfter(앞런, 새런);
+        앞런 = 새런;
+      }
+
+      if (i > 0) insertAfter(앞문단!, 문단el);
+      앞문단 = 문단el;
+    }
+    return 됨(undefined);
+  }
+
   // ── 표 ──────────────────────────────────────────────────────────────────
 
   private 표(
@@ -923,7 +1030,8 @@ export class 조판기 {
       align?: string; outer_margin?: number; caption?: string; caption_side?: string;
       merges?: { row: number; col: number; rowspan?: number; colspan?: number }[];
       col_align?: string[]; cell_size?: number; cell_padding?: number;
-      header_background?: string; border_width?: string;
+      header_background?: string; border_width?: string; border_color?: string;
+      cells?: 칸꾸밈[]; line_spacing?: number;
     },
     번호: number,
   ): 결과<만든것> {
@@ -982,8 +1090,15 @@ export class 조판기 {
     const 테두리바탕 = this.테두리바탕();
     if (!테두리바탕.ok) return 테두리바탕;
 
+    // `border_width: 'none'` (또는 `0 mm`) 은 **격자를 안 그린다는 뜻**이다.
+    // 굵기를 0 으로 준다고 선이 사라지지 않는다 — 한글이 받는 굵기 가운데
+    // 가장 가는 0.1mm 로 맞춰져 그대로 그려진다. 지우려면 종류가 NONE 이어야 한다.
+    const 격자없음 = 선없나(b.border_width);
     const 몸테두리 = this.d.머리.borderFill확보(테두리바탕.value, {
-      종류: 'SOLID', 굵기: b.border_width ?? '0.12 mm', 색: '#000000', 채움: 'none',
+      종류: 격자없음 ? 'NONE' : 'SOLID',
+      굵기: 격자없음 ? '0.1 mm' : (b.border_width ?? '0.12 mm'),
+      색: b.border_color ?? '#000000',
+      채움: 'none',
     });
     if (!몸테두리.ok) return 몸테두리;
     setAttr(표el, 'borderFillIDRef', 몸테두리.value.id);
@@ -995,6 +1110,22 @@ export class 조판기 {
       if (!bf.ok) return bf;
       머리테두리 = bf.value.id;
     }
+
+    // ── 칸마다 다른 꾸밈 ───────────────────────────────────────────────
+    //
+    // 넓은 것(줄·열)을 먼저, 좁은 것(칸 하나)을 나중에 덮는다.
+    // 같은 꾸밈이 여러 칸에 걸리므로 **만든 borderFill 을 되쓴다** —
+    // 안 그러면 표 하나에 borderFill 이 수십 개 생긴다.
+    const 꾸밈캐시 = new Map<string, string>();
+    const 칸꾸밈찾기 = (r: number, c: number): 칸꾸밈 => {
+      const 모음: 칸꾸밈 = {};
+      for (const k of b.cells ?? []) {
+        if (k.row !== undefined && k.row !== r) continue;
+        if (k.col !== undefined && k.col !== c) continue;
+        Object.assign(모음, 빈것빼기(k));
+      }
+      return 모음;
+    };
 
     // 셀 채우기
     const 셀높이 = 282;
@@ -1009,33 +1140,54 @@ export class 조판기 {
         cell.크기주기(폭들[c]!, 셀높이);
 
         const 머리칸 = b.headers !== undefined && r === 0;
+        const 꾸밈 = 칸꾸밈찾기(r, c);
         // 셀도 조각이 들고 온 번호를 그대로 두면 안 된다
-        cell.테두리주기(머리칸 && 머리테두리 ? 머리테두리 : 몸테두리.value.id);
+        const 밑번호 = 머리칸 && 머리테두리 ? 머리테두리 : 몸테두리.value.id;
+        const 칸번호 = this.칸테두리(밑번호, 꾸밈, 꾸밈캐시);
+        if (!칸번호.ok) return 칸번호;
+        cell.테두리주기(칸번호.value);
         if (머리칸) cell.머리칸주기(true);
-
-        // 셀 안 글
-        const 안문단 = findAll(tcEl, 'hp:p')[0];
-        if (!안문단) return 안됨('셀 조각에 문단이 없다', '조각을 다시 구워라.');
-        const 안런 = childrenNamed(안문단, 'hp:run')[0]!;
-        setText(childrenNamed(안런, 'hp:t')[0]!, 값);
-
-        const 글자 = this.d.머리.charPr확보(
-          this.d.머리.첫id('hh:charProperties') ?? '0',
-          this.글꼴채우기({ 크기: pt(b.cell_size ?? 10), 굵게: 머리칸,
-            ...(b.font ? { 글꼴: b.font } : {}) }));
-        if (!글자.ok) return 글자;
-        setAttr(안런, 'charPrIDRef', 글자.value.id);
+        if (꾸밈.valign) {
+          const v = 꾸밈.valign.toUpperCase();
+          if (v !== 'TOP' && v !== 'CENTER' && v !== 'BOTTOM') {
+            return 안됨(`valign 은 top·center·bottom 가운데 하나여야 한다: ${꾸밈.valign}`,
+              'cells 의 valign 을 고쳐라.');
+          }
+          cell.세로정렬주기(v);
+        }
 
         // 열마다 정렬. 정부 문서 표는 칸마다가 아니라 **열마다** 정렬이 다르다
         // (첫 열은 왼쪽, 숫자 열은 가운데). 칸마다 객체로 받으면 중첩이
-        // 한 겹 더 깊어져 모델이 틀린다. 그래서 열 단위로 받는다.
-        const 열정렬 = b.col_align?.[c];
-        const 정렬 = 머리칸 ? 'CENTER'
-          : 열정렬 ? 열정렬.toUpperCase() : 'LEFT';
+        // 한 겹 더 깊어져 모델이 틀린다. 그래서 열 단위로 받되,
+        // `cells` 로 그 칸만 따로 덮을 수 있게 뒀다.
+        const 열정렬 = 꾸밈.align ?? b.col_align?.[c];
+        const 정렬 = 꾸밈.align ? 꾸밈.align.toUpperCase()
+          : 머리칸 ? 'CENTER'
+            : 열정렬 ? 열정렬.toUpperCase() : 'LEFT';
         const 문단서식 = this.d.머리.paraPr확보(
-          this.d.머리.첫id('hh:paraProperties') ?? '0', { 정렬 });
+          this.d.머리.첫id('hh:paraProperties') ?? '0',
+          {
+            정렬,
+            // 줄 간격을 안 주면 문서의 기본 문단모양을 따른다 — 그게 본문용이라
+            // 표에는 너무 넓다. 실측: 기본값이 9pt 글자에 265% 로 그려져
+            // 한 쪽에 들어갈 표가 1.3쪽이 됐다.
+            ...(b.line_spacing !== undefined
+              ? { 줄간격: { 종류: 'PERCENT', 값: b.line_spacing } }
+              : {}),
+          });
         if (!문단서식.ok) return 문단서식;
-        setAttr(안문단, 'paraPrIDRef', 문단서식.value.id);
+
+        // 셀 안 글. 줄바꿈과 `**굵게**` 표시를 여기서 푼다
+        const 글넣기 = this.칸글넣기(
+          tcEl, 값,
+          this.d.머리.첫id('hh:charProperties') ?? '0',
+          this.글꼴채우기({
+            크기: pt(꾸밈.size ?? b.cell_size ?? 10),
+            굵게: 꾸밈.bold ?? 머리칸,
+            ...(꾸밈.color ? { 색: 꾸밈.color } : {}),
+            ...(b.font ? { 글꼴: b.font } : {}) }),
+          문단서식.value.id);
+        if (!글넣기.ok) return 글넣기;
 
         appendChild(tr, tcEl);
       }
@@ -1204,4 +1356,36 @@ export function 조판(
     );
   }
   return new 조판기(d, 설정).쓰기(블록들, 구역이름);
+}
+
+/**
+ * 선을 안 그린다는 뜻인가.
+ *
+ * 굵기를 0 으로 준다고 선이 사라지지 않는다 — 한글이 받는 굵기 가운데
+ * 가장 가는 `0.1 mm` 로 맞춰져 그대로 그려진다. 지우려면 종류가 `NONE` 이어야 한다.
+ * 실측: `border_width: '0 mm'` 를 주고도 격자가 그대로 나왔다. 표본 9편의
+ * 테두리 3,603개에 `0 mm` 는 하나도 없다 (`자료/실측.md` 26항).
+ */
+export function 선없나(v: string | undefined): boolean {
+  if (v === undefined) return false;
+  const t = v.trim().toLowerCase();
+  return t === 'none' || t === '0' || parseFloat(t) === 0;
+}
+
+/** `"0.4 mm #2A5DA8"` 을 종류·굵기·색으로 가른다. `"none"` 이면 종류가 NONE */
+export function 면풀기(v: string): { 종류: string; 굵기: string; 색: string } {
+  const 색맞음 = /#?[0-9a-fA-F]{6}/.exec(v);
+  const 색 = 색맞음 ? (색맞음[0].startsWith('#') ? 색맞음[0] : `#${색맞음[0]}`) : '#000000';
+  const 굵기쪽 = v.replace(/#?[0-9a-fA-F]{6}/, '').trim();
+  if (선없나(굵기쪽) || 굵기쪽.toLowerCase() === 'none') {
+    return { 종류: 'NONE', 굵기: '0.1 mm', 색 };
+  }
+  return { 종류: 'SOLID', 굵기: 굵기쪽 || '0.12 mm', 색 };
+}
+
+/** undefined 인 자리를 걷어낸다. 안 걷으면 Object.assign 이 앞의 값을 지운다 */
+export function 빈것빼기<T extends object>(o: T): Partial<T> {
+  const 낸것: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) if (v !== undefined) 낸것[k] = v;
+  return 낸것 as Partial<T>;
 }

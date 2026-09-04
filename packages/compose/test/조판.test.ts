@@ -796,3 +796,155 @@ describe('표 캡션', () => {
     expect(new 표(표만들기({ caption: '가' })).탈만).toEqual([]);
   });
 });
+
+describe('칸마다 다른 꾸밈 — 격자를 걷어내고 가로선으로 가른다', () => {
+  /**
+   * 표 하나에 테두리 하나만 걸면 **격자**가 된다.
+   * 사례집 양식은 세로선을 걷어내고 가로선만 남기며, 한 칸만 배경을 깐다.
+   * 그건 칸마다 borderFill 이 달라야 나온다 — 이게 없어 양식을 못 만들었다.
+   */
+  function 표만들기(b: Record<string, unknown>) {
+    const d = 새문서();
+    const r = 조판(d, [{ kind: 'table', rows: [['가', '나'], ['다', '라']], ...b } as never]);
+    expect(r.ok, r.ok ? '' : r.이유).toBe(true);
+    return { d, t: new 표(d.구역들[0]!.표들[0]!) };
+  }
+
+  /** 그 칸의 borderFill 을 머리글에서 찾아 준다 */
+  function 테두리모양(d: 문서, id: string) {
+    const bf = findAll(머리(d), 'hh:borderFill')
+      .find((e) => getAttr(e, 'id') === id);
+    expect(bf, `borderFill id=${id} 이 머리글에 없다`).toBeDefined();
+    const 면 = (이름: string) => {
+      const b = firstChildNamed(bf!, `hh:${이름}Border`);
+      return { 종류: getAttr(b!, 'type'), 굵기: getAttr(b!, 'width'), 색: getAttr(b!, 'color') };
+    };
+    const 붓통 = firstChildNamed(bf!, 'hc:fillBrush');
+    const 붓 = 붓통 ? firstChildNamed(붓통, 'hc:winBrush') : undefined;
+    return {
+      top: 면('top'), bottom: 면('bottom'), left: 면('left'), right: 면('right'),
+      채움: 붓 ? getAttr(붓, 'faceColor') : undefined,
+    };
+  }
+
+  it("**border_width: 'none' 이면 격자를 안 그린다**", () => {
+    // 굵기를 0 으로 준다고 선이 사라지지 않는다 — 가장 가는 0.1mm 로 맞춰져 그대로 그려진다.
+    // 실측: border_width: '0 mm' 를 주고도 격자가 그대로 나왔다.
+    const { d, t } = 표만들기({ border_width: 'none' });
+    const 모양 = 테두리모양(d, t.셀(0, 0)!.테두리!);
+    for (const 면 of ['top', 'bottom', 'left', 'right'] as const) {
+      expect(모양[면].종류, `${면} 면이 그려지면 격자가 남는다`).toBe('NONE');
+    }
+  });
+
+  it('**한 칸에만 배경과 아래 선을 준다**', () => {
+    const { d, t } = 표만들기({
+      border_width: 'none',
+      cells: [{ row: 0, col: 0, background: '#F2F5F9', bottom: '0.4 mm #2A5DA8' }],
+    });
+    const 꾸민것 = 테두리모양(d, t.셀(0, 0)!.테두리!);
+    expect(꾸민것.채움).toBe('#F2F5F9');
+    expect(꾸민것.bottom).toEqual({ 종류: 'SOLID', 굵기: '0.4 mm', 색: '#2A5DA8' });
+    expect(꾸민것.top.종류, '준 적 없는 면까지 그리면 안 된다').toBe('NONE');
+
+    // 옆 칸은 안 물든다
+    const 옆칸 = 테두리모양(d, t.셀(0, 1)!.테두리!);
+    expect(옆칸.채움).toBeUndefined();
+    expect(옆칸.bottom.종류).toBe('NONE');
+  });
+
+  it('row 만 주면 그 줄 전체, col 만 주면 그 열 전체', () => {
+    const { d, t } = 표만들기({
+      border_width: 'none',
+      cells: [{ row: 0, background: '#EEEEEE' }, { col: 1, right: '0.1 mm #D89A22' }],
+    });
+    expect(테두리모양(d, t.셀(0, 0)!.테두리!).채움).toBe('#EEEEEE');
+    expect(테두리모양(d, t.셀(0, 1)!.테두리!).채움).toBe('#EEEEEE');
+    expect(테두리모양(d, t.셀(1, 0)!.테두리!).채움).toBeUndefined();
+    expect(테두리모양(d, t.셀(1, 1)!.테두리!).right.색).toBe('#D89A22');
+    expect(테두리모양(d, t.셀(1, 0)!.테두리!).right.종류).toBe('NONE');
+  });
+
+  it('**나중에 적은 것이 앞의 것을 덮는다**', () => {
+    const { d, t } = 표만들기({
+      border_width: 'none',
+      cells: [{ row: 0, background: '#EEEEEE' }, { row: 0, col: 1, background: '#D89A22' }],
+    });
+    expect(테두리모양(d, t.셀(0, 0)!.테두리!).채움).toBe('#EEEEEE');
+    expect(테두리모양(d, t.셀(0, 1)!.테두리!).채움).toBe('#D89A22');
+  });
+
+  it('**굵기 0 도 선 없음이다** — 0 은 가장 가는 선으로 올라간다', () => {
+    // 실측: border_width: '0 mm' 를 주고도 격자가 그대로 나왔다.
+    // 한글은 굵기 0 을 0.1mm 로 맞춰 그린다 — 지우려면 종류가 NONE 이어야 한다.
+    for (const 값 of ['0 mm', '0']) {
+      const { d, t } = 표만들기({ border_width: 값 });
+      const 모양 = 테두리모양(d, t.셀(0, 0)!.테두리!);
+      expect(모양.left.종류, `border_width: '${값}' 인데 선이 남았다`).toBe('NONE');
+    }
+  });
+
+  it('**면에 none 을 주면 그 면만 걷힌다** — 굵기만 0 으로 두면 남는다', () => {
+    // 격자는 그대로 두고 한 칸의 오른쪽만 지우는 경우.
+    const { d, t } = 표만들기({ cells: [{ row: 0, col: 0, right: 'none' }] });
+    const 모양 = 테두리모양(d, t.셀(0, 0)!.테두리!);
+    expect(모양.right.종류, '굵기만 0 이면 한글이 0.1mm 로 그린다').toBe('NONE');
+    expect(모양.left.종류, '건드리지 않은 면은 그대로여야 한다').toBe('SOLID');
+  });
+
+  it('undefined 를 적은 자리는 앞의 것을 안 지운다', () => {
+    // 부르는 쪽에서 변수를 넘기면 값이 없을 때 자리만 남는다.
+    // 그걸 그대로 덮으면 줄 꾸밈이 지워진다.
+    const 없음 = undefined as string | undefined;
+    const { d, t } = 표만들기({
+      border_width: 'none',
+      cells: [{ row: 0, background: '#EEEEEE' }, { row: 0, col: 1, background: 없음 }],
+    });
+    expect(테두리모양(d, t.셀(0, 1)!.테두리!).채움).toBe('#EEEEEE');
+  });
+
+  it('세로 정렬을 칸마다 준다', () => {
+    const { t } = 표만들기({ cells: [{ row: 0, col: 0, valign: 'top' }] });
+    expect(t.셀(0, 0)!.세로정렬).toBe('TOP');
+    expect(t.셀(0, 1)!.세로정렬).toBe('CENTER');
+  });
+});
+
+describe('칸 안에서 줄을 바꾸고 굵게 쓴다', () => {
+  /**
+   * 글자 칸(hp:t)에 \n 을 그대로 넣으면 한글이 줄을 안 바꾼다 —
+   * 칸 안에서 줄을 바꾸려면 문단(hp:p)이 여럿이어야 한다.
+   * 지도안 표는 한 칸이 여러 줄이고 그 안에서 머리말만 굵다.
+   */
+  function 첫칸(값: string) {
+    const d = 새문서();
+    꺼내기(조판(d, [{ kind: 'table', rows: [[값, '옆']] }]));
+    const t = new 표(d.구역들[0]!.표들[0]!);
+    return { d, 셀: t.셀(0, 0)! };
+  }
+
+  it('**\n 이 문단으로 갈라진다**', () => {
+    const { 셀 } = 첫칸('첫째 줄\n둘째 줄\n셋째 줄');
+    const 문단들 = childrenNamed(firstChildNamed(셀.el, 'hp:subList')!, 'hp:p');
+    expect(문단들.length, '한 문단에 몰아 넣으면 한글이 줄을 안 바꾼다').toBe(3);
+    expect(문단들.map((p) => findAll(p, 'hp:t').map(textOf).join('')))
+      .toEqual(['첫째 줄', '둘째 줄', '셋째 줄']);
+  });
+
+  it('**칸 안에서도 굵게 표시가 풀린다**', () => {
+    const { d, 셀 } = 첫칸('☑ **함께 정하기**');
+    const 런들 = findAll(셀.el, 'hp:run');
+    expect(런들.length, '굵은 어구가 런으로 안 갈라지면 표시가 글자로 남는다')
+      .toBeGreaterThan(1);
+    expect(런들.map((r) => findAll(r, 'hp:t').map(textOf).join('')).join(''))
+      .toBe('☑ 함께 정하기');
+    // 표시가 글자로 새면 안 된다
+    expect(findAll(셀.el, 'hp:t').map(textOf).join('')).not.toContain('**');
+
+    const 굵은것 = findAll(머리(d), 'hh:charPr')
+      .filter((e) => firstChildNamed(e, 'hh:bold') !== undefined)
+      .map((e) => getAttr(e, 'id'));
+    const 런서식 = 런들.map((r) => getAttr(r, 'charPrIDRef'));
+    expect(런서식.some((id) => 굵은것.includes(id!))).toBe(true);
+  });
+});

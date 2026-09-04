@@ -24,6 +24,41 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    '칸꾸밈을 덮을 때 빈 자리까지 덮는다 (열 꾸밈이 줄 꾸밈을 지운다)',
+    'packages/compose/src/조판.ts',
+    '  for (const [k, v] of Object.entries(o)) if (v !== undefined) 낸것[k] = v;',
+    '  for (const [k, v] of Object.entries(o)) 낸것[k] = v;',
+    'packages/compose',
+  ],
+  [
+    '굵기 0 은 선 없음으로 안 친다 (한글이 0.1mm 로 올려 그린다)',
+    'packages/compose/src/조판.ts',
+    "  return t === 'none' || t === '0' || parseFloat(t) === 0;",
+    "  return t === 'none';",
+    'packages/compose',
+  ],
+  [
+    '선 없음인데 종류를 SOLID 로 둔다 (굵기만 0 이라 격자가 남는다)',
+    'packages/compose/src/조판.ts',
+    "    return { 종류: 'NONE', 굵기: '0.1 mm', 색 };",
+    "    return { 종류: 'SOLID', 굵기: '0.1 mm', 색 };",
+    'packages/compose',
+  ],
+  [
+    '칸꾸밈 캐시가 배경을 안 보고 되쓴다 (배경 다른 칸이 같은 테두리를 문다)',
+    'packages/compose/src/조판.ts',
+    "      + `|${꾸밈.right ?? ''}|${꾸밈.background ?? ''}`;",
+    "      + `|${꾸밈.right ?? ''}`;",
+    'packages/compose',
+  ],
+  [
+    '칸 하나 꾸밈이 줄·열 꾸밈보다 먼저 깔린다 (좁은 것이 넓은 것에 덮인다)',
+    'packages/compose/src/조판.ts',
+    '        if (k.row !== undefined && k.row !== r) continue;',
+    '        if (k.row !== undefined && k.row === r) continue;',
+    'packages/compose',
+  ],
+  [
     '표를 가를 때 위아래 어느 쪽이 비어도 둔다 (줄 없는 표는 한글이 안 연다)',
     'packages/doc/src/표.ts',
     '    if (자리 < 1 || 자리 >= this.줄수) {',
@@ -443,8 +478,8 @@ const 고장들 = [
     // 이 고장이 실제로 있었다. 시험도 검사도 다 통과했고 **렌더를 보고서야** 알았다.
     '표 셀이 조각이 들고 온 테두리 번호를 그대로 쓴다 (딴 문서에선 딴 것을 가리킨다)',
     'packages/compose/src/조판.ts',
-    "        cell.테두리주기(머리칸 && 머리테두리 ? 머리테두리 : 몸테두리.value.id);",
-    "        if (머리칸 && 머리테두리) cell.테두리주기(머리테두리);",
+    "        cell.테두리주기(칸번호.value);",
+    "        void 칸번호;",
     'packages/compose',
   ],
   [

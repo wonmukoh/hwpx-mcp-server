@@ -24,6 +24,55 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    'get_content 가 표의 page_break 를 안 낸다 (써 놓고 확인할 길이 없다)',
+    'packages/server/src/도구.ts',
+    '          page_break: 쪽넘김밖이름[t.쪽넘김], repeat_header: t.머리행반복,',
+    '          repeat_header: t.머리행반복,',
+    'packages/server',
+  ],
+  [
+    '안팎 이름을 거꾸로 짝지어 놓는다 (none 을 줬는데 split 이라 답한다)',
+    'packages/server/src/도구.ts',
+    "export const 쪽넘김밖이름 = { 나눔: 'split', 셀단위: 'cell', 안나눔: 'none' } as const;",
+    "export const 쪽넘김밖이름 = { 나눔: 'none', 셀단위: 'cell', 안나눔: 'split' } as const;",
+    'packages/server',
+  ],
+  [
+    'get_content 가 머리 줄 되풀이를 안 낸다',
+    'packages/server/src/도구.ts',
+    '          page_break: 쪽넘김밖이름[t.쪽넘김], repeat_header: t.머리행반복,',
+    '          page_break: 쪽넘김밖이름[t.쪽넘김],',
+    'packages/server',
+  ],
+  [
+    '구조를 고쳐도 저장할 때 ID 가 죽는다고 안 알린다 (다시 열면 못 찾는다)',
+    'packages/server/src/도구.ts',
+    '        if (구조를바꾸나.has(e.op)) 것.it.구조바꿈 = true;',
+    '        void 구조를바꾸나;',
+    'packages/server',
+  ],
+  [
+    '글만 고쳐도 ID 가 죽었다고 한다 (쓸데없이 다시 받게 만든다)',
+    'packages/server/src/도구.ts',
+    '        if (구조를바꾸나.has(e.op)) 것.it.구조바꿈 = true;',
+    '        것.it.구조바꿈 = true;',
+    'packages/server',
+  ],
+  [
+    '저장 답에 ids_stale 을 안 싣는다 (말로만 적으면 기계가 못 읽는다)',
+    'packages/server/src/도구.ts',
+    '        { ok: true, path: 낼곳, bytes: 바이트.length, ids_stale: 밀렸다 },',
+    '        { ok: true, path: 낼곳, bytes: 바이트.length },',
+    'packages/server',
+  ],
+  [
+    '표 ID 를 문단보다 먼저 매긴다 (줄을 넣어도 안 밀리는 척이 된다)',
+    'packages/doc/src/문서.ts',
+    '      for (const p of s.모든문단들) { this.이름표.아이디(p.el); 문단수++; }',
+    '      for (const t of s.표들) { this.이름표.아이디(t); 표수++; } for (const p of s.모든문단들) { this.이름표.아이디(p.el); 문단수++; }',
+    'packages/doc',
+  ],
+  [
     '칸꾸밈을 덮을 때 빈 자리까지 덮는다 (열 꾸밈이 줄 꾸밈을 지운다)',
     'packages/compose/src/조판.ts',
     '  for (const [k, v] of Object.entries(o)) if (v !== undefined) 낸것[k] = v;',

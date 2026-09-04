@@ -408,6 +408,12 @@ export const 도구들: 도구[] = [
       ok: 참거짓('됐나'),
       path: 글자('저장한 곳'),
       bytes: 정수('파일 크기'),
+      // **저장했다고 ID 가 사는 것이 아니다.** 이걸 안 알려 줘서, 부르는 쪽이
+      // 저장 전에 받아 둔 표 ID 로 다시 연 문서를 가리키다 「못 찾았다」 로 자빠졌다.
+      ids_stale: 참거짓(
+        '**연 뒤 구조를 고쳤나.** true 면 이 파일을 다시 열었을 때 '
+        + '표 ID 가 저장 전과 다르다 — get_outline·find 로 다시 받아야 한다',
+      ),
     }, ['ok']),
     annotations: { title: '문서 저장', destructiveHint: true, idempotentHint: true },
     처리: 검사하고<{ doc_id: string; path?: string; overwrite?: boolean }>(저장스키마, (인자, 방) => {
@@ -458,9 +464,19 @@ export const 도구들: 도구[] = [
       }
       fs.writeFileSync(낼곳, 바이트);
       것.it.경로 = 낼곳;
+      const 밀렸다 = 것.it.구조바꿈 === true;
       return 잘됨(
-        `${path.basename(낼곳)} 로 저장했다 (${바이트.length.toLocaleString()}바이트)`,
-        { ok: true, path: 낼곳, bytes: 바이트.length },
+        `${path.basename(낼곳)} 로 저장했다 (${바이트.length.toLocaleString()}바이트)`
+        + (밀렸다
+          ? [
+            '',
+            '',
+            '구조를 고쳤다 — **이 파일을 다시 열면 표 ID 가 지금 것과 다르다.**',
+            '지금 연 문서(doc_id)로는 그대로 쓸 수 있다. 다시 열어 쓸 것이면 '
+            + 'get_outline·find 로 ID 를 새로 받아라.',
+          ].join('\n')
+          : ''),
+        { ok: true, path: 낼곳, bytes: 바이트.length, ids_stale: 밀렸다 },
       );
     }),
   },
@@ -651,6 +667,14 @@ export const 도구들: 도구[] = [
         covered_by: 글자('**덮인 자리**일 때 — 이 자리를 덮는 칸의 ID. 여긴 글을 못 쓴다'),
       })),
       empty: 참거짓('표일 때 — 칸이 다 비었나'),
+      // **써 놓고 확인할 길이 없으면 안 쓴 것과 같다.** set_table 로 넣고 저장한 뒤
+      // 다시 열어도 돌아오는 것이 없어, 부르는 쪽이 「됐다」 는 말만 믿어야 했다.
+      page_break: 글자(
+        '표일 때 — 쪽 경계에서 나누는 방식. split · cell · none. '
+        + "적혀 있지 않으면 규격 기본인 cell 로 낸다 — 「안 준 것」과 「cell 로 준 것」은 "
+        + '규격상 구분되지 않는다. none·split 은 구분된다',
+      ),
+      repeat_header: 참거짓('표일 때 — 머리 줄을 쪽마다 되풀이하나'),
       // 칸일 때만. **문단마다 ID 를 준다** — 줄마다 따로 채우려면 이게 있어야 한다.
       paragraphs: 목록('칸일 때 — 그 안의 문단들 (줄 차례로)', 묶음('문단 하나', {
         id: 글자('문단 ID'),
@@ -724,6 +748,7 @@ export const 도구들: 도구[] = [
         {
           ok: true, id: 인자.id, kind: 'table',
           rows: t.줄수, cols: t.칸수, cells: 칸들, empty: 다빔,
+          page_break: 쪽넘김밖이름[t.쪽넘김], repeat_header: t.머리행반복,
         });
     }),
   },
@@ -1116,6 +1141,7 @@ export const 도구들: 도구[] = [
           );
         }
         낸것.push({ op: e.op, id: e.id ?? '', changed: r.value });
+        if (구조를바꾸나.has(e.op)) 것.it.구조바꿈 = true;
       }
 
       const 합 = 낸것.reduce((a, x) => a + (x['changed'] as number), 0);
@@ -1422,10 +1448,7 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       if (!t.ok) return t;
       let 바뀐수 = 0;
       if (e.page_break !== undefined) {
-        const 표기: Record<string, '나눔' | '셀단위' | '안나눔'> = {
-          split: '나눔', cell: '셀단위', none: '안나눔',
-        };
-        const 값 = 표기[e.page_break];
+        const 값 = 쪽넘김안이름[e.page_break];
         if (값 === undefined) {
           return 안됨(
             `모르는 page_break: ${e.page_break}`,
@@ -1499,6 +1522,33 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
  * **`source` 를 꼭 물려준다** — 없으면 복제한 줄·칸이 빈 채로 나온다.
  * 줄·칸을 넣는 자리마다 이걸 되풀이하고 있어서 한곳에 모았다.
  */
+/**
+ * 쪽 경계에서 나누는 방식 — 안 이름과 밖 이름.
+ *
+ * **한 곳에만 적어 둔다.** set_table 은 밖→안, get_content 는 안→밖 으로 쓰는데
+ * 따로 적어 두면 한쪽만 고쳐 놓고 다른 쪽이 딴 말을 하게 된다.
+ */
+/**
+ * **ID 를 밀어내는 고침들.**
+ *
+ * ID 는 문서를 훑는 차례로 매기고, 표는 문단 **다음에** 매긴다.
+ * 그래서 줄을 하나 넣어 문단이 늘면 그 문서의 **표 ID 가 전부** 밀린다.
+ * 구역이 여럿이면 뒤 구역의 문단 ID 까지 밀린다.
+ *
+ * 실측(자료/실측.md 27항): 줄 하나를 넣고 저장했다 다시 열었을 때
+ * 대학혁신지원사업 기본계획 표 65개 전부, 업무계획 13개 전부가 달라졌다.
+ * 글만 고치는 것(set_text·replace·set_style)은 아무것도 안 밀린다.
+ */
+const 구조를바꾸나 = new Set([
+  'insert_row', 'delete_row', 'insert_col', 'delete_col',
+  'merge_cells', 'split_cell', 'split_table', 'join_tables', 'insert_image',
+]);
+
+export const 쪽넘김밖이름 = { 나눔: 'split', 셀단위: 'cell', 안나눔: 'none' } as const;
+export const 쪽넘김안이름: Record<string, '나눔' | '셀단위' | '안나눔'> = {
+  split: '나눔', cell: '셀단위', none: '안나눔',
+};
+
 function 표꺼내기(d: 문서, id: string, op: string): 결과<표> {
   const r = d.찾기(id);
   if (!r.ok) return r;

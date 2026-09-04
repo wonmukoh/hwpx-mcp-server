@@ -1796,3 +1796,124 @@ describe('묶음이 중간에 어긋나면 — 앞의 것은 안 물린다', () 
     expect(r.structuredContent!['failed_at']).toBeUndefined();
   });
 });
+
+describe('써 놓고 확인할 길이 있나', () => {
+  /**
+   * `set_table` 은 넣히기는 하는데 **살았는지 볼 길이 없었다.**
+   * 저장하고 다시 열어 `get_content` 를 불러도 아무것도 안 돌아와,
+   * 부르는 쪽이 「됐다」 는 말만 믿어야 했다. 아래로 쓰는 앱이 그래서
+   * 지침에 못 넣었다고 알려 왔다.
+   */
+  async function 표든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [{ kind: 'table', headers: ['구분', '값'], rows: [['가', '1'], ['나', '2']] }],
+    }, 방);
+    const 뼈대 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[];
+    const 표아이디 = 뼈대.find((x) => x.kind === 'table')!.id;
+    return { 방, doc_id, 표아이디 };
+  }
+
+  it('**set_table 로 준 page_break 가 get_content 로 돌아온다**', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_table', id: 표아이디, page_break: 'none' }],
+    }, 방);
+    const r = await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방);
+    expect(r.structuredContent!['page_break'], '넣고 확인할 길이 없으면 안 넣은 것과 같다')
+      .toBe('none');
+  });
+
+  it('세 값이 다 돌아온다', async () => {
+    for (const 값 of ['split', 'cell', 'none']) {
+      const { 방, doc_id, 표아이디 } = await 표든문서();
+      await 도구부르기('edit', {
+        doc_id, edits: [{ op: 'set_table', id: 표아이디, page_break: 값 }],
+      }, 방);
+      const r = await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방);
+      expect(r.structuredContent!['page_break'], 값).toBe(값);
+    }
+  });
+
+  it('안 준 표는 규격 기본인 cell 로 낸다', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    const r = await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방);
+    expect(r.structuredContent!['page_break']).toBe('cell');
+  });
+
+  it('머리 줄 되풀이도 돌아온다 — 켜고 끄는 것이 다 보인다', async () => {
+    // headers 를 주면 compose 가 이미 켠다 (실측: repeatHeader 1이 1240 / 0이 52).
+    // 그러니 여기서 볼 것은 **끄는 것이 보이나** 다.
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    expect((await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방))
+      .structuredContent!['repeat_header'], 'headers 를 줬으니 켜져 있어야 한다').toBe(true);
+
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_table', id: 표아이디, repeat_header: false }],
+    }, 방);
+    expect((await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방))
+      .structuredContent!['repeat_header'], '끈 것이 안 보이면 확인할 길이 없다').toBe(false);
+
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_table', id: 표아이디, repeat_header: true }],
+    }, 방);
+    expect((await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방))
+      .structuredContent!['repeat_header']).toBe(true);
+  });
+});
+
+describe('저장할 때 ID 가 죽는다고 알린다', () => {
+  /**
+   * ID 는 문서를 훑는 차례로 매긴다. 구조를 고치면 그 차례가 달라져서
+   * **저장하고 다시 열면 표 ID 가 딴 것이 된다.** 이걸 안 알려 줬더니
+   * 아래로 쓰는 앱이 저장 전 ID 로 다시 연 문서를 가리키다 자빠졌다.
+   */
+  async function 표든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [{ kind: 'table', headers: ['구분', '값'], rows: [['가', '1']] }],
+    }, 방);
+    const 뼈대 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[];
+    return { 방, doc_id, 표아이디: 뼈대.find((x) => x.kind === 'table')!.id };
+  }
+
+  function 낼곳() {
+    return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hwpx-id-')), '낸것.hwpx');
+  }
+
+  it('**줄을 넣고 저장하면 ids_stale 이 켜진다**', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'insert_row', id: 표아이디 }],
+    }, 방);
+    const r = await 도구부르기('save_document', { doc_id, path: 낼곳() }, 방);
+    expect(r.structuredContent!['ids_stale']).toBe(true);
+    expect(r.content[0]?.text ?? '', '말로도 알려야 한다').toContain('다시 열면');
+  });
+
+  it('글만 고치고 저장하면 안 켜진다', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방))
+      .structuredContent!['cells'] as { id: string }[];
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: 칸들[0]!.id, text: '바뀐 글' }],
+    }, 방);
+    const r = await 도구부르기('save_document', { doc_id, path: 낼곳() }, 방);
+    expect(r.structuredContent!['ids_stale'], '글만 고치면 ID 가 산다').toBe(false);
+    expect(r.content[0]?.text ?? '').not.toContain('다시 열면');
+  });
+
+  it('아무것도 안 고치고 저장해도 안 켜진다', async () => {
+    const { 방, doc_id } = await 표든문서();
+    const r = await 도구부르기('save_document', { doc_id, path: 낼곳() }, 방);
+    expect(r.structuredContent!['ids_stale']).toBe(false);
+  });
+});

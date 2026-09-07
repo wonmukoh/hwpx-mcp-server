@@ -7,6 +7,15 @@
  *
  *   node 검증/빌드.mjs              검증용 (검증/.빌드전체)
  *   node 검증/빌드.mjs --배포        배포용 (dist) — **순수 Node 로 돌아가야 한다**
+ *   node 검증/빌드.mjs --배포 --낼곳 <자리>
+ *                                 배포용을 **딴 자리에** 굽는다
+ *
+ * `--낼곳` 이 있는 까닭: 「굽는 동안 dist 가 안 빈다」를 재는 시험이 재려고
+ * **진짜 dist 를 굽고 있었다.** 그 시험은 고장 내보기가 고장을 심은 채 부르므로,
+ * 검증 한 바퀴가 끝나면 `dist` 에 고장이 담겨 있었다. `dist/` 는 `.gitignore` 라
+ * `git status` 에도 안 걸린다 (`자료/실측.md` 28항).
+ *
+ * 이제 그 시험은 제 임시 자리에 굽는다. **진짜 `dist` 는 아무도 몰래 안 바뀐다.**
  *
  * 배포용이 따로 있는 까닭: Draftsmith 는 서버를
  * `ELECTRON_RUN_AS_NODE=1` + `process.execPath` 로 띄운다.
@@ -22,7 +31,15 @@ const 뿌리 = path.dirname(여기);
 process.chdir(뿌리);
 
 const 배포인가 = process.argv.includes('--배포');
-const 낼곳 = 배포인가 ? path.join(뿌리, 'dist') : path.join(여기, '.빌드전체');
+
+// `--낼곳 <자리>` 로 굽는 자리를 옮긴다. **진짜 dist 를 안 건드리고 재려는 쪽**이 쓴다.
+const 낼곳자리 = process.argv.indexOf('--낼곳');
+if (낼곳자리 >= 0 && process.argv[낼곳자리 + 1] === undefined) {
+  console.error('--낼곳 뒤에 자리를 적어라');
+  process.exit(2);
+}
+const 시킨곳 = 낼곳자리 >= 0 ? path.resolve(process.argv[낼곳자리 + 1]) : undefined;
+const 낼곳 = 시킨곳 ?? (배포인가 ? path.join(뿌리, 'dist') : path.join(여기, '.빌드전체'));
 
 /**
  * **옆에 굽고 마지막에 이름만 바꾼다.**

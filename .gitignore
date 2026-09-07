@@ -9,6 +9,10 @@ dist/
 # 제 자리를 보고 「고치는 중」 이라 찍는다 (dirty 가 늘 켜진다)
 dist.굽는중.*/
 dist.치움.*/
+dist.시험.*/
+dist.시험.*.굽는중.*/
+dist.시험.*.치움.*/
+dist.시험.*.잠금
 dist.잠금
 *.tsbuildinfo
 

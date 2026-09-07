@@ -13,6 +13,7 @@
  * 소스는 반드시 되돌린다 (끝에서도, 도중에 죽어도).
  */
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,41 @@ process.chdir(뿌리);
 
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
+  [
+    '뒷정리가 진짜 dist 도 고른다 (고장이 굽을곳을 바꾸면 통째로 사라진다)',
+    'packages/server/test/굽는동안.test.ts',
+    "    if (n === 'dist') return false;                       // 진짜 dist 는 절대 안 고른다",
+    '    if (false) return false;',
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
+    '뒷정리가 이름 앞부분만 본다 (dist.시험.7 이 dist.시험.77 을 문다)',
+    'packages/server/test/굽는동안.test.ts',
+    '    return n === 내이름 || n.startsWith(`${내이름}.`);     // 정확한 이름이거나 그 아래만',
+    '    return n.startsWith(내이름);',
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
+    '굽는동안 시험이 진짜 dist 를 굽는다 (고장이 심긴 채 구워져 남는다)',
+    'packages/server/test/굽는동안.test.ts',
+    'const 굽을곳 = path.join(뿌리, `dist.시험.${process.pid}`);',
+    "const 굽을곳 = path.join(뿌리, 'dist');",
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
+    '빈 자리를 만들어 두지 않고 잰다 (없는 것과 비는 것을 구별 못 한다)',
+    'packages/server/test/굽는동안.test.ts',
+    '  beforeAll(미리굽기, 180_000);',
+    '  beforeAll(() => {}, 180_000);',
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
+    '고장을 심고 나서 자국을 남긴다 (그 사이에 죽으면 못 되돌린다)',
+    '검증/고장내보기.mjs',
+    '  자국남기기(파일, 원본);   // **고장을 심기 전에** 남긴다. 뒤에 남기면 그 사이에 죽는다',
+    '  void 자국남기기;',
+    '검증',
+  ],
   [
     'get_content 가 표의 page_break 를 안 낸다 (써 놓고 확인할 길이 없다)',
     'packages/server/src/도구.ts',
@@ -865,9 +901,56 @@ function 줄끝맞추기(파일글, 찾을글) {
 
 const 되돌릴것 = new Map();   // 파일 → 원래 내용
 
+/**
+ * **강제로 죽으면 고장이 나무에 남는다.**
+ *
+ * 아래 `process.on('exit')` 과 SIGINT·SIGTERM 은 얌전히 죽을 때만 돈다.
+ * `Stop-Process -Force`(윈도우) · `SIGKILL` 로 죽으면 **셋 다 안 돈다.**
+ * 2026-09-04 에 실제로 겪었다 — 배경으로 넘어간 이 스크립트를 죽였더니
+ * 손댄 적 없는 `packages/server/src/서버.ts` 에 고장이 남아 있었다.
+ * git 이 보는 파일이라 `git status` 로 잡긴 했지만, 못 보고 커밋했으면
+ * 「남의 package.json 판을 제 판이라 한다」 는 고장이 그대로 나갈 뻔했다.
+ *
+ * 그래서 고장을 심기 **전에** 원본을 딴 자리에 떨어뜨려 둔다. 죽어도 파일은
+ * 남으므로, **다음 실행이 그걸 보고 먼저 되돌린다.**
+ */
+const 자국칸 = path.join(os.tmpdir(), 'hwpx-고장자국');
+
+function 자국남기기(파일, 원본) {
+  fs.mkdirSync(자국칸, { recursive: true });
+  fs.writeFileSync(path.join(자국칸, `${process.pid}.json`),
+    JSON.stringify({ 파일, 원본 }), 'utf8');
+}
+function 자국지우기() {
+  fs.rmSync(path.join(자국칸, `${process.pid}.json`), { force: true });
+}
+
+/** 지난번에 죽으며 두고 간 고장을 되돌린다. **돌리기 전에 먼저 한다.** */
+function 두고간것되돌리기() {
+  if (!fs.existsSync(자국칸)) return;
+  for (const 이름 of fs.readdirSync(자국칸)) {
+    const 길 = path.join(자국칸, 이름);
+    const 쥔이 = Number(이름.replace(/\.json$/, ''));
+    // 아직 살아 있는 프로세스의 자국이면 남의 일이다 — 건드리지 않는다
+    if (Number.isFinite(쥔이) && 쥔이 !== process.pid) {
+      try { process.kill(쥔이, 0); continue; } catch { /* 죽었다 */ }
+    }
+    try {
+      const { 파일, 원본 } = JSON.parse(fs.readFileSync(길, 'utf8'));
+      if (fs.readFileSync(파일, 'utf8') !== 원본) {
+        fs.writeFileSync(파일, 원본, 'utf8');
+        console.log(`※ 지난번에 죽으며 두고 간 고장을 되돌렸다: ${파일}`);
+      }
+    } catch { /* 자국이 깨졌으면 지우기만 한다 */ }
+    fs.rmSync(길, { force: true });
+  }
+}
+두고간것되돌리기();
+
 function 되돌리기() {
   for (const [f, 글] of 되돌릴것) fs.writeFileSync(f, 글, 'utf8');
   되돌릴것.clear();
+  자국지우기();
 }
 process.on('exit', 되돌리기);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { 되돌리기(); process.exit(130); });
@@ -884,6 +967,7 @@ for (const [이름, 파일, 원래글, 고장난글, 어디] of 고장들) {
     continue;
   }
   되돌릴것.set(파일, 원본);
+  자국남기기(파일, 원본);   // **고장을 심기 전에** 남긴다. 뒤에 남기면 그 사이에 죽는다
   fs.writeFileSync(파일, 원본.replace(찾을글, 넣을글), 'utf8');
 
   const r = spawnSync(process.execPath, [

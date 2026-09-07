@@ -51,16 +51,32 @@ fs.mkdirSync(무대, { recursive: true });
  * **모든 문서가 이 셋 중 하나에서 시작한다.** 이 셋이 안 되면 앱이 안 된다.
  * 없으면 그렇다고 말하고 건너뛴다 — 조용히 빼면 "다 됐다" 는 거짓말이 된다.
  */
-const 양식칸 = 'C:/Users/owm21/gemini-studio/vendor/base-forms';
-const 양식들 = ['newsletter.hwpx', 'plan.hwpx', 'report.hwpx']
+// **경로를 한 군데 박아 두면 옮겨 갈 때 조용히 건너뛴다.**
+// 2026-09-04 에 gemini-studio 가 `~/gemini-studio` 에서 `~/projects/gemini-studio`
+// 로 옮겨 갔다. 박아 둔 경로 그대로였으면 이 갈래는 "없어 건너뛴다" 를 찍고
+// **exit 0** 으로 나갔을 것이다 — 전부.mjs 에는 ○ 로 뜬다.
+// 「양식이 없는 기계」와 「경로가 묵은 것」이 똑같이 보인다.
+// 이름은 **ASCII 로** 둔다. `HWPX_양식칸` 으로 지었다가 bash 에서
+// `not a valid identifier` 가 났다 — 셸 밖으로 나가는 이름은 한글을 못 쓴다.
+const 양식후보 = [
+  process.env['HWPX_FORMS_DIR'],
+  path.join(os.homedir(), 'projects', 'gemini-studio', 'vendor', 'base-forms'),
+  path.join(os.homedir(), 'gemini-studio', 'vendor', 'base-forms'),   // 옛 자리
+].filter((x) => x !== undefined);
+const 양식칸 = 양식후보.find((d) => fs.existsSync(d));
+
+const 양식들 = 양식칸 === undefined ? [] : ['newsletter.hwpx', 'plan.hwpx', 'report.hwpx']
   .map((f) => ({ 이름: f, 길: path.join(양식칸, f) }))
   .filter((x) => fs.existsSync(x.길));
 
 if (양식들.length === 0) {
-  console.log(`※ ${양식칸} 에 기본 양식이 없어 건너뛴다`);
-  console.log('  (Draftsmith 가 안 깔린 기계다. 이건 실패가 아니다.)');
+  console.log('※ 기본 양식을 못 찾아 건너뛴다. 찾아본 곳:');
+  for (const d of 양식후보) console.log(`    ${d}`);
+  console.log('  (Draftsmith 가 안 깔린 기계다. 이건 실패가 아니다.');
+  console.log('   옮겨 놓았으면 HWPX_FORMS_DIR 에 그 폴더를 적어라.)');
   process.exit(0);
 }
+console.log(`기본 양식 ${양식들.length}개를 ${양식칸} 에서 찾았다`);
 
 const 탈 = [];
 const 줄들 = [];

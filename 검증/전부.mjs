@@ -19,12 +19,17 @@ process.chdir(뿌리);
 const 한글까지 = process.argv.includes('--한글');
 
 // ── 훑을 문서 목록을 그때그때 만든다 (묵은 목록을 쓰면 조용히 0편이 된다) ──
+//
+// **폴더가 옮겨 가면 훑는 편수가 조용히 준다.** 2026-09-04 에 프로젝트들이
+// 바탕화면에서 `~/projects` 로 옮겨 가면서 181편이 172편이 됐다. 갈래는 그대로
+// 파랑이었다 — 덜 본 것을 아무도 몰랐다. 그래서 아래 「몇 편을 훑나」를 찍는다.
 const 문서폴더 = [
   path.join(뿌리, '자료', '기준파일'),
   path.join(뿌리, '자료', '표본', '공개'),
   path.join(뿌리, '자료', '표본', '로컬'),
   path.join(os.homedir(), 'OneDrive', '문서'),
   path.join(os.homedir(), 'OneDrive', '바탕 화면'),
+  path.join(os.homedir(), 'projects'),
 ];
 function 긁기(d, 깊이 = 3) {
   if (깊이 < 0 || !fs.existsSync(d)) return [];
@@ -40,7 +45,17 @@ function 긁기(d, 깊이 = 3) {
 const 문서들 = [...new Set(문서폴더.flatMap((d) => 긁기(d)))];
 const 목록파일 = path.join(os.tmpdir(), 'hwpx-훑기목록.txt');
 fs.writeFileSync(목록파일, 문서들.join('\n'), 'utf8');
-console.log(`훑을 문서 ${문서들.length}편을 모았다\n`);
+
+// **어디서 몇 편이 왔는지 갈라 찍는다.** 통 수만 찍으면 한 폴더가 통째로
+// 빠져도 「좀 줄었네」로 보이고, 갈래는 그대로 파랑이라 아무도 안 본다.
+// 폴더가 아예 없으면 그렇다고 말한다 — 0편과 「없는 폴더」는 다르다.
+console.log(`훑을 문서 ${문서들.length}편을 모았다`);
+const 짧게 = (d) => (d.startsWith(뿌리) ? '.' + d.slice(뿌리.length) : d.replace(os.homedir(), '~'));
+for (const d of 문서폴더) {
+  const n = fs.existsSync(d) ? 긁기(d).length : -1;
+  console.log(`  ${n < 0 ? '  —' : String(n).padStart(3)}  ${짧게(d)}${n < 0 ? '   (폴더가 없다)' : ''}`);
+}
+console.log();
 
 const 할일 = [
   ['꾸러미 굽기', process.execPath, [path.join('검증', '빌드.mjs')]],

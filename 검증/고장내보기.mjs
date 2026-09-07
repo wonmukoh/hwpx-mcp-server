@@ -25,6 +25,41 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    '쪽 설정이 든 문단도 지운다 (용지 크기·여백이 통째로 날아간다)',
+    'packages/doc/src/문서.ts',
+    "    if (findAll(p.el, 'hp:secPr').length > 0) {",
+    '    if (false) {',
+    'packages/doc',
+  ],
+  [
+    '쪽 설정이 없어도 탈이 아니라 한다 (지워 놓고 성하다고 답한다)',
+    'packages/doc/src/문서.ts',
+    '      if (쪽설정수 === 0) {',
+    '      if (false) {',
+    'packages/doc',
+  ],
+  [
+    '표 옆의 빈 hp:t 를 글로 친다 (문단을 영영 안 걷는다 — 271개 중 262개)',
+    'packages/doc/src/문서.ts',
+    "    return textOf(c as ElementNode).trim() === '';",
+    '    return false;',
+    'packages/doc',
+  ],
+  [
+    '빈 hp:t 가 아닌 것도 비었다고 친다 (hp:ctrl 이 든 런까지 걷는다)',
+    'packages/doc/src/문서.ts',
+    "    if (이름 !== 'hp:t') return false;                 // hp:ctrl · hp:line 따위",
+    "    if (이름 !== 'hp:t') return true;",
+    'packages/doc',
+  ],
+  [
+    '옛 방식으로 굽는다 — dist 를 먼저 지우고 그 자리에 (굽는 내내 빈 자리다)',
+    '검증/빌드.mjs',
+    'const 굽는곳 = `${낼곳}.굽는중.${process.pid}`;',
+    'const 굽는곳 = 낼곳;',
+    'packages/server/test/굽는동안.test.ts',
+  ],
+  [
     '표가 든 문단도 지운다 (표가 통째로 날아간다)',
     'packages/doc/src/문서.ts',
     '    if (안것.length > 0) {',
@@ -32,7 +67,7 @@ const 고장들 = [
     'packages/doc',
   ],
   [
-    '구역의 마지막 문단도 지운다 (문단 없는 구역은 한글이 안 연다)',
+    '구역·칸의 마지막 문단도 지운다 (문단 없는 칸은 한글이 표를 못 그린다)',
     'packages/doc/src/문서.ts',
     "    if (childrenNamed(부모, 'hp:p').length <= 1) {",
     '    if (false) {',

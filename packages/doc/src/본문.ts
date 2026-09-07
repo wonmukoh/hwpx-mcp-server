@@ -379,6 +379,55 @@ export class 구역 {
     return 됨({ 바뀐수 });
   }
 
+  /**
+   * **쪽 테두리·배경이 가리키는 borderFill 번호들.**
+   *
+   * `hp:secPr > hp:pageBorderFill` 이다. 실측: 구역마다 **셋**이 있고
+   * (`type` 이 `BOTH`·`EVEN`·`ODD`) 표본 108개가 **전부 `borderFillIDRef=1`**
+   * 을 가리킨다. 그러니 만드는 것이 아니라 **가리키는 곳을 바꾸는** 일이다.
+   *
+   * 홀·짝 쪽을 따로 꾸미는 문서를 위해 셋을 다 준다.
+   */
+  get 쪽테두리들(): { 종류: string; 번호: string }[] {
+    const sp = this.쪽설정;
+    if (sp === undefined) return [];
+    return childrenNamed(sp, 'hp:pageBorderFill').map((e) => ({
+      종류: getAttr(e, 'type') ?? 'BOTH',
+      번호: getAttr(e, 'borderFillIDRef') ?? '0',
+    }));
+  }
+
+  /**
+   * 쪽 테두리·배경이 가리킬 borderFill 을 바꾼다.
+   *
+   * `종류` 를 안 주면 **셋 다** 바꾼다 — 홀·짝만 바꾸고 싶은 쪽이 드물고,
+   * 하나만 바꾸면 짝수 쪽에서만 테두리가 사라져 눈치채기 어렵다.
+   */
+  쪽테두리주기(번호: string, 종류?: string): 결과<{ 바뀐수: number }> {
+    const sp = this.쪽설정;
+    if (sp === undefined) {
+      return 안됨('이 구역에 쪽 설정(hp:secPr)이 없다', '한글이 만든 문서라면 늘 있다.');
+    }
+    const 것들 = childrenNamed(sp, 'hp:pageBorderFill')
+      .filter((e) => 종류 === undefined || getAttr(e, 'type') === 종류);
+    if (것들.length === 0) {
+      return 안됨(
+        `이 구역에 hp:pageBorderFill${종류 === undefined ? '' : `(type=${종류})`} 이 없다`,
+        '한글이 만든 문서라면 BOTH·EVEN·ODD 셋이 있다.',
+      );
+    }
+    let 바뀐수 = 0;
+    for (const e of 것들) {
+      if (getAttr(e, 'borderFillIDRef') === 번호) continue;
+      setAttr(e, 'borderFillIDRef', 번호);
+      바뀐수++;
+    }
+    if (바뀐수 === 0) {
+      return 안됨('이미 그 테두리라 바뀐 것이 없다', '다른 번호를 주거나 지금 값을 먼저 읽어 보라.');
+    }
+    return 됨({ 바뀐수 });
+  }
+
   /** 용지 크기 (HWPUNIT). A4 세로는 59528 × 84188 */
   get 용지크기(): { 너비: number; 높이: number } | undefined {
     const pp = this.쪽설정 && firstChildNamed(this.쪽설정, 'hp:pagePr');

@@ -81,6 +81,27 @@ export interface 글자모양패치 {
   자간?: number;
   /** 장평 — 글자 너비 백분율. 100 이 보통 */
   장평?: number;
+  /**
+   * 취소선. **`hh:strikeout` 은 늘 있고 `@shape` 로 켜고 끈다** — 굵게처럼
+   * 자식의 있고 없고가 아니다. 실측: 2564개 전부에 요소가 있고
+   * `NONE` 1726 · `3D` 833 · `SOLID` 5 다. **`3D` 도 안 그은 것**이다.
+   */
+  취소선?: boolean;
+  /**
+   * 첨자. `'super'` 위, `'sub'` 아래, `'none'` 없앰.
+   *
+   * **요소 이름이 `hh:supscript` 다** — 규격 표에는 `SUPERSCRIPT` 로 적혀 있는데
+   * 실물은 줄여 쓴다(실측 77개). 짐작하면 안 걸리는 자리다.
+   * 둘은 같이 못 켠다 — 하나를 켜면 다른 하나를 뗀다.
+   */
+  첨자?: 'super' | 'sub' | 'none';
+  /**
+   * 강조점 — `hh:charPr/@symMark`. `NONE` 이면 없앤다.
+   *
+   * 실측: 표본 2564개가 **전부 `NONE`** 이다. 쓰는 문서를 못 봤다.
+   * 그래서 값은 한글에 넣어 보고 살아남는 것만 받는다(`한글수용시험`).
+   */
+  강조점?: string;
 }
 
 /**
@@ -114,6 +135,17 @@ export interface 문단모양패치 {
   위여백?: HwpUnit;
   아래여백?: HwpUnit;
   줄간격?: 줄간격;
+  /**
+   * 문단 테두리·배경.
+   *
+   * **`hh:paraPr > hh:border/@borderFillIDRef`** 다. 실측: 문단모양 2565개가
+   * **전부** 그 요소를 갖고 있고 이미 borderFill 을 가리킨다. 그러니 만드는 것이
+   * 아니라 **가리키는 곳을 바꾸는** 일이다 — 셀 테두리와 같은 짜임이다.
+   *
+   * 없어서 `box` 블록으로 흉내 내고 있었다. 흉내는 표를 하나 더 만드는 것이라
+   * 뼈대가 지저분해지고 쪽 넘김도 달라진다.
+   */
+  테두리?: 테두리패치;
 }
 
 /** 여백 이름 → 태그 */
@@ -358,6 +390,27 @@ export class 머리글 {
       // 굵게·기울임은 속성이 아니라 **자식 요소의 있고 없고**다 (자료/실측.md 5항)
       if (패치.굵게 !== undefined) 자식있고없고('hh:bold', 패치.굵게);
       if (패치.기울임 !== undefined) 자식있고없고('hh:italic', 패치.기울임);
+
+      // **취소선은 다르다.** 요소가 늘 있고 `@shape` 로 켜고 끈다.
+      // 자식 있고 없고로 다뤘다가 문서 전체에 줄이 그어진 적이 있다.
+      if (패치.취소선 !== undefined) {
+        const 꼴 = 패치.취소선 ? 'SOLID' : 'NONE';
+        const so = firstChildNamed(el, 'hh:strikeout');
+        if (so) {
+          if (getAttr(so, 'shape') !== 꼴) { setAttr(so, 'shape', 꼴); 바꿨나 = true; }
+        } else {
+          appendChild(el, createElement('hh:strikeout', { shape: 꼴, color: '#000000' }));
+          바꿨나 = true;
+        }
+      }
+
+      // 첨자는 **둘이 같이 있으면 안 된다.** 하나를 켜면 다른 하나를 뗀다.
+      if (패치.첨자 !== undefined) {
+        자식있고없고('hh:supscript', 패치.첨자 === 'super');
+        자식있고없고('hh:subscript', 패치.첨자 === 'sub');
+      }
+
+      if (패치.강조점 !== undefined) 속성('symMark', 패치.강조점.toUpperCase());
       if (패치.밑줄 !== undefined) {
         const u = firstChildNamed(el, 'hh:underline');
         if (u) {
@@ -385,8 +438,30 @@ export class 머리글 {
   paraPr확보(바탕id: string, 패치: 문단모양패치): 결과<{ id: string; 새로만듦: boolean }> {
     if (Object.keys(패치).length === 0) return 됨({ id: 바탕id, 새로만듦: false });
 
+    // 테두리는 **딴 목록(borderFills)에 만들고 번호만 가리킨다.**
+    // paraPr 안에서 만들 수 없으니 여기서 먼저 확보한다.
+    let 테두리id: string | undefined;
+    if (패치.테두리 !== undefined) {
+      // 바탕은 그 문단이 지금 가리키는 것에서 뜬다 — 맨땅에서 만들면
+      // 안 준 면이 규격 기본으로 돌아가 엉뚱한 선이 생긴다.
+      const 지금 = this.낱개('hh:paraProperties', 바탕id);
+      const 지금테 = 지금 === undefined ? undefined : firstChildNamed(지금, 'hh:border');
+      const 바탕테 = 지금테 === undefined ? '0' : (getAttr(지금테, 'borderFillIDRef') ?? '0');
+      const r = this.borderFill확보(바탕테, 패치.테두리);
+      if (!r.ok) return r;
+      테두리id = r.value.id;
+    }
+
     return this.확보('hh:paraProperties', 바탕id, (el) => {
       let 바꿨나 = false;
+
+      if (테두리id !== undefined) {
+        const b = firstChildNamed(el, 'hh:border');
+        if (b !== undefined && getAttr(b, 'borderFillIDRef') !== 테두리id) {
+          setAttr(b, 'borderFillIDRef', 테두리id);
+          바꿨나 = true;
+        }
+      }
 
       if (패치.정렬 !== undefined) {
         const a = firstChildNamed(el, 'hh:align');

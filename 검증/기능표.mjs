@@ -79,7 +79,18 @@ const 기능들 = [
       // 머리글의 secCnt 가 안 맞으면 한글이 둘째 구역을 통째로 버린다
       && d.머리.구역수 === 2
       && (d.구역들[1].문단들.map((p) => p.글 ?? '').join('')).includes('둘째 구역') },
-  { 갈래: '문서·구역', 이름: '쪽 테두리·배경', 안됨: '넣을 길이 없다' },
+  // `hp:secPr > hp:pageBorderFill` 이다. 구역마다 셋(BOTH·EVEN·ODD)이 이미 있고
+  // 실측 108개가 전부 borderFillIDRef=1 이라, 만드는 게 아니라 가리키는 곳을 바꾼다.
+  { 갈래: '문서·구역', 이름: '쪽 테두리·배경',
+    블록: [{ kind: 'body', text: '가' }],
+    고침: () => [{ op: 'set_page', border: '0.4 mm #2A5DA8', background: '#F2F5F9' }],
+    본다: (d, 머리) => {
+      const 번호 = d.구역들[0]?.쪽테두리들?.[0]?.번호;
+      if (번호 === undefined) return false;
+      const bf = findAll(머리, 'hh:borderFill').find((e) => getAttr(e, 'id') === 번호);
+      return bf !== undefined
+        && 속성(firstChildNamed(bf, 'hh:leftBorder'), 'color') === '#2A5DA8';
+    } },
   { 갈래: '문서·구역', 이름: '바탕쪽', 안됨: '넣을 길이 없다' },
 
   // ── 문단 ───────────────────────────────────────────────────────────────
@@ -99,7 +110,22 @@ const 기능들 = [
   { 갈래: '문단', 이름: '탭', 블록: [{ kind: 'body', text: 'Ⅰ. 추진 배경	3', indent: false }],
     본다: (d) => findAll(d.구역들[0].root, 'hp:tab').length === 1 },
   { 갈래: '문단', 이름: '개요 번호(자동 번호)', 안됨: '넣을 길이 없다' },
-  { 갈래: '문단', 이름: '문단 테두리·배경', 안됨: '넣을 길이 없다 (box 블록으로 흉내낸다)' },
+  // `hh:paraPr > hh:border/@borderFillIDRef` 다. 문단모양 2565개가 전부 갖고 있다.
+  { 갈래: '문단', 이름: '문단 테두리·배경',
+    블록: [{ kind: 'body', text: '가' }],
+    고침: (것들) => [{
+      op: 'set_style',
+      id: 것들.find((x) => x.kind === 'paragraph').id,
+      border: '0.4 mm #C0392B', background: '#FFF3E0',
+    }],
+    본다: (d, 머리) => findAll(머리, 'hh:paraPr').some((pp) => {
+      const b = firstChildNamed(pp, 'hh:border');
+      if (b === undefined) return false;
+      const bf = findAll(머리, 'hh:borderFill')
+        .find((e) => getAttr(e, 'id') === getAttr(b, 'borderFillIDRef'));
+      return bf !== undefined
+        && 속성(firstChildNamed(bf, 'hh:leftBorder'), 'color') === '#C0392B';
+    }) },
 
   // ── 글자 ───────────────────────────────────────────────────────────────
   { 갈래: '글자', 이름: '글꼴', 블록: [{ kind: 'body', text: '가', font: '휴먼명조' }],
@@ -131,9 +157,15 @@ const 기능들 = [
     본다: (d, 머리) => 글자속성(d, 머리, (cp) => getAttr(cp, 'shadeColor') === '#FFFF00') },
   { 갈래: '글자', 이름: '장평', 블록: [{ kind: 'body', text: '가', width_ratio: 90 }],
     본다: (d, 머리) => 글자속성(d, 머리, (cp) => 속성(firstChildNamed(cp, 'hh:ratio'), 'hangul') === '90') },
-  { 갈래: '글자', 이름: '취소선', 안됨: '넣을 길이 없다' },
-  { 갈래: '글자', 이름: '위·아래 첨자', 안됨: '넣을 길이 없다' },
-  { 갈래: '글자', 이름: '강조점', 안됨: '넣을 길이 없다' },
+  // 취소선은 **자식 있고 없고가 아니라 @shape** 다. 3D 도 안 그은 것이다 (실측 29항).
+  { 갈래: '글자', 이름: '취소선', 블록: [{ kind: 'body', text: '가', strike: true }],
+    본다: (d, 머리) => 글자속성(d, 머리, (cp) => 속성(firstChildNamed(cp, 'hh:strikeout'), 'shape') === 'SOLID') },
+  // **hh:supscript 다.** 규격 표에는 SUPERSCRIPT 로 적혀 있다 — 짐작하면 틀린다.
+  { 갈래: '글자', 이름: '위·아래 첨자', 블록: [{ kind: 'body', text: '가', script: 'super' }],
+    본다: (d, 머리) => 글자속성(d, 머리, (cp) => firstChildNamed(cp, 'hh:supscript') !== undefined) },
+  // 자식이 아니라 hh:charPr/@symMark 다. 표본 2564개가 다 NONE 이라 한글로 확인했다.
+  { 갈래: '글자', 이름: '강조점', 블록: [{ kind: 'body', text: '가', emphasis: 'DOT_ABOVE' }],
+    본다: (d, 머리) => 글자속성(d, 머리, (cp) => getAttr(cp, 'symMark') === 'DOT_ABOVE') },
 
   // ── 표 ─────────────────────────────────────────────────────────────────
   { 갈래: '표', 이름: '만들기', 블록: [{ kind: 'table', headers: ['가', '나'], rows: [['1', '2']] }],
@@ -296,6 +328,20 @@ for (const [i, f] of 기능들.entries()) {
       나온것.push({ ...f, 됨: false, 왜: `도구가 거절: ${(r.content?.[0]?.text ?? '').split('\n')[0].slice(0, 60)}` });
       continue;
     }
+    // **`edit` 으로만 되는 기능도 잴 수 있어야 한다.** 없으면 그런 기능은
+    // 표에서 영영 「안 됨」 으로 남는다 — 표가 거짓말을 하게 된다.
+    if (f.고침) {
+      const 뼈 = await 도구부르기('get_outline', { doc_id }, 방);
+      const 것들 = 뼈.structuredContent?.items ?? [];
+      const edits = f.고침(것들);
+      const e = await 도구부르기('edit', { doc_id, edits }, 방);
+      if (e.isError) {
+        const 왜 = (e.content?.[0]?.text ?? '').split(String.fromCharCode(10))[0];
+        나온것.push({ ...f, 됨: false, 왜: `고침이 거절: ${왜.slice(0, 60)}` });
+        continue;
+      }
+    }
+
     const 낼곳 = path.join(무대, `f${i}.hwpx`);
     const s = await 도구부르기('save_document', { doc_id, path: 낼곳, overwrite: true }, 방);
     if (s.isError) {

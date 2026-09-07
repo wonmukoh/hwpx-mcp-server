@@ -361,6 +361,23 @@ export class 문서 {
     }
     const p = 것.value.문단;
 
+    // **쪽 설정이 든 문단은 절대 못 지운다.**
+    //
+    // 구역의 **첫 문단**이 `hp:secPr` 를 담고 있다 — 용지 크기·여백·쪽 번호가
+    // 다 거기 있다. 그 문단은 대개 글이 비어 있어서 「빈 문단이니 지워도 되겠지」로
+    // 지워진다. 재 봤더니 `ref-text-basic` 에서 실제로 지워졌고,
+    // **용지크기가 undefined 가 됐는데 `검사()` 는 탈이 없다고 했다.**
+    //
+    // 표·그림과 달리 이건 `force` 로도 안 연다. 되돌릴 길이 없고,
+    // 「빈 문단을 지웠을 뿐」이라 무엇이 사라졌는지 아무도 모른다.
+    if (findAll(p.el, 'hp:secPr').length > 0) {
+      return this.남기기('문단지우기', id, 안됨(
+        `${id} 는 구역의 쪽 설정(hp:secPr)을 담고 있다`,
+        '용지 크기·여백·쪽 번호가 그 안에 있다. 지우면 문서가 쪽 설정을 잃는다. '
+        + '글만 비우려면 set_text 로 빈 글을 넣어라.',
+      ));
+    }
+
     // 표·그림이 딸려 있나. **딸려 지우면 안 된다** — 무엇이 사라지는지 말해 준다.
     const 안것 = ['hp:tbl', 'hp:pic', 'hp:container', 'hp:equation']
       .flatMap((n) => findAll(p.el, n).map((e) => e.name));
@@ -441,12 +458,12 @@ export class 문서 {
     this.이름표.버리기(id);
 
     let 빈문단도지웠나 = false;
-    if (런 !== undefined && 런.name === 'hp:run' && 런.children.length === 0) {
+    if (런 !== undefined && 런.name === 'hp:run' && 런빈것인가(런)) {
       const 문단부모 = 문단el?.parent as ElementNode | undefined;
       removeNode(런);
-      // 문단에 런이 하나도 안 남았고, 그 문단이 마지막이 아니면 문단도 걷는다
+      // 문단에 성한 런이 하나도 안 남았고, 그 문단이 마지막이 아니면 문단도 걷는다
       if (문단el !== undefined && 문단el.name === 'hp:p'
-        && childrenNamed(문단el, 'hp:run').length === 0
+        && childrenNamed(문단el, 'hp:run').every((r) => 런빈것인가(r))
         && 문단부모 !== undefined && childrenNamed(문단부모, 'hp:p').length > 1) {
         removeNode(문단el);
         빈문단도지웠나 = true;
@@ -498,6 +515,15 @@ export class 문서 {
   검사(): string[] {
     const 탈: string[] = [...this.머리.itemCnt검사()];
     for (const s of this.구역들) {
+      // **구역마다 쪽 설정이 하나 있어야 한다.**
+      //
+      // 없으면 용지 크기·여백·쪽 번호가 통째로 없는 것이다. 이걸 안 보고 있었다 —
+      // 첫 문단을 지워 `hp:secPr` 가 사라진 문서를 두고 **「탈 없음」이라고 답했다.**
+      // 문단지우기가 이제 막지만, 딴 길로도 사라질 수 있으니 여기서도 잡는다.
+      const 쪽설정수 = findAll(s.root, 'hp:secPr').length;
+      if (쪽설정수 === 0) {
+        탈.push(`${s.이름}: 쪽 설정(hp:secPr)이 없다 — 용지 크기·여백이 통째로 없다`);
+      }
       for (const t of s.표들) {
         for (const x of new 표(t).탈만) 탈.push(`${s.이름}: ${x}`);
       }
@@ -584,6 +610,32 @@ export class 문서 {
 }
 
 /** node 가 root 아래에 있나 */
+/**
+ * **이 런은 사실상 비어 있나.**
+ *
+ * 「자식이 하나도 없나」로 보면 실제 문서에서 거의 안 걸린다. 재 봤다 —
+ *
+ *     표가 든 런 271개 (표본 33편)
+ *       253  표 말고 남는 것: hp:t          ← **빈** hp:t 다
+ *         9  (없음)
+ *         6  hp:ctrl · hp:line 등
+ *       남는 것이 빈 hp:t 뿐인 런 **265개 (98%)**
+ *
+ * 그러니 「완전히 비면」 규칙은 **271개 중 9개**에만 걸렸다. 규칙은 맞는데
+ * 조건이 현실에서 거의 성립하지 않아, 있으면서 아무 일도 안 하고 있었다.
+ *
+ * 빈 `hp:t` 는 한글이 표 옆에 늘 하나씩 두는 것이라 글이 아니다.
+ * `hp:ctrl`·`hp:line` 은 진짜 무언가라 그게 남으면 런을 안 걷는다.
+ */
+function 런빈것인가(런: ElementNode): boolean {
+  return 런.children.every((c) => {
+    const 이름 = (c as { name?: string }).name;
+    if (이름 === undefined) return false;              // 글월이 그대로 있다
+    if (이름 !== 'hp:t') return false;                 // hp:ctrl · hp:line 따위
+    return textOf(c as ElementNode).trim() === '';
+  });
+}
+
 function 안에있나(root: ElementNode, node: ElementNode): boolean {
   let p: ElementNode | undefined = node;
   while (p) {

@@ -61,13 +61,20 @@ for (const 이름 of 목록) {
     if (!쓸문단) { 준비실패.push([이름, '문단이 없다']); continue; }
     const pid = d.이름표.아이디(쓸문단.el);
 
-    const 한일 = { 글: false, 글자서식: false, 문단서식: false, 강조: false, 표: false };
+    const 한일 = { 글: false, 글자서식: false, 문단서식: false, 강조: false, 표: false,
+      꾸밈: false };
 
     const r1 = d.글바꾸기(pid, 표시);
     한일.글 = r1.ok;
 
     const r2 = d.글자서식주기(pid, { 크기: 13, 굵게: true });
     한일.글자서식 = r2.ok;
+
+    // **취소선·첨자·강조점이 한글을 넘는가.**
+    // 셋 다 이름을 짐작하면 틀리는 자리고, 강조점(`@symMark`)은 표본 2564개가
+    // 전부 NONE 이라 **실물을 한 번도 못 봤다.** 한글이 심판을 본다.
+    const r2b = d.글자서식주기(pid, { 취소선: true, 첨자: 'super', 강조점: 'DOT_ABOVE' });
+    한일.꾸밈 = r2b.ok;
 
     const r3 = d.문단서식주기(pid, { 왼쪽여백, 정렬: 'CENTER' });
     한일.문단서식 = r3.ok;
@@ -107,6 +114,10 @@ for (const 이름 of 목록) {
 const ps = `
 $ErrorActionPreference = 'Continue'
 $hwp = New-Object -ComObject HWPFrame.HwpObject
+# **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
+# 사용자가 다른 프로그램에 하는 클릭을 먹는다. 검증 한 바퀴에 수십 번이다.
+try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}
+try { $hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}
 try { $hwp.RegisterModule("FilePathCheckDLL","FilePathCheckerModule") | Out-Null } catch {}
 try {
   foreach ($f in Get-ChildItem -Path '${앞마당}' -Filter *.hwpx) {
@@ -134,7 +145,8 @@ for (const 줄 of 결과.split(/\r?\n/)) {
 // ── 3. 한글이 뱉은 것에서 우리 값이 살아 있나 ─────────────────────────────
 let 통과 = 0;
 const 실패 = [...준비실패];
-const 확인한것 = { 글: 0, 굵게: 0, 여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0 };
+const 확인한것 = { 글: 0, 굵게: 0, 취소선: 0, 첨자: 0, 강조점: 0,
+  여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0 };
 
 for (const 이름 of 목록) {
   const 낸것 = 한것.get(이름);
@@ -162,6 +174,20 @@ for (const 이름 of 목록) {
         .some((cp) => firstChildNamed(cp, 'hh:bold') && getAttr(cp, 'height') === '1300');
       if (!굵은게있나) 문제.push('13pt 굵은 글자모양이 사라졌다');
       else 확인한것.굵게++;
+    }
+
+    // 취소선·첨자·강조점 — 셋을 따로 센다. 한꺼번에 세면 하나만 살아도 통과한다.
+    if (낸것.한일.꾸밈) {
+      const 모든charPr = findAll(머리.root, 'hh:charPr');
+      const 볼것 = [
+        ['취소선', (cp) => getAttr(firstChildNamed(cp, 'hh:strikeout') ?? cp, 'shape') === 'SOLID'],
+        ['첨자', (cp) => firstChildNamed(cp, 'hh:supscript') !== undefined],
+        ['강조점', (cp) => getAttr(cp, 'symMark') === 'DOT_ABOVE'],
+      ];
+      for (const [이름, 보나] of 볼것) {
+        if (모든charPr.some(보나)) 확인한것[이름]++;
+        else 문제.push(`${이름}이 한글을 넘으며 사라졌다`);
+      }
     }
 
     // 문단 여백·정렬

@@ -201,6 +201,12 @@ export interface 글블록 {
   underline?: boolean | string;
   /** 글자 배경(음영) 색 `#RRGGBB`. `none` 이면 없앤다 */
   shade?: string;
+  /** 취소선 */
+  strike?: boolean;
+  /** 첨자 — `super` 위, `sub` 아래, `none` 없앰 */
+  script?: 'super' | 'sub' | 'none';
+  /** 강조점 종류 (예: `DOT_ABOVE`). `NONE` 이면 없앤다 */
+  emphasis?: string;
   /** 장평 — 글자 너비 백분율. 100 이 보통 */
   width_ratio?: number;
 }
@@ -252,6 +258,12 @@ export interface 본문블록 {
   underline?: boolean | string;
   /** 글자 배경(음영) 색 `#RRGGBB`. `none` 이면 없앤다 */
   shade?: string;
+  /** 취소선 */
+  strike?: boolean;
+  /** 첨자 — `super` 위, `sub` 아래, `none` 없앰 */
+  script?: 'super' | 'sub' | 'none';
+  /** 강조점 종류 (예: `DOT_ABOVE`). `NONE` 이면 없앤다 */
+  emphasis?: string;
   /** 장평 — 글자 너비 백분율. 100 이 보통 */
   width_ratio?: number;
 }
@@ -298,6 +310,12 @@ export interface 소제목블록 {
   underline?: boolean | string;
   /** 글자 배경(음영) 색 `#RRGGBB`. `none` 이면 없앤다 */
   shade?: string;
+  /** 취소선 */
+  strike?: boolean;
+  /** 첨자 — `super` 위, `sub` 아래, `none` 없앰 */
+  script?: 'super' | 'sub' | 'none';
+  /** 강조점 종류 (예: `DOT_ABOVE`). `NONE` 이면 없앤다 */
+  emphasis?: string;
   /** 장평 — 글자 너비 백분율. 100 이 보통 */
   width_ratio?: number;
 }
@@ -335,6 +353,12 @@ export interface 주석블록 {
   underline?: boolean | string;
   /** 글자 배경(음영) 색 `#RRGGBB`. `none` 이면 없앤다 */
   shade?: string;
+  /** 취소선 */
+  strike?: boolean;
+  /** 첨자 — `super` 위, `sub` 아래, `none` 없앰 */
+  script?: 'super' | 'sub' | 'none';
+  /** 강조점 종류 (예: `DOT_ABOVE`). `NONE` 이면 없앤다 */
+  emphasis?: string;
   /** 장평 — 글자 너비 백분율. 100 이 보통 */
   width_ratio?: number;
 }

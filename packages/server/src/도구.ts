@@ -22,7 +22,8 @@ import {
   문서, 표, 문단, 됨, 안됨, 셀아이디풀기,
   type 결과, type 글자모양패치, 그림들이기,
 } from '@hwpx/doc';
-import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각 } from '@hwpx/compose';
+import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각, 면풀기 }
+  from '@hwpx/compose';
 import { 엮기 } from '@hwpx/render';
 import {
   childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp,
@@ -214,6 +215,9 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   underline: 참거짓('밑줄'),
   shade: 글자('글자 배경(음영) 색 #RRGGBB'),
   width_ratio: 숫자('장평 — 글자 너비 %. 100 이 보통'),
+  strike: 참거짓('취소선'),
+  script: 고름('첨자. super 위, sub 아래, none 없앰', ['super', 'sub', 'none']),
+  emphasis: 글자('강조점 종류 (예: DOT_ABOVE). NONE 이면 없앤다'),
   outer_margin: 숫자('table 바깥 여백 pt'),
   // shape 블록. 실측: 도형 쓰는 34편 가운데 33편이 hp:rect 다 (254개).
   border_color: 글자('shape 테두리 색 · table 테두리 색 #RRGGBB'),
@@ -257,7 +261,7 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
     ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row',
       'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'set_table',
       'split_table', 'join_tables', 'insert_image',
-      'delete_paragraph', 'delete_table']),
+      'delete_paragraph', 'delete_table', 'set_page']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -266,6 +270,18 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   bold: 참거짓('set_style — 굵게'),
   italic: 참거짓('set_style — 기울임'),
   underline: 참거짓('set_style — 밑줄'),
+  strike: 참거짓('set_style — 취소선'),
+  script: 고름('set_style — 첨자. super 위, sub 아래, none 없앰',
+    ['super', 'sub', 'none']),
+  emphasis: 글자(
+    'set_style — 강조점 종류 (예: DOT_ABOVE). none 이면 없앤다. '
+    + '**표본 2564개가 다 NONE 이라 실제로 쓰는 문서를 못 봤다** — 넣어 보고 확인하라',
+  ),
+  border: 글자(
+    "set_style·set_page — 테두리. \"0.4 mm #2A5DA8\" 처럼 굵기와 색. "
+    + '지우려면 "none". 문단에 주면 문단 테두리, set_page 면 쪽 테두리다',
+  ),
+  background: 글자('set_style·set_page — 배경색 #RRGGBB. none 이면 안 채운다'),
   size: 숫자('set_style — 글자 크기 pt'),
   color: 글자('set_style — 글자색 #RRGGBB'),
   font: 글자('set_style — 글꼴 이름'),
@@ -1163,7 +1179,7 @@ export const 도구들: 도구[] = [
 /** 고침 하나의 꼴 */
 interface 고침 {
   op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row'
-  | 'delete_paragraph' | 'delete_table'
+  | 'delete_paragraph' | 'delete_table' | 'set_page'
   | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell'
   | 'set_table' | 'split_table' | 'join_tables' | 'insert_image';
   id?: string;
@@ -1174,6 +1190,8 @@ interface 고침 {
   bold?: boolean; italic?: boolean; underline?: boolean;
   size?: number; color?: string; font?: string; align?: string;
   at?: number; count?: number; force?: boolean;
+  strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
+  border?: string; background?: string;
   rowspan?: number; colspan?: number;
   rows?: number; cols?: number;
   page_break?: string; repeat_header?: boolean;
@@ -1246,6 +1264,9 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         ...(e.bold !== undefined ? { 굵게: e.bold } : {}),
         ...(e.italic !== undefined ? { 기울임: e.italic } : {}),
         ...(e.underline !== undefined ? { 밑줄: e.underline ? 'BOTTOM' : 'NONE' } : {}),
+        ...(e.strike !== undefined ? { 취소선: e.strike } : {}),
+        ...(e.script !== undefined ? { 첨자: e.script } : {}),
+        ...(e.emphasis !== undefined ? { 강조점: e.emphasis } : {}),
         ...(e.size !== undefined ? { 크기: pt(e.size) } : {}),
         ...(e.color !== undefined ? { 색: e.color } : {}),
         ...(e.font !== undefined ? { 글꼴: e.font } : {}),
@@ -1254,6 +1275,20 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         const r = d.글자서식주기(e.id, 글자패치);
         if (!r.ok) return r;
         바꾼수 += r.value.바뀐수;
+      }
+      // 문단 테두리·배경 — `hh:paraPr > hh:border/@borderFillIDRef` 다.
+      // 없어서 box 블록으로 흉내 내고 있었다.
+      if (e.border !== undefined || e.background !== undefined) {
+        const { 종류, 굵기, 색 } = 면풀기(e.border ?? 'none');
+        const r = d.문단서식주기(e.id, {
+          테두리: {
+            면: ['all'],
+            ...(e.border !== undefined ? { 종류, 굵기, 색 } : {}),
+            ...(e.background !== undefined ? { 채움: e.background } : {}),
+          },
+        });
+        if (!r.ok) return r;
+        바꾼수++;
       }
       if (e.align !== undefined) {
         const 맞춘것 = 정렬맞추기(e.align);
@@ -1481,6 +1516,38 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
 
     // **넣는 길만 있고 빼는 길이 없었다.** 양식에 안 쓰는 항목이 남아도
     // 지울 수가 없어 문서를 통째로 다시 짜야 했다. 줄·칸에서 겪은 것과 같은 짝 안 맞음이다.
+    // 쪽 테두리·배경. `hp:secPr > hp:pageBorderFill` 이고 구역마다 **셋**이 있다
+    // (BOTH·EVEN·ODD). 실측 108개가 전부 borderFillIDRef=1 을 가리키니,
+    // 만드는 것이 아니라 **가리키는 곳을 바꾸는** 일이다.
+    case 'set_page': {
+      if (e.border === undefined && e.background === undefined) {
+        return 안됨('set_page 에 border 도 background 도 없다',
+          'border 나 background 가운데 적어도 하나를 줘라.');
+      }
+      const 구역들 = d.구역들;
+      const 첫구역 = 구역들[0];
+      if (첫구역 === undefined) return 안됨('구역이 하나도 없다', '빈 문서라도 구역 하나는 있어야 한다.');
+
+      // 바탕은 **지금 가리키는 것**에서 뜬다 — 맨땅에서 만들면 안 준 면이
+      // 규격 기본으로 돌아가 엉뚱한 선이 생긴다.
+      const 지금 = 첫구역.쪽테두리들[0];
+      const { 종류, 굵기, 색 } = 면풀기(e.border ?? 'none');
+      const bf = d.머리.borderFill확보(지금?.번호 ?? '0', {
+        면: ['all'],
+        ...(e.border !== undefined ? { 종류, 굵기, 색 } : {}),
+        ...(e.background !== undefined ? { 채움: e.background } : {}),
+      });
+      if (!bf.ok) return bf;
+
+      let 바뀐수 = 0;
+      for (const s2 of 구역들) {
+        const r = s2.쪽테두리주기(bf.value.id);
+        if (r.ok) 바뀐수 += r.value.바뀐수;
+      }
+      if (바뀐수 === 0) return 안됨('이미 그 쪽 테두리라 바뀐 것이 없다', '다른 값을 줘라.');
+      return 됨(바뀐수);
+    }
+
     case 'delete_paragraph': {
       if (!e.id) return 안됨('delete_paragraph 에 id 가 없다', 'get_outline 이 준 문단 ID(p_…)를 줘라.');
       const r = d.문단지우기(e.id, e.force !== true);

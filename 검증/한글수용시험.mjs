@@ -91,6 +91,10 @@ for (const 이름 of 목록) {
 const ps = `
 $ErrorActionPreference = 'Continue'
 $hwp = New-Object -ComObject HWPFrame.HwpObject
+# **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
+# 사용자가 다른 프로그램에 하는 클릭을 먹는다. 검증 한 바퀴에 수십 번이다.
+try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}
+try { $hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}
 try { $hwp.RegisterModule("FilePathCheckDLL","FilePathCheckerModule") | Out-Null } catch {}
 try {
   foreach ($f in Get-ChildItem -Path '${앞마당.replace(/'/g, "''")}' -Filter *.hwpx) {

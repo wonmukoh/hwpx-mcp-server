@@ -317,6 +317,7 @@ export class 조판기 {
    */
   private 글자꾸밈(b: {
     italic?: boolean; underline?: boolean | string; shade?: string; width_ratio?: number;
+    strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
   }): 글자모양패치 {
     return {
       ...(b.italic !== undefined ? { 기울임: b.italic } : {}),
@@ -326,6 +327,9 @@ export class 조판기 {
         : {}),
       ...(b.shade !== undefined ? { 배경색: b.shade } : {}),
       ...(b.width_ratio !== undefined ? { 장평: b.width_ratio } : {}),
+      ...(b.strike !== undefined ? { 취소선: b.strike } : {}),
+      ...(b.script !== undefined ? { 첨자: b.script } : {}),
+      ...(b.emphasis !== undefined ? { 강조점: b.emphasis } : {}),
     };
   }
 
@@ -617,7 +621,8 @@ export class 조판기 {
   private 글(
     s: 구역,
     b: { text: string; size?: number; align?: string; bold?: boolean; color?: string; font?: string;
-      italic?: boolean; underline?: boolean | string; shade?: string; width_ratio?: number },
+      italic?: boolean; underline?: boolean | string; shade?: string; width_ratio?: number;
+      strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string },
     번호: number,
   ): 결과<만든것> {
     let 정렬: string | undefined;
@@ -652,6 +657,7 @@ export class 조판기 {
     b: {
       text: string; indent?: boolean; size?: number; align?: string; font?: string;
       italic?: boolean; underline?: boolean | string; shade?: string; width_ratio?: number;
+    strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
       line_spacing?: number; letter_spacing?: number; space_before?: number; space_after?: number;
       indent_left?: number; hanging?: number;
     },
@@ -687,6 +693,7 @@ export class 조판기 {
     b: {
       text: string; size?: number; align?: string; font?: string;
       italic?: boolean; underline?: boolean | string; shade?: string; width_ratio?: number;
+    strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
       line_spacing?: number; letter_spacing?: number; space_before?: number; space_after?: number;
       indent_left?: number; hanging?: number;
     },
@@ -716,6 +723,7 @@ export class 조판기 {
     b: {
       text: string; size?: number; hanging?: number; font?: string;
       italic?: boolean; underline?: boolean | string; shade?: string; width_ratio?: number;
+    strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
       line_spacing?: number; letter_spacing?: number; space_before?: number; space_after?: number;
     },
     번호: number,

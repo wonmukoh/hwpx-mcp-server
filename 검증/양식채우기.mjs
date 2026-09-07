@@ -208,6 +208,11 @@ function 한글로굽기(짝들) {
   const NL = String.fromCharCode(10);
   const 줄 = ["$ErrorActionPreference='Continue'",
     '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+    // **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
+    // **사용자가 다른 프로그램에 하는 클릭을 먹는다.** 검증 한 바퀴에 수십 번이다.
+    'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
+    // 대화상자가 뜨면 거기서 멈춘 채 사용자를 기다린다. 자동으로 넘긴다.
+    'try { $hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}',
     'try { $hwp.RegisterModule("FilePathCheckDLL","FilePathCheckerModule") | Out-Null } catch {}',
     'try {'];
   for (const [입력, 출력, 표] of 짝들) {

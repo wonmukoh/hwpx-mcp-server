@@ -1917,3 +1917,143 @@ describe('저장할 때 ID 가 죽는다고 알린다', () => {
     expect(r.structuredContent!['ids_stale']).toBe(false);
   });
 });
+
+describe('넣는 길만 있고 빼는 길이 없었다 — 문단·표 지우기', () => {
+  /**
+   * `edit` 이 줄·칸은 넣고 뺐는데 **문단과 표 자체는 못 지웠다.**
+   * 양식에 안 쓰는 항목이 남아도 걷어낼 수가 없어 문서를 통째로 다시 짜야 했다.
+   */
+  async function 세운문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    // **블록 이름을 짐작하지 않는다.** `paragraph` 로 썼다가 compose 가 통째로
+    // 거절했고, 문단이 하나뿐인 문서로 시험이 돌았다. 있는 것은 `body` 다.
+    const 짬 = await 도구부르기('compose', {
+      doc_id,
+      blocks: [
+        { kind: 'heading', text: '쓰는 항목' },
+        { kind: 'body', text: '남길 글' },
+        { kind: 'body', text: '지울 글' },
+        { kind: 'table', headers: ['구분', '값'], rows: [['가', '1']] },
+        { kind: 'table', rows: [['', ''], ['', '']] },
+      ],
+    }, 방);
+    expect(짬.isError, 짬.content[0]?.text).toBeUndefined();
+
+    const 뼈대 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string; preview: string }[];
+    // 짜 놓은 것이 실제로 들어갔나 — 안 보고 넘기면 아무것도 안 재는 시험이 된다
+    expect(뼈대.filter((x) => x.kind === 'paragraph').length,
+      '문단이 여럿이라야 지우기를 잴 수 있다').toBeGreaterThan(2);
+    expect(뼈대.filter((x) => x.kind === 'table').length, '표가 둘이라야 한다').toBe(2);
+    return { 방, doc_id, 뼈대 };
+  }
+
+  const 문단수 = async (방: 문서방, doc_id: string) =>
+    ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { kind: string }[])
+      .filter((x) => x.kind === 'paragraph').length;
+
+  it('**문단을 지운다**', async () => {
+    const { 방, doc_id, 뼈대 } = await 세운문서();
+    const 전 = await 문단수(방, doc_id);
+    const 지울것 = 뼈대.find((x) => x.kind === 'paragraph' && x.preview.includes('지울 글'))!;
+
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 지울것.id, force: true }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect(await 문단수(방, doc_id), '하나 줄어야 한다').toBe(전 - 1);
+  });
+
+  it('**글이 든 문단은 force 없이 못 지운다**', async () => {
+    const { 방, doc_id, 뼈대 } = await 세운문서();
+    const 글있는것 = 뼈대.find((x) => x.kind === 'paragraph' && x.preview.includes('남길 글'))!;
+    const 전 = await 문단수(방, doc_id);
+
+    const 막힘 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 글있는것.id }],
+    }, 방);
+    expect(막힘.isError, '글이 든 문단이 그냥 지워지면 안 된다').toBe(true);
+    expect(await 문단수(방, doc_id), '막혔으면 수가 그대로여야 한다').toBe(전);
+
+    const 됨 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 글있는것.id, force: true }],
+    }, 방);
+    expect(됨.isError, 됨.content[0]?.text).toBeUndefined();
+    expect(await 문단수(방, doc_id)).toBe(전 - 1);
+  });
+
+  it('**빈 표를 지우면 빈 문단도 같이 걷힌다**', async () => {
+    // **표를 담은 문단은 뼈대에 안 나온다.** 그래서 문단이 걷혔는지를 뼈대로는
+    // 못 본다 — 저장했다 다시 열어 문서가 실제로 몇 문단인지로 본다.
+    const { 방, doc_id } = await 세운문서();
+    const 뼈 = (id: string) => 도구부르기('get_outline', { doc_id: id, in_tables: true }, 방);
+    const 전items = (await 뼈(doc_id)).structuredContent!['items'] as { id: string; kind: string }[];
+    const 빈표 = 전items.filter((x) => x.kind === 'table')[1]!;   // 둘째가 빈 표다
+    const 전표 = 전items.filter((x) => x.kind === 'table').length;
+
+    const 센다 = async (id: string) => {
+      const 낼곳 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hwpx-cnt-')), 'x.hwpx');
+      await 도구부르기('save_document', { doc_id: id, path: 낼곳 }, 방);
+      const 연것 = await 도구부르기('open_document', { path: 낼곳 }, 방);
+      return 연것.structuredContent!['paragraphs'] as number;
+    };
+    const 전문단 = await 센다(doc_id);
+
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_table', id: 빈표.id }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+
+    const 후items = (await 뼈(doc_id)).structuredContent!['items'] as { kind: string }[];
+    expect(후items.filter((x) => x.kind === 'table').length, '표가 하나 줄어야 한다').toBe(전표 - 1);
+
+    // **「줄었다」로는 못 잰다.** 2×2 빈 표를 지우면 칸 문단 4개가 어차피 빠지니,
+    // 표를 담았던 빈 문단이 남든 말든 「줄었다」는 참이다. 실제로 그 고장을
+    // 못 잡았다. **몇 개 줄었나**를 못 박는다 — 칸 4 + 담았던 문단 1 = 5.
+    const 후문단 = await 센다(doc_id);
+    expect(전문단 - 후문단,
+      '칸 문단 4개만 빠졌으면 표를 담았던 빈 문단이 그대로 남은 것이다').toBe(5);
+  });
+
+  it('**글이 든 표는 force 없이 못 지운다**', async () => {
+    const { 방, doc_id } = await 세운문서();
+    const 뼈 = () => 도구부르기('get_outline', { doc_id, in_tables: true }, 방);
+    const 글든표 = ((await 뼈()).structuredContent!['items'] as { id: string; kind: string }[])
+      .filter((x) => x.kind === 'table')[0]!;
+
+    const 막힘 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_table', id: 글든표.id }],
+    }, 방);
+    expect(막힘.isError, '글이 든 표가 그냥 지워지면 안 된다').toBe(true);
+
+    const 됨 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_table', id: 글든표.id, force: true }],
+    }, 방);
+    expect(됨.isError, 됨.content[0]?.text).toBeUndefined();
+  });
+
+  it('**저장하고 다시 열어도 지워져 있다**', async () => {
+    // 「지웠다」 는 말만 듣고 안 재면, 파일에 그대로 남아 있어도 모른다.
+    const { 방, doc_id, 뼈대 } = await 세운문서();
+    const 지울것 = 뼈대.find((x) => x.kind === 'paragraph' && x.preview.includes('지울 글'))!;
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 지울것.id, force: true }],
+    }, 방);
+
+    const 낼곳 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hwpx-del-')), '낸것.hwpx');
+    const 저장 = await 도구부르기('save_document', { doc_id, path: 낼곳 }, 방);
+    expect(저장.isError, 저장.content[0]?.text).toBeUndefined();
+
+    const 다시 = await 도구부르기('open_document', { path: 낼곳 }, 방);
+    const 새doc = 다시.structuredContent!['doc_id'] as string;
+    const 원래문단 = (await 도구부르기('get_outline', { doc_id, in_tables: false }, 방))
+      .structuredContent!['items'] as { kind: string }[];
+    const 새문단 = (await 도구부르기('get_outline', { doc_id: 새doc, in_tables: false }, 방))
+      .structuredContent!['items'] as { kind: string }[];
+    expect(새문단.filter((x) => x.kind === 'paragraph').length)
+      .toBe(원래문단.filter((x) => x.kind === 'paragraph').length);
+  });
+});

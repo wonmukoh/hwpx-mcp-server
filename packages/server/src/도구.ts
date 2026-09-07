@@ -256,7 +256,8 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   op: 고름('무엇을 할까',
     ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row',
       'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'set_table',
-      'split_table', 'join_tables', 'insert_image']),
+      'split_table', 'join_tables', 'insert_image',
+      'delete_paragraph', 'delete_table']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -273,7 +274,10 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
     + 'delete_row·delete_col — 몇 번째부터 지울까 (0부터). **이건 꼭 줘야 한다**'),
   count: 정수('insert_row·delete_row 는 줄 수, insert_col·delete_col 은 칸 수. 기본 1'),
   // **지우는 것은 되돌릴 수 없다.** 그래서 기본은 빈 것만 지운다.
-  force: 참거짓('delete_row·delete_col — 글이 든 것도 지울까. 기본 false (빈 것만 지운다)'),
+  force: 참거짓(
+    'delete_row·delete_col·delete_paragraph·delete_table — 글이 든 것도 지울까. '
+    + '기본 false (빈 것만 지운다). **지운 글은 못 되돌린다**',
+  ),
   // 합치기·풀기는 **칸 ID** 로 가리킨다. 합친 칸은 늘 왼쪽 위가 대표다.
   rowspan: 정수('merge_cells — 세로로 몇 줄을 합칠까. 기본 1'),
   colspan: 정수('merge_cells — 가로로 몇 칸을 합칠까. 기본 1'),
@@ -1087,8 +1091,11 @@ export const 도구들: 도구[] = [
       + '`find` 나 `get_outline` 이 준 ID(`p_…` `tbl_…` `cell_…`)로 가리킨다. '
       + '**여러 개를 한 번에 준다** — 한 칸씩 여러 번 부르면 그 사이에 줄이 밀린다. '
       + '글을 갈아도 **서식은 그대로 남는다** (글자 칸만 갈고 런은 안 건드린다). '
-      + '`delete_row` 는 **빈 줄만** 지운다 — 양식에 남는 줄을 걷어낼 때 쓴다. '
-      + '글이 든 줄을 지우려면 force 를 켜야 하고, **지운 글은 못 되돌린다.** '
+      + '`delete_row`·`delete_col`·`delete_paragraph`·`delete_table` 은 **빈 것만** 지운다 — '
+      + '양식에 남는 줄이나 안 쓰는 항목을 걷어낼 때 쓴다. '
+      + '글이 든 것을 지우려면 force 를 켜야 하고, **지운 글은 못 되돌린다.** '
+      + '`delete_paragraph` 는 **표·그림이 든 문단은 거절한다** — 문단만 지우는 줄 알고 '
+      + '불렀다가 표가 통째로 날아가면 되돌릴 길이 없다. 표는 `delete_table` 로 먼저 지워라. '
       + '**중간에 하나가 어긋나면 거기서 멈추되 앞의 것은 안 물린다** — '
       + '답의 done 이 몇 개가 이미 들어갔는지 알려 준다. 다시 넣지 말고 그 뒤부터 이어서 해라.',
     inputSchema: 고치기스키마,
@@ -1156,6 +1163,7 @@ export const 도구들: 도구[] = [
 /** 고침 하나의 꼴 */
 interface 고침 {
   op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row'
+  | 'delete_paragraph' | 'delete_table'
   | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell'
   | 'set_table' | 'split_table' | 'join_tables' | 'insert_image';
   id?: string;
@@ -1471,6 +1479,22 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       return 됨(바뀐수);
     }
 
+    // **넣는 길만 있고 빼는 길이 없었다.** 양식에 안 쓰는 항목이 남아도
+    // 지울 수가 없어 문서를 통째로 다시 짜야 했다. 줄·칸에서 겪은 것과 같은 짝 안 맞음이다.
+    case 'delete_paragraph': {
+      if (!e.id) return 안됨('delete_paragraph 에 id 가 없다', 'get_outline 이 준 문단 ID(p_…)를 줘라.');
+      const r = d.문단지우기(e.id, e.force !== true);
+      if (!r.ok) return r;
+      return 됨(1);
+    }
+
+    case 'delete_table': {
+      if (!e.id) return 안됨('delete_table 에 id 가 없다', 'get_outline 이 준 표 ID(tbl_…)를 줘라.');
+      const r = d.표지우기(e.id, e.force !== true);
+      if (!r.ok) return r;
+      return 됨(1);
+    }
+
     case 'insert_image': {
       if (!e.id) return 안됨('insert_image 에 id 가 없다', '그림을 넣을 셀·문단 ID 를 줘라.');
       if (!e.path) return 안됨('insert_image 에 path 가 없다', '그림 파일 절대 경로를 줘라.');
@@ -1542,6 +1566,7 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
 const 구조를바꾸나 = new Set([
   'insert_row', 'delete_row', 'insert_col', 'delete_col',
   'merge_cells', 'split_cell', 'split_table', 'join_tables', 'insert_image',
+  'delete_paragraph', 'delete_table',
 ]);
 
 export const 쪽넘김밖이름 = { 나눔: 'split', 셀단위: 'cell', 안나눔: 'none' } as const;

@@ -19,7 +19,7 @@
 
 import { HwpxContainer, 부품 } from '@hwpx/container';
 import {
-  parseXml, serializeXml, findAll, getAttr,
+  parseXml, serializeXml, findAll, getAttr, textOf,
   type ElementNode, type XmlDocument, childrenNamed, removeNode, setText, 못쓰는제어문자,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
@@ -334,6 +334,128 @@ export class 문서 {
    * 새 구역의 뼈대는 **지금 마지막 구역에서 뜬다** — 맨땅에서 짜지 않는다.
    * 쪽 설정(`hp:secPr`)이 딸려 와야 한글이 열 수 있다. 글은 비운다.
    */
+  /**
+   * **문단을 지운다.**
+   *
+   * 넣는 길은 있는데 빼는 길이 없었다. 양식에 안 쓰는 항목이 남아도 지울 수가
+   * 없어서 문서를 통째로 다시 짜야 했다 — 줄·칸에서 겪은 것과 같은 짝 안 맞음이다.
+   *
+   * 막는 것 셋 —
+   *
+   *   - **구역의 마지막 문단은 못 지운다.** 문단 없는 구역은 한글이 안 연다.
+   *   - **칸 안의 마지막 문단도 못 지운다.** 빈 칸도 문단 하나는 있어야 한다.
+   *   - **표·그림이 든 문단은 못 지운다.** 문단만 지우는 줄 알고 불렀다가
+   *     표가 통째로 날아가면 되돌릴 길이 없다. 표를 먼저 지우게 한다.
+   *
+   * 글이 든 문단은 기본으로 막는다. 정말 지우려면 `비어야만: false` 로 부른다 —
+   * `줄지우기` 와 같은 규칙이다.
+   */
+  문단지우기(id: string, 비어야만 = true): 결과<{ 지운글자: number }> {
+    const 것 = this.찾기(id);
+    if (!것.ok) return this.남기기('문단지우기', id, 것);
+    if (것.value.갈래 !== '문단') {
+      return this.남기기('문단지우기', id, 안됨(
+        `${id} 는 문단이 아니다 (${것.value.갈래})`,
+        것.value.갈래 === '표' ? '표는 표지우기로 지운다.' : '문단 ID(p_…)를 줘라.',
+      ));
+    }
+    const p = 것.value.문단;
+
+    // 표·그림이 딸려 있나. **딸려 지우면 안 된다** — 무엇이 사라지는지 말해 준다.
+    const 안것 = ['hp:tbl', 'hp:pic', 'hp:container', 'hp:equation']
+      .flatMap((n) => findAll(p.el, n).map((e) => e.name));
+    if (안것.length > 0) {
+      const 셈 = [...new Set(안것)].map((n) => `${n} ${안것.filter((x) => x === n).length}개`);
+      return this.남기기('문단지우기', id, 안됨(
+        `${id} 안에 ${셈.join(' · ')} 가 들어 있다`,
+        '문단만 지우려다 그것들이 같이 날아간다. 표라면 표지우기로 먼저 지워라.',
+      ));
+    }
+
+    const 글 = p.글;
+    if (비어야만 && 글.trim() !== '') {
+      return this.남기기('문단지우기', id, 안됨(
+        `${id} 에 글이 있다 («${글.slice(0, 20)}»)`,
+        '정말 지우려면 force 를 켜라. 빈 문단이 남는 것보다 글을 날리는 것이 훨씬 나쁘다.',
+      ));
+    }
+
+    // 마지막 하나인가 — 구역이든 칸이든
+    const 부모 = p.el.parent as ElementNode | undefined;
+    if (부모 === undefined) {
+      return this.남기기('문단지우기', id, 안됨(`${id} 가 어디에도 안 붙어 있다`, 'ID 를 다시 매겨라.'));
+    }
+    if (childrenNamed(부모, 'hp:p').length <= 1) {
+      const 어디 = 부모.name === 'hp:subList' ? '칸' : '구역';
+      return this.남기기('문단지우기', id, 안됨(
+        `${id} 는 그 ${어디}의 마지막 문단이다`,
+        `문단 없는 ${어디}은 한글이 안 연다. 글만 비우려면 set_text 로 빈 글을 넣어라.`,
+      ));
+    }
+
+    removeNode(p.el);
+    this.이름표.버리기(id);
+    return this.남기기('문단지우기', id, 됨({ 지운글자: 글.length }));
+  }
+
+  /**
+   * **표를 통째로 지운다.**
+   *
+   * 표는 `hp:p > hp:run > hp:tbl` 로 들어 있다. 표만 빼면 **빈 런과 빈 문단**이
+   * 남아 문서에 빈 줄이 생긴다. 그래서 비게 된 런과 문단까지 걷어낸다 —
+   * 다만 **그 문단이 마지막 하나면 문단은 남긴다.** 빈 구역·빈 칸은 한글이 안 연다.
+   *
+   * 글이 든 표는 기본으로 막는다. `줄지우기`·`문단지우기` 와 같은 규칙이다.
+   */
+  표지우기(id: string, 비어야만 = true): 결과<{ 지운칸: number; 빈문단도지웠나: boolean }> {
+    const 것 = this.찾기(id);
+    if (!것.ok) return this.남기기('표지우기', id, 것);
+    if (것.value.갈래 !== '표') {
+      return this.남기기('표지우기', id, 안됨(
+        `${id} 는 표가 아니다 (${것.value.갈래})`, '표 ID(tbl_…)를 줘라.',
+      ));
+    }
+    const t = 것.value.표;
+    const 칸수 = t.셀들.length;
+
+    if (비어야만) {
+      // **글 뽑기를 손으로 하지 않는다.** `hp:t` 의 자식은 `{text}` 가 아니라
+      // `{kind,start,end,raw}` 라, 직접 훑으면 늘 빈 글이 나온다 — 그러면
+      // 글이 든 표도 「비었다」 로 보고 그냥 지운다. 있는 길(`textOf`)을 쓴다.
+      const 든글 = t.셀들
+        .flatMap((c) => findAll(c.el, 'hp:t').map((x) => textOf(x)))
+        .join('').trim();
+      if (든글 !== '') {
+        return this.남기기('표지우기', id, 안됨(
+          `${id} 에 글이 있다 («${든글.slice(0, 20)}»)`,
+          '정말 지우려면 force 를 켜라.',
+        ));
+      }
+    }
+
+    // 표를 담은 런과 문단을 찾아 올라간다
+    const 런 = t.el.parent as ElementNode | undefined;
+    const 문단el = 런?.parent as ElementNode | undefined;
+
+    removeNode(t.el);
+    this.이름표.버리기(id);
+
+    let 빈문단도지웠나 = false;
+    if (런 !== undefined && 런.name === 'hp:run' && 런.children.length === 0) {
+      const 문단부모 = 문단el?.parent as ElementNode | undefined;
+      removeNode(런);
+      // 문단에 런이 하나도 안 남았고, 그 문단이 마지막이 아니면 문단도 걷는다
+      if (문단el !== undefined && 문단el.name === 'hp:p'
+        && childrenNamed(문단el, 'hp:run').length === 0
+        && 문단부모 !== undefined && childrenNamed(문단부모, 'hp:p').length > 1) {
+        removeNode(문단el);
+        빈문단도지웠나 = true;
+      }
+    }
+
+    return this.남기기('표지우기', id, 됨({ 지운칸: 칸수, 빈문단도지웠나 }));
+  }
+
   구역더하기(): 결과<{ 이름: string }> {
     const 이름들 = this.통.sectionNames();
     if (이름들.length === 0) {

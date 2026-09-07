@@ -25,6 +25,48 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    '표가 든 문단도 지운다 (표가 통째로 날아간다)',
+    'packages/doc/src/문서.ts',
+    '    if (안것.length > 0) {',
+    '    if (false) {',
+    'packages/doc',
+  ],
+  [
+    '구역의 마지막 문단도 지운다 (문단 없는 구역은 한글이 안 연다)',
+    'packages/doc/src/문서.ts',
+    "    if (childrenNamed(부모, 'hp:p').length <= 1) {",
+    '    if (false) {',
+    'packages/doc',
+  ],
+  [
+    '글이 든 표도 그냥 지운다 (되돌릴 길이 없다)',
+    'packages/doc/src/문서.ts',
+    "      if (든글 !== '') {",
+    '      if (false) {',
+    'packages/doc',
+  ],
+  [
+    '칸 글을 손으로 뽑는다 (hp:t 자식은 text 가 아니라 늘 빈 글이 나온다)',
+    'packages/doc/src/문서.ts',
+    "        .flatMap((c) => findAll(c.el, 'hp:t').map((x) => textOf(x)))",
+    "        .flatMap((c) => findAll(c.el, 'hp:t').map(() => ''))",
+    'packages/doc',
+  ],
+  [
+    '표를 빼고 빈 문단을 안 걷는다 (문서에 빈 줄이 남는다)',
+    'packages/doc/src/문서.ts',
+    '        removeNode(문단el);',
+    '        void 문단el;',
+    'packages/server',
+  ],
+  [
+    '문단을 지우고 ID 장부에서 안 뺀다 (없는 것을 고치고도 됐다고 한다)',
+    'packages/doc/src/문서.ts',
+    '    this.이름표.버리기(id);',
+    '    void id;',
+    'packages/doc',
+  ],
+  [
     '뒷정리가 진짜 dist 도 고른다 (고장이 굽을곳을 바꾸면 통째로 사라진다)',
     'packages/server/test/굽는동안.test.ts',
     "    if (n === 'dist') return false;                       // 진짜 dist 는 절대 안 고른다",

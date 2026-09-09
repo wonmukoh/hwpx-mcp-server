@@ -1,6 +1,21 @@
 # 판올림 기록
 
-## 아직 안 낸 것
+## 0.7.0 — 2026-09-09
+
+**표를 마저 다루고, 지우는 길을 내고, 검증이 저를 더럽히던 것을 고쳤다.**
+
+`edit` 의 `op` 가 **13 → 18** 이 됐다.
+
+    set_text · replace · set_style
+    insert_row · delete_row · insert_col · delete_col
+    merge_cells · split_cell · set_table · split_table · join_tables
+    insert_image
+    delete_paragraph · delete_table · set_page · set_link · set_bookmark
+
+    낱개 시험   598 → 660개
+    고장 내보기  106 → 139건
+    검증 갈래    23 → 24
+    기능        44 → 52 / 59
 
 ### 새로 되는 것
 

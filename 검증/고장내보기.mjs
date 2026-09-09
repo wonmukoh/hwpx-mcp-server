@@ -25,6 +25,34 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    'edit 이 insert_col 을 받고도 아무것도 안 한다 (조용한 무동작)',
+    'packages/server/src/도구.ts',
+    '      const 넣기 = t.value.칸넣기(e.at ?? t.value.칸수, e.count ?? 1);',
+    '      const 넣기 = { ok: true, value: { 넣은수: 0 } } as const;',
+    'packages/server',
+  ],
+  [
+    'merge_cells 가 colspan·rowspan 을 무시한다 (합쳤다면서 안 합친다)',
+    'packages/server/src/도구.ts',
+    '      const 합 = t.value.합치기(자리.value.row, 자리.value.col, e.rowspan ?? 1, e.colspan ?? 1);',
+    '      const 합 = t.value.합치기(자리.value.row, 자리.value.col, 1, 1);',
+    'packages/server',
+  ],
+  [
+    'split_table 이 at 을 무시한다 (엉뚱한 자리에서 가른다)',
+    'packages/server/src/도구.ts',
+    '      const 뗀것 = t.value.줄떼어내기(e.at);',
+    '      const 뗀것 = t.value.줄떼어내기(1);',
+    'packages/server',
+  ],
+  [
+    'join_tables 가 아무것도 안 붙인다 (붙였다면서 표가 둘로 남는다)',
+    'packages/server/src/도구.ts',
+    '      const 붙임 = 위.value.이어붙이기(아래.value);',
+    '      const 붙임 = { ok: true, value: { 붙인줄: 0 } } as const;',
+    'packages/server',
+  ],
+  [
     '링크에 fieldEnd 를 안 붙인다 (링크가 문서 끝까지 이어진다)',
     'packages/doc/src/본문.ts',
     '      insertAfter(가운데, 끝런);',

@@ -2057,3 +2057,104 @@ describe('넣는 길만 있고 빼는 길이 없었다 — 문단·표 지우기
       .toBe(원래문단.filter((x) => x.kind === 'paragraph').length);
   });
 });
+
+describe('표 고침을 **도구로** 걸어 본다', () => {
+  /**
+   * 여섯이 `packages/doc/test/표.test.ts` 에는 다 있는데 **도구 표면을 통해서는
+   * 한 번도 안 걸리고** 있었다 (`검증/고침훑기.mjs` 가 잡았다).
+   *
+   * 문서 층 시험은 문서 층만 지킨다 — 도구 이름·인자·ID 앞머리가 어긋나도
+   * 거기서는 안 걸린다. 실제로 겪었다: `tbl_tbl_09fm` 을 못 찾는 버그가
+   * 문서층 시험을 다 통과하고 **도구로 불러 보고서야** 나왔다.
+   */
+  async function 표든문서(rows = [['가', '1'], ['나', '2']]) {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    const c = await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'table', headers: ['구분', '값'], rows }],
+    }, 방);
+    expect(c.isError, c.content[0]?.text).toBeUndefined();
+    const 뼈 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[];
+    const 표아이디 = 뼈.find((x) => x.kind === 'table')!.id;
+    return { 방, doc_id, 표아이디 };
+  }
+
+  const 재기 = async (방: 문서방, doc_id: string, id: string) => {
+    const r = await 도구부르기('get_content', { doc_id, id }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const sc = r.structuredContent!;
+    return { 줄: sc['rows'] as number, 칸: sc['cols'] as number };
+  };
+
+  it('**insert_col · delete_col** — 칸을 넣고 뺀다', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    expect(await 재기(방, doc_id, 표아이디)).toEqual({ 줄: 3, 칸: 2 });
+
+    const a = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'insert_col', id: 표아이디, at: 1 }],
+    }, 방);
+    expect(a.isError, a.content[0]?.text).toBeUndefined();
+    expect((await 재기(방, doc_id, 표아이디)).칸, '칸이 하나 늘어야 한다').toBe(3);
+
+    const b = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_col', id: 표아이디, at: 1 }],
+    }, 방);
+    expect(b.isError, b.content[0]?.text).toBeUndefined();
+    expect((await 재기(방, doc_id, 표아이디)).칸, '도로 줄어야 한다').toBe(2);
+  });
+
+  it('**merge_cells · split_cell** — 합치고 푼다', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서();
+    const 칸 = (r: number, c: number) => `cell_${표아이디.replace(/^tbl_/, '')}_${r}_${c}`;
+
+    const a = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'merge_cells', id: 칸(1, 0), colspan: 2 }],
+    }, 방);
+    expect(a.isError, a.content[0]?.text).toBeUndefined();
+
+    const 합친뒤 = (await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방))
+      .structuredContent!['cells'] as { colspan?: number; covered_by?: string }[];
+    expect(합친뒤.some((x) => x.colspan === 2), '합친 칸이 2칸을 덮어야 한다').toBe(true);
+    expect(합친뒤.some((x) => x.covered_by !== undefined), '덮인 자리가 드러나야 한다').toBe(true);
+
+    const b = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'split_cell', id: 칸(1, 0) }],
+    }, 방);
+    expect(b.isError, b.content[0]?.text).toBeUndefined();
+    const 푼뒤 = (await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방))
+      .structuredContent!['cells'] as { colspan?: number }[];
+    expect(푼뒤.some((x) => x.colspan === 2), '풀었으면 덮는 칸이 없어야 한다').toBe(false);
+  });
+
+  it('**split_table · join_tables** — 가르고 도로 붙인다', async () => {
+    const { 방, doc_id, 표아이디 } = await 표든문서([['가', '1'], ['나', '2'], ['다', '3']]);
+    const 표수 = async () => ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { kind: string }[]).filter((x) => x.kind === 'table').length;
+    expect(await 표수()).toBe(1);
+
+    // 머리 줄 + 세 줄 = 4줄. **2번에서 가르면 2줄 · 2줄**이다.
+    const a = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'split_table', id: 표아이디, at: 2 }],
+    }, 방);
+    expect(a.isError, a.content[0]?.text).toBeUndefined();
+    expect(await 표수(), '표가 둘이 되어야 한다').toBe(2);
+
+    const 둘 = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; kind: string }[])
+      .filter((x) => x.kind === 'table');
+
+    // **개수만 세면 어디서 갈랐는지를 못 본다.** at 을 무시하고 아무 데서나
+    // 갈라도 표는 둘이 된다 — 실제로 그 고장이 안 잡혔다. 줄 수로 못 박는다.
+    const 줄수 = async (id: string) =>
+      (await 도구부르기('get_content', { doc_id, id }, 방)).structuredContent!['rows'] as number;
+    expect([await 줄수(둘[0]!.id), await 줄수(둘[1]!.id)],
+      'at:2 로 갈랐으면 2줄·2줄이라야 한다').toEqual([2, 2]);
+    const b = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'join_tables', id: 둘[0]!.id, with_id: 둘[1]!.id }],
+    }, 방);
+    expect(b.isError, b.content[0]?.text).toBeUndefined();
+    expect(await 표수(), '도로 하나가 되어야 한다').toBe(1);
+  });
+});

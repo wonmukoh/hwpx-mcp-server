@@ -286,7 +286,7 @@ PDF 로 뽑아 눈으로 보기 전에는 아무도 모른다.
 
 ```bash
 npm test           # 한글 없이 (15갈래)
-npm run test:한글   # 한글 COM 까지 (23갈래)
+npm run test:한글   # 한글 COM 까지 (25갈래)
 ```
 
 | | |

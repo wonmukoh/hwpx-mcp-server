@@ -25,6 +25,41 @@ process.chdir(뿌리);
 /** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
 const 고장들 = [
   [
+    '링크에 fieldEnd 를 안 붙인다 (링크가 문서 끝까지 이어진다)',
+    'packages/doc/src/본문.ts',
+    '      insertAfter(가운데, 끝런);',
+    '      void 끝런;',
+    'packages/doc',
+  ],
+  [
+    'fieldEnd 가 딴 id 를 가리킨다 (한글이 짝을 못 맺는다)',
+    'packages/doc/src/본문.ts',
+    "      appendChild(끝틀, createElement('hp:fieldEnd', { beginIDRef: 시작id, fieldid: 밭id }));",
+    "      appendChild(끝틀, createElement('hp:fieldEnd', { beginIDRef: '1', fieldid: '2' }));",
+    'packages/doc',
+  ],
+  [
+    '주소를 Command 에만 넣는다 (링크는 남고 주소가 사라진다)',
+    'packages/doc/src/본문.ts',
+    "      셈('hp:stringParam', 'Path', 주소);",
+    "      셈('hp:stringParam', 'Path', '');",
+    'packages/doc',
+  ],
+  [
+    '밭 id 를 쓰인 것과 무관하게 정한다 (이미 있는 것과 겹친다)',
+    'packages/doc/src/문서.ts',
+    '      if (Number.isFinite(n) && n >= 다음) 다음 = n + 1;',
+    '      void n;',
+    'packages/doc',
+  ],
+  [
+    '책갈피 이름이 겹쳐도 그냥 단다 (앞엣것을 가리키던 링크가 딴 데로 간다)',
+    'packages/doc/src/문서.ts',
+    '    if (this.책갈피들.includes(다듬)) {',
+    '    if (false) {',
+    'packages/doc',
+  ],
+  [
     '쪽 설정이 든 문단도 지운다 (용지 크기·여백이 통째로 날아간다)',
     'packages/doc/src/문서.ts',
     "    if (findAll(p.el, 'hp:secPr').length > 0) {",

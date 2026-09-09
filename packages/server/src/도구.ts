@@ -261,7 +261,8 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
     ['set_text', 'replace', 'set_style', 'insert_row', 'delete_row',
       'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'set_table',
       'split_table', 'join_tables', 'insert_image',
-      'delete_paragraph', 'delete_table', 'set_page']),
+      'delete_paragraph', 'delete_table', 'set_page',
+      'set_link', 'set_bookmark']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -282,6 +283,8 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
     + '지우려면 "none". 문단에 주면 문단 테두리, set_page 면 쪽 테두리다',
   ),
   background: 글자('set_style·set_page — 배경색 #RRGGBB. none 이면 안 채운다'),
+  url: 글자('set_link — 링크가 갈 곳. 웹 주소나 문서 안 책갈피 이름'),
+  name: 글자('set_bookmark — 책갈피 이름. 문서 안에서 겹치면 안 된다'),
   size: 숫자('set_style — 글자 크기 pt'),
   color: 글자('set_style — 글자색 #RRGGBB'),
   font: 글자('set_style — 글꼴 이름'),
@@ -1180,6 +1183,7 @@ export const 도구들: 도구[] = [
 interface 고침 {
   op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row'
   | 'delete_paragraph' | 'delete_table' | 'set_page'
+  | 'set_link' | 'set_bookmark'
   | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell'
   | 'set_table' | 'split_table' | 'join_tables' | 'insert_image';
   id?: string;
@@ -1192,6 +1196,7 @@ interface 고침 {
   at?: number; count?: number; force?: boolean;
   strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
   border?: string; background?: string;
+  url?: string; name?: string;
   rowspan?: number; colspan?: number;
   rows?: number; cols?: number;
   page_break?: string; repeat_header?: boolean;
@@ -1548,6 +1553,29 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       return 됨(바뀐수);
     }
 
+    // 하이퍼링크·책갈피. 둘 다 `hp:ctrl` 안에 들어가는데 생김새가 아주 다르다 —
+    // 링크는 fieldBegin~fieldEnd **쌍**이고 id 로 짝을 맺는다.
+    // 책갈피는 요소 **하나**다 (`자료/실측.md` 31항).
+    case 'set_link': {
+      if (!e.id) return 안됨('set_link 에 id 가 없다', '링크를 걸 문단 ID(p_…)를 줘라.');
+      if (!e.find) {
+        return 안됨('set_link 에 find 가 없다',
+          '문단의 어느 글에 걸지 적어라 — 문단 전체가 아니라 그 어구에만 걸린다.');
+      }
+      if (!e.url) return 안됨('set_link 에 url 이 없다', '링크가 갈 곳을 적어라.');
+      const r = d.링크걸기(e.id, e.find, e.url);
+      if (!r.ok) return r;
+      return 됨(r.value.바뀐수);
+    }
+
+    case 'set_bookmark': {
+      if (!e.id) return 안됨('set_bookmark 에 id 가 없다', '책갈피를 달 문단 ID(p_…)를 줘라.');
+      if (!e.name) return 안됨('set_bookmark 에 name 이 없다', '책갈피 이름을 적어라.');
+      const r = d.책갈피달기(e.id, e.name);
+      if (!r.ok) return r;
+      return 됨(1);
+    }
+
     case 'delete_paragraph': {
       if (!e.id) return 안됨('delete_paragraph 에 id 가 없다', 'get_outline 이 준 문단 ID(p_…)를 줘라.');
       const r = d.문단지우기(e.id, e.force !== true);
@@ -1634,6 +1662,9 @@ const 구조를바꾸나 = new Set([
   'insert_row', 'delete_row', 'insert_col', 'delete_col',
   'merge_cells', 'split_cell', 'split_table', 'join_tables', 'insert_image',
   'delete_paragraph', 'delete_table',
+  // 링크는 런을 셋으로 쪼갠다 — 문단 수는 그대로지만 안쪽 짜임이 달라진다.
+  // 책갈피도 런을 하나 더 낸다.
+  'set_link', 'set_bookmark',
 ]);
 
 export const 쪽넘김밖이름 = { 나눔: 'split', 셀단위: 'cell', 안나눔: 'none' } as const;

@@ -335,6 +335,94 @@ export class 문서 {
    * 쪽 설정(`hp:secPr`)이 딸려 와야 한글이 열 수 있다. 글은 비운다.
    */
   /**
+   * **글에 하이퍼링크를 건다.**
+   *
+   * `강조하기` 처럼 문단에서 글을 찾아 그 자리에 건다. 짜임은 `본문.ts` 의
+   * `링크걸기` 에 적어 뒀다 — 런 셋이고 id 로 짝을 맺는다.
+   *
+   * **id 는 문서 전체에서 안 겹쳐야 한다.** 겹치면 한글이 `fieldEnd` 를 엉뚱한
+   * `fieldBegin` 에 맺어, 링크가 딴 데서 끊기거나 문서 끝까지 이어진다.
+   * 그래서 지금 문서에 있는 id 를 다 모아 놓고 안 겹치는 것을 고른다.
+   */
+  링크걸기(id: string, 찾을글: string, 주소: string): 결과<{ 바뀐수: number }> {
+    const p = this.문단찾기(id);
+    if (!p.ok) return this.남기기('링크걸기', id, p);
+
+    // **아무 수나 뽑지 않는다.** 20억 중 하나를 뽑으면 우연히도 안 겹치니,
+    // 「겹침을 막는다」 는 코드가 있으나 없으나 똑같이 통과한다 — 재는 것이
+    // 아무것도 안 보게 된다. **쓰인 것 다음 수**로 정하면 겹칠 수 없고, 겹침을
+    // 막는지도 잴 수 있다.
+    //
+    // 바닥을 10억으로 두는 것은 한글이 쓰는 것과 자리수를 맞추려는 것이다
+    // (실측: 1177245413 · 627600491).
+    const 쓰인것 = this.쓰인밭아이디들();
+    let 다음 = 1_000_000_000;
+    for (const v of 쓰인것) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 다음) 다음 = n + 1;
+    }
+    const 둘 = [String(다음), String(다음 + 1)];
+    return this.남기기('링크걸기', id, p.value.링크걸기(찾을글, 주소, (n) => 둘[n]!));
+  }
+
+  /**
+   * **책갈피를 단다.**
+   *
+   * 하이퍼링크가 갈 곳이고, 목차에서도 쓴다. 요소 하나라 짝이 없다.
+   *
+   * **이름이 문서 안에서 겹치면 안 된다.** 겹치면 한글이 뒤엣것으로 간다 —
+   * 앞엣것을 가리키던 링크가 조용히 딴 데로 간다. 여기서 막는다.
+   */
+  책갈피달기(id: string, 이름: string): 결과<{ 이름: string }> {
+    const p = this.문단찾기(id);
+    if (!p.ok) return this.남기기('책갈피달기', id, p);
+
+    const 다듬 = 이름.trim();
+    if (this.책갈피들.includes(다듬)) {
+      return this.남기기('책갈피달기', id, 안됨(
+        `'${다듬}' 책갈피가 이 문서에 이미 있다`,
+        '이름이 겹치면 한글이 뒤엣것으로 간다 — 앞엣것을 가리키던 링크가 딴 데로 간다. '
+        + '다른 이름을 줘라.',
+      ));
+    }
+    return this.남기기('책갈피달기', id, p.value.책갈피달기(다듬));
+  }
+
+  /** 문서 전체의 책갈피 이름들 */
+  get 책갈피들(): string[] {
+    return this.구역들
+      .flatMap((s) => findAll(s.root, 'hp:bookmark'))
+      .map((e) => getAttr(e, 'name'))
+      .filter((v): v is string => v !== undefined);
+  }
+
+  /** 문서 전체의 하이퍼링크 주소들 */
+  get 링크들(): string[] {
+    return this.구역들.flatMap((s) => s.모든문단들).flatMap((p) => p.링크들);
+  }
+
+  /**
+   * 지금 문서가 쓰고 있는 밭(field) id 들.
+   *
+   * `@id` 와 `@fieldid` 를 **둘 다** 모은다. 둘은 다른 이름이지만 같은 우물에서
+   * 뽑는 것으로 보이고, 어느 쪽이 겹쳐도 짝이 어긋난다.
+   */
+  private 쓰인밭아이디들(): Set<string> {
+    const 것 = new Set<string>();
+    for (const s of this.구역들) {
+      for (const 이름 of ['hp:fieldBegin', 'hp:fieldEnd']) {
+        for (const e of findAll(s.root, 이름)) {
+          for (const 키 of ['id', 'fieldid', 'beginIDRef']) {
+            const v = getAttr(e, 키);
+            if (v !== undefined) 것.add(v);
+          }
+        }
+      }
+    }
+    return 것;
+  }
+
+  /**
    * **문단을 지운다.**
    *
    * 넣는 길은 있는데 빼는 길이 없었다. 양식에 안 쓰는 항목이 남아도 지울 수가

@@ -27,7 +27,8 @@ const 뿌리 = path.dirname(여기);
 const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
 const { 문서, 표 } = await import(B('doc'));
-const { parseXml, findAll, findFirst, firstChildNamed, getAttr } = await import(B('owpml'));
+const { parseXml, findAll, findFirst, firstChildNamed, getAttr, childrenNamed, textOf }
+  = await import(B('owpml'));
 const { HwpxContainer, 부품 } = await import(B('hwpx'));
 
 const 무대 = path.join(os.tmpdir(), 'hwpx-doclayer');
@@ -62,7 +63,7 @@ for (const 이름 of 목록) {
     const pid = d.이름표.아이디(쓸문단.el);
 
     const 한일 = { 글: false, 글자서식: false, 문단서식: false, 강조: false, 표: false,
-      꾸밈: false };
+      꾸밈: false, 링크: false, 책갈피: false };
 
     const r1 = d.글바꾸기(pid, 표시);
     한일.글 = r1.ok;
@@ -75,6 +76,14 @@ for (const 이름 of 목록) {
     // 전부 NONE 이라 **실물을 한 번도 못 봤다.** 한글이 심판을 본다.
     const r2b = d.글자서식주기(pid, { 취소선: true, 첨자: 'super', 강조점: 'DOT_ABOVE' });
     한일.꾸밈 = r2b.ok;
+
+    // **하이퍼링크와 책갈피가 한글을 넘는가.**
+    // 링크는 fieldBegin~fieldEnd 쌍이라 id 가 어긋나면 한글이 짝을 못 맺는다.
+    // 한글이 다시 저장하면서 짝이 살아 있는지가 심판이다.
+    const r2c = d.링크걸기(pid, 표시, 'https://www.moe.go.kr');
+    한일.링크 = r2c.ok;
+    const r2d = d.책갈피달기(pid, '수용시험-책갈피');
+    한일.책갈피 = r2d.ok;
 
     const r3 = d.문단서식주기(pid, { 왼쪽여백, 정렬: 'CENTER' });
     한일.문단서식 = r3.ok;
@@ -146,7 +155,7 @@ for (const 줄 of 결과.split(/\r?\n/)) {
 let 통과 = 0;
 const 실패 = [...준비실패];
 const 확인한것 = { 글: 0, 굵게: 0, 취소선: 0, 첨자: 0, 강조점: 0,
-  여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0 };
+  링크: 0, 책갈피: 0, 여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0 };
 
 for (const 이름 of 목록) {
   const 낸것 = 한것.get(이름);
@@ -174,6 +183,32 @@ for (const 이름 of 목록) {
         .some((cp) => firstChildNamed(cp, 'hh:bold') && getAttr(cp, 'height') === '1300');
       if (!굵은게있나) 문제.push('13pt 굵은 글자모양이 사라졌다');
       else 확인한것.굵게++;
+    }
+
+    // 하이퍼링크 — **짝이 맞아 있어야 한다.** id 가 어긋나면 한글이 링크를 버리거나
+    // 문서 끝까지 이어 버린다. 시작·끝이 다 있고 서로를 가리키는지 본다.
+    if (낸것.한일.링크) {
+      const 시작들 = findAll(구역.root, 'hp:fieldBegin')
+        .filter((e) => getAttr(e, 'type') === 'HYPERLINK');
+      const 끝들 = findAll(구역.root, 'hp:fieldEnd');
+      const 짝맞음 = 시작들.some((b) =>
+        끝들.some((e) => getAttr(e, 'beginIDRef') === getAttr(b, 'id')));
+      const 주소살음 = 시작들.some((b) => {
+        const 값들 = firstChildNamed(b, 'hp:parameters');
+        if (!값들) return false;
+        return childrenNamed(값들, 'hp:stringParam')
+          .some((x) => getAttr(x, 'name') === 'Command' && textOf(x).includes('moe.go.kr'));
+      });
+      if (!시작들.length) 문제.push('하이퍼링크가 한글을 넘으며 통째로 사라졌다');
+      else if (!짝맞음) 문제.push('하이퍼링크의 fieldEnd 짝이 끊겼다');
+      else if (!주소살음) 문제.push('하이퍼링크는 남았는데 주소가 사라졌다');
+      else 확인한것.링크++;
+    }
+
+    if (낸것.한일.책갈피) {
+      const 것들 = findAll(구역.root, 'hp:bookmark').map((e) => getAttr(e, 'name'));
+      if (!것들.includes('수용시험-책갈피')) 문제.push('책갈피가 한글을 넘으며 사라졌다');
+      else 확인한것.책갈피++;
     }
 
     // 취소선·첨자·강조점 — 셋을 따로 센다. 한꺼번에 세면 하나만 살아도 통과한다.

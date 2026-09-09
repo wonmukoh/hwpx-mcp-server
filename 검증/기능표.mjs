@@ -248,8 +248,34 @@ const 기능들 = [
 
   // ── 참조 ───────────────────────────────────────────────────────────────
   { 갈래: '참조', 이름: '각주·미주', 안됨: '넣을 길이 없다' },
-  { 갈래: '참조', 이름: '하이퍼링크', 안됨: '넣을 길이 없다' },
-  { 갈래: '참조', 이름: '책갈피', 안됨: '넣을 길이 없다' },
+  // fieldBegin~fieldEnd **쌍**이다. id 로 짝을 맺고 주소는 hp:parameters 에 있다.
+  // **짝이 다 있는지**까지 본다 — 시작만 있으면 링크가 문서 끝까지 이어진다.
+  { 갈래: '참조', 이름: '하이퍼링크',
+    블록: [{ kind: 'body', text: '교육부 누리집을 보라' }],
+    고침: (것들) => [{
+      op: 'set_link',
+      id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('교육부')).id,
+      find: '교육부 누리집', url: 'https://www.moe.go.kr',
+    }],
+    본다: (d) => {
+      const 구역 = d.구역들[0];
+      const 시작들 = findAll(구역.root, 'hp:fieldBegin')
+        .filter((e) => getAttr(e, 'type') === 'HYPERLINK');
+      const 끝들 = findAll(구역.root, 'hp:fieldEnd');
+      if (!시작들.length) return false;
+      const 짝맞음 = 시작들.every((b) =>
+        끝들.some((e) => getAttr(e, 'beginIDRef') === getAttr(b, 'id')));
+      return 짝맞음 && d.링크들.includes('https://www.moe.go.kr');
+    } },
+  // 요소 하나로 끝난다 — 짝도 값도 없다.
+  { 갈래: '참조', 이름: '책갈피',
+    블록: [{ kind: 'body', text: '여기로 온다' }],
+    고침: (것들) => [{
+      op: 'set_bookmark',
+      id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('여기로')).id,
+      name: '가는곳',
+    }],
+    본다: (d) => d.책갈피들.includes('가는곳') },
   { 갈래: '참조', 이름: '메모', 안됨: '넣을 길이 없다' },
 
   // ── 읽기 ───────────────────────────────────────────────────────────────

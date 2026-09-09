@@ -294,6 +294,150 @@ export class 문단 {
   }
 
   /**
+   * **글에 하이퍼링크를 건다.**
+   *
+   * 실물 짜임 (실측 31항) —
+   *
+   *     hp:run > hp:ctrl > hp:fieldBegin type="HYPERLINK"
+   *                          └ hp:parameters > hp:stringParam name="Command"|"Path"
+   *     hp:run > hp:t  (링크 글)
+   *     hp:run > hp:ctrl > hp:fieldEnd beginIDRef="…"
+   *
+   * **런 셋이다.** 시작 표시·글·끝 표시가 따로 있고, `fieldEnd/@beginIDRef` 가
+   * `fieldBegin/@id` 를, `@fieldid` 끼리도 서로를 가리킨다. 하나라도 어긋나면
+   * 한글이 링크를 안 만든다.
+   *
+   * 글을 찾아 런을 쪼개는 것은 `강조하기` 와 같다 — 표·그림이 같이 든 런은
+   * 건드리지 않는다.
+   */
+  링크걸기(찾을글: string, 주소: string, 아이디들: (n: number) => string):
+  결과<{ 바뀐수: number }> {
+    if (찾을글.length === 0) return 안됨('빈 글은 찾을 수 없다', '링크를 걸 어구를 적어라.');
+    if (주소.trim().length === 0) return 안됨('주소가 비었다', '링크가 갈 곳을 적어라.');
+
+    let 바뀐수 = 0;
+    for (const 런 of [...this.런들]) {
+      const 글들 = childrenNamed(런, 'hp:t');
+      if (글들.length !== 1) continue;
+      const 아이들 = 런.children.filter((c) => c.kind === 'element');
+      if (아이들.length !== 1) continue;   // 표·그림이 같이 든 런은 안 건드린다
+      const 글 = textOf(글들[0]!);
+      const i = 글.indexOf(찾을글);
+      if (i === -1) continue;
+
+      const 앞 = 글.slice(0, i);
+      const 뒤 = 글.slice(i + 찾을글.length);
+      const 본서식 = getAttr(런, 'charPrIDRef') ?? '0';
+
+      // **id 는 둘 다 새로 뜬다.** 문서 안에서 겹치면 한글이 짝을 잘못 맺는다.
+      const 시작id = 아이디들(0);
+      const 밭id = 아이디들(1);
+
+      const 가운데 = 복제하기(런, this.source);
+      setText(childrenNamed(가운데, 'hp:t')[0]!, 찾을글);
+      insertAfter(런, 가운데);
+
+      const 끝런 = createElement('hp:run', { charPrIDRef: 본서식 });
+      const 끝틀 = createElement('hp:ctrl', {});
+      appendChild(끝틀, createElement('hp:fieldEnd', { beginIDRef: 시작id, fieldid: 밭id }));
+      appendChild(끝런, 끝틀);
+      appendChild(끝런, createElement('hp:t', {}));
+      insertAfter(가운데, 끝런);
+
+      if (뒤.length > 0) {
+        const 뒷런 = 복제하기(런, this.source);
+        setAttr(뒷런, 'charPrIDRef', 본서식);
+        setText(childrenNamed(뒷런, 'hp:t')[0]!, 뒤);
+        insertAfter(끝런, 뒷런);
+      }
+
+      const 시작런 = createElement('hp:run', { charPrIDRef: 본서식 });
+      const 시작틀 = createElement('hp:ctrl', {});
+      const 밭 = createElement('hp:fieldBegin', {
+        id: 시작id, type: 'HYPERLINK', name: '', editable: '0',
+        dirty: '1', zorder: '-1', fieldid: 밭id,
+      });
+      // **여섯 개를 다 넣는다.** 실측한 문서가 `cnt="6"` 에 이 여섯이다.
+      // Command 만 넣고 Path 를 빼면 한글이 링크를 만들되 주소를 잃는다.
+      const 값들 = createElement('hp:parameters', { cnt: '6', name: '' });
+      const 셈 = (태그: string, 이름: string, 값: string) => {
+        const e = createElement(태그, { name: 이름 });
+        appendChild(e, createText(값));
+        appendChild(값들, e);
+      };
+      셈('hp:integerParam', 'Prop', '0');
+      셈('hp:stringParam', 'Command', 주소);
+      셈('hp:stringParam', 'Path', 주소);
+      셈('hp:stringParam', 'Category', 'HWPHYPERLINK_TYPE_HWP');
+      셈('hp:stringParam', 'TargetType', 'HWPHYPERLINK_TARGET_BOOKMARK');
+      셈('hp:stringParam', 'DocOpenType', 'HWPHYPERLINK_JUMP_CURRENTTAB');
+      appendChild(밭, 값들);
+      appendChild(시작틀, 밭);
+      appendChild(시작런, 시작틀);
+      insertBefore(가운데, 시작런);
+
+      if (앞.length > 0) setText(글들[0]!, 앞);
+      else removeNode(런);
+
+      바뀐수++;
+    }
+
+    if (바뀐수 === 0) {
+      return 안됨(
+        `문단에서 '${찾을글}' 을 못 찾았다`,
+        `이 문단의 글: '${this.글.slice(0, 60)}${this.글.length > 60 ? '…' : ''}'`,
+      );
+    }
+    return 됨({ 바뀐수 });
+  }
+
+  /**
+   * **책갈피를 단다.**
+   *
+   *     hp:run > hp:ctrl > hp:bookmark name="…"
+   *
+   * 하이퍼링크와 달리 **요소 하나로 끝난다** — 짝도 없고 값도 없다.
+   * 문서 안에서 이름이 겹치면 한글이 뒤엣것으로 간다. 겹침은 부르는 쪽이 본다.
+   */
+  책갈피달기(이름: string): 결과<{ 이름: string }> {
+    const 다듬 = 이름.trim();
+    if (다듬.length === 0) return 안됨('책갈피 이름이 비었다', '가리킬 이름을 적어라.');
+    if (this.책갈피들.includes(다듬)) {
+      return 안됨(`이 문단에 이미 '${다듬}' 책갈피가 있다`, '다른 이름을 주거나 그대로 써라.');
+    }
+
+    const 런 = createElement('hp:run', { charPrIDRef: this.글자모양들[0] ?? '0' });
+    const 틀 = createElement('hp:ctrl', {});
+    appendChild(틀, createElement('hp:bookmark', { name: 다듬 }));
+    appendChild(런, 틀);
+
+    const 첫런 = this.런들[0];
+    if (첫런 === undefined) appendChild(this.el, 런);
+    else insertBefore(첫런, 런);
+    return 됨({ 이름: 다듬 });
+  }
+
+  /** 이 문단에 달린 책갈피 이름들 */
+  get 책갈피들(): string[] {
+    return findAll(this.el, 'hp:bookmark')
+      .map((e) => getAttr(e, 'name'))
+      .filter((v): v is string => v !== undefined);
+  }
+
+  /** 이 문단에 걸린 하이퍼링크 주소들 */
+  get 링크들(): string[] {
+    return findAll(this.el, 'hp:fieldBegin')
+      .filter((e) => getAttr(e, 'type') === 'HYPERLINK')
+      .flatMap((e) => {
+        const 값들 = firstChildNamed(e, 'hp:parameters');
+        if (값들 === undefined) return [];
+        const p = childrenNamed(값들, 'hp:stringParam')
+          .find((x) => getAttr(x, 'name') === 'Command');
+        return p === undefined ? [] : [textOf(p)];
+      });
+  }
+
+  /**
    * 낡은 줄 배치를 지운다.
    *
    * 글을 바꾸면 `hp:linesegarray` 가 낡는다. 한글은 열 때 다시 계산하니

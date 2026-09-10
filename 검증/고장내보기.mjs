@@ -22,7 +22,18 @@ const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
 process.chdir(뿌리);
 
-/** 고장 목록 — [이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험] */
+/**
+ * 고장 목록 — `[이름, 파일, 원래글, 고장난글, 이걸 잡아야 하는 시험]`
+ *
+ * **원래글이 소스에 두 군데 있으면 안 된다.** `replace` 는 첫 자리만 갈아 끼우니,
+ * 겨눈 곳이 아닌 데가 고장 나고도 시험은 빨개진다 — 초록이 아니라 **거짓 빨강**
+ * 이고, 「이걸 잡는다」고 적어 둔 말이 거짓이 된다. 아래에서 자리 수를 세어
+ * 여럿이면 멈춘다 (2026-09-10 에 넣었더니 그 자리에서 열 가지가 걸렸다).
+ *
+ * 줄 하나로 못 좁히면 **줄 배열**로 준다 — 여러 줄을 이어 붙여 겨눈다.
+ * 표에서 줄을 넣는 자리와 빼는 자리처럼, 앞뒤가 글자까지 같은 곳이 있다.
+ */
+const 줄잇기 = (v) => (Array.isArray(v) ? v.join(String.fromCharCode(10)) : v);
 const 고장들 = [
   [
     'edit 이 insert_col 을 받고도 아무것도 안 한다 (조용한 무동작)',
@@ -86,6 +97,161 @@ const 고장들 = [
     '    if (this.책갈피들.includes(다듬)) {',
     '    if (false) {',
     'packages/doc',
+  ],
+  // ── 남은 일곱 (2026-09-10) ──────────────────────────────────────────────
+  [
+    '각주에 hp:autoNum 을 안 넣는다 (주는 달리고 번호가 안 보인다)',
+    'packages/doc/src/본문.ts',
+    '    appendChild(번호틀, 자동번호);',
+    '    void 자동번호;',
+    'packages/doc',
+  ],
+  [
+    '미주도 hp:footNote 로 낸다 (문서 끝에 안 모이고 쪽 아래로 간다)',
+    'packages/doc/src/본문.ts',
+    "    const 갈래이름 = 설정.갈래 === '각주' ? 'hp:footNote' : 'hp:endNote';",
+    "    const 갈래이름 = 'hp:footNote';",
+    'packages/doc',
+  ],
+  [
+    '주 번호를 늘 1로 매긴다 (둘째 주도 1번이 된다)',
+    'packages/doc/src/문서.ts',
+    '    const 이미 = this.구역들.reduce((n, s) => n + findAll(s.root, 태그).length, 0);',
+    '    const 이미 = 0;',
+    'packages/doc',
+  ],
+  [
+    '주 스타일을 안 찾고 0번으로 둔다 (한글이 만든 것과 다른 값이 된다)',
+    'packages/doc/src/문서.ts',
+    "    const 서식 = this.머리.스타일찾기(갈래, 갈래 === '각주' ? 'Footnote' : 'Endnote');",
+    '    const 서식 = {};',
+    'packages/doc',
+  ],
+  [
+    '주를 달 때 어구 뒤에 남은 글을 버린다 (본문 글이 조용히 사라진다)',
+    'packages/doc/src/본문.ts',
+    '        뒤글 = 글.slice(끝);',
+    "        뒤글 = '';",
+    'packages/doc',
+  ],
+  [
+    '메모 몸통(subList)을 밭에 안 붙인다 (메모는 달리고 글이 없다)',
+    'packages/doc/src/본문.ts',
+    '      appendChild(밭, 목록);',
+    '      void 목록;',
+    'packages/doc',
+  ],
+  [
+    '메모의 fieldEnd 가 딴 id 를 가리킨다 (한글이 메모를 문서 끝까지 이어 버린다)',
+    'packages/doc/src/본문.ts',
+    '        beginIDRef: 설정.시작id, fieldid: 설정.밭id,',
+    "        beginIDRef: '1', fieldid: '2',",
+    'packages/doc',
+  ],
+  [
+    '메모 지은이 기본값을 사람 이름으로 둔다 (문서를 보내면 이름이 같이 간다)',
+    'packages/doc/src/문서.ts',
+    "  메모달기(id: string, 찾을글: string, 내용: string, 지은이 = 'hwpx-mcp'):",
+    "  메모달기(id: string, 찾을글: string, 내용: string, 지은이 = '홍길동'):",
+    'packages/doc',
+  ],
+  [
+    '수식에 hp:script 를 안 넣는다 (개체는 생기고 식이 없다)',
+    'packages/doc/src/본문.ts',
+    '    appendChild(식, 본문);',
+    '    void 본문;',
+    'packages/doc',
+  ],
+  [
+    '수식 높이를 0 으로 둔다 (한글이 식을 안 그린다)',
+    'packages/doc/src/본문.ts',
+    '    const 높이 = 1163;',
+    '    const 높이 = 0;',
+    'packages/doc',
+  ],
+  [
+    '다단이 colCount 를 안 바꾼다 (나눴다면서 한 단이다)',
+    'packages/doc/src/본문.ts',
+    "    setAttr(c, 'colCount', String(단수));",
+    "    setAttr(c, 'colCount', '1');",
+    'packages/doc',
+  ],
+  [
+    '다단 간격을 늘 0 으로 둔다 (두 단이 붙어 한 덩이로 보인다)',
+    'packages/doc/src/본문.ts',
+    "    setAttr(c, 'sameGap', String(새간격));",
+    "    setAttr(c, 'sameGap', '0');",
+    'packages/doc',
+  ],
+  [
+    '개요를 켜도 type 을 NONE 으로 둔다 (수준만 적히고 번호가 안 붙는다)',
+    'packages/doc/src/머리글.ts',
+    "        const 종류 = 켬 ? 'OUTLINE' : 'NONE';",
+    "        const 종류 = 'NONE';",
+    'packages/doc',
+  ],
+  [
+    '개요 수준을 1부터 적는다 (한글은 0부터 세니 한 칸씩 밀린다)',
+    'packages/doc/src/머리글.ts',
+    '        const 수준 = String(켬 ? 패치.개요수준 - 1 : 0);',
+    '        const 수준 = String(패치.개요수준);',
+    'packages/doc',
+  ],
+  [
+    '타원의 중심을 (0,0) 에 둔다 (타원이 왼쪽 위로 쏠린다)',
+    'packages/compose/src/조판.ts',
+    "    끼우기('hc:center', w / 2, h / 2);",
+    "    끼우기('hc:center', 0, 0);",
+    'packages/compose',
+  ],
+  [
+    '다각형을 첫 점으로 안 닫는다 (한 변이 뚫린 도형이 된다)',
+    'packages/compose/src/조판.ts',
+    "  끼우기('hc:pt', 첫[0], 첫[1]);",
+    '  void 첫;',
+    'packages/compose',
+  ],
+  [
+    '다각형인데 이름을 안 바꾼다 (꼭짓점만 든 사각형이 된다)',
+    'packages/compose/src/조판.ts',
+    "  이름바꾸기(도형, 'hp:polygon');",
+    "  이름바꾸기(도형, 'hp:rect');",
+    'packages/compose',
+  ],
+  [
+    '엮을 때 hp:ctrl 을 그냥 지나친다 (각주 글이 HTML 에서 통째로 사라진다)',
+    'packages/render/src/엮기.ts',
+    ["    case 'hp:ctrl':", '      return 조종엮기(것, c);'],
+    ["    case 'hp:ctrl':", "      return '';"],
+    'packages/render',
+  ],
+  [
+    '수식을 글로도 안 남긴다 (못 그리는 김에 글까지 잃는다)',
+    'packages/render/src/엮기.ts',
+    "      return 식 === undefined ? '' : `<span class=\"수식\">${감싸기(textOf(식))}</span>`;",
+    "      return '';",
+    'packages/render',
+  ],
+  [
+    '각주·메모 글을 본문 글에 섞어 준다 (읽는 쪽이 본문인 줄 안다)',
+    'packages/server/src/도구.ts',
+    '          .flatMap((s) => s.모든문단들.filter((p) => !곁글인가(p.el)).map((p) => p.글))',
+    '          .flatMap((s) => s.모든문단들.map((p) => p.글))',
+    'packages/server',
+  ],
+  [
+    'get_content 가 주를 안 준다 (넣어 놓고 되읽을 길이 없다)',
+    'packages/server/src/도구.ts',
+    '        const 주들 = 것.it.d.주들;',
+    '        const 주들 = [];',
+    'packages/server',
+  ],
+  [
+    'get_content 가 메모를 안 준다 (넣어 놓고 되읽을 길이 없다)',
+    'packages/server/src/도구.ts',
+    '        const 메모들 = 것.it.d.메모들;',
+    '        const 메모들 = [];',
+    'packages/server',
   ],
   [
     '쪽 설정이 든 문단도 지운다 (용지 크기·여백이 통째로 날아간다)',
@@ -160,8 +326,8 @@ const 고장들 = [
   [
     '문단을 지우고 ID 장부에서 안 뺀다 (없는 것을 고치고도 됐다고 한다)',
     'packages/doc/src/문서.ts',
-    '    this.이름표.버리기(id);',
-    '    void id;',
+    ['    removeNode(p.el);', '    this.이름표.버리기(id);'],
+    ['    removeNode(p.el);', '    void id;'],
     'packages/doc',
   ],
   [
@@ -195,8 +361,9 @@ const 고장들 = [
   [
     '고장을 심고 나서 자국을 남긴다 (그 사이에 죽으면 못 되돌린다)',
     '검증/고장내보기.mjs',
-    '  자국남기기(파일, 원본);   // **고장을 심기 전에** 남긴다. 뒤에 남기면 그 사이에 죽는다',
-    '  void 자국남기기;',
+    ['  되돌릴것.set(파일, 원본);',
+      '  자국남기기(파일, 원본);   // **고장을 심기 전에** 남긴다. 뒤에 남기면 그 사이에 죽는다'],
+    ['  되돌릴것.set(파일, 원본);', '  void 자국남기기;'],
     '검증',
   ],
   [
@@ -489,8 +656,16 @@ const 고장들 = [
   [
     '줄을 넣으면서 줄 주소를 다시 안 매긴다 (표 검사에 걸린다)',
     'packages/doc/src/표.ts',
-    "        if (addr) setAttr(addr, 'rowAddr', String(r));",
-    '        /* 주소를 안 매긴다 */',
+    ['    // 안쪽 표까지 훑으면 그 표의 주소를 바깥 표 기준으로 덮어써 버린다.',
+      "    for (const [r, tr] of childrenNamed(this.el, 'hp:tr').entries()) {",
+      "      for (const tc of childrenNamed(tr, 'hp:tc')) {",
+      "        const addr = firstChildNamed(tc, 'hp:cellAddr');",
+      "        if (addr) setAttr(addr, 'rowAddr', String(r));"],
+    ['    // 안쪽 표까지 훑으면 그 표의 주소를 바깥 표 기준으로 덮어써 버린다.',
+      "    for (const [r, tr] of childrenNamed(this.el, 'hp:tr').entries()) {",
+      "      for (const tc of childrenNamed(tr, 'hp:tc')) {",
+      "        const addr = firstChildNamed(tc, 'hp:cellAddr');",
+      '        /* 주소를 안 매긴다 */'],
     'packages/doc',
   ],
   [
@@ -503,8 +678,22 @@ const 고장들 = [
   [
     '줄을 넣으면서 rowCnt 를 안 올린다',
     'packages/doc/src/표.ts',
-    "    setAttr(this.el, 'rowCnt', String(childrenNamed(this.el, 'hp:tr').length));",
-    '    /* rowCnt 를 안 올린다 */',
+    ['    // 안쪽 표까지 훑으면 그 표의 주소를 바깥 표 기준으로 덮어써 버린다.',
+      "    for (const [r, tr] of childrenNamed(this.el, 'hp:tr').entries()) {",
+      "      for (const tc of childrenNamed(tr, 'hp:tc')) {",
+      "        const addr = firstChildNamed(tc, 'hp:cellAddr');",
+      "        if (addr) setAttr(addr, 'rowAddr', String(r));",
+      '      }',
+      '    }',
+      "    setAttr(this.el, 'rowCnt', String(childrenNamed(this.el, 'hp:tr').length));"],
+    ['    // 안쪽 표까지 훑으면 그 표의 주소를 바깥 표 기준으로 덮어써 버린다.',
+      "    for (const [r, tr] of childrenNamed(this.el, 'hp:tr').entries()) {",
+      "      for (const tc of childrenNamed(tr, 'hp:tc')) {",
+      "        const addr = firstChildNamed(tc, 'hp:cellAddr');",
+      "        if (addr) setAttr(addr, 'rowAddr', String(r));",
+      '      }',
+      '    }',
+      '    /* rowCnt 를 안 올린다 */'],
     'packages/doc',
   ],
   [
@@ -688,8 +877,12 @@ const 고장들 = [
   [
     '강조할 때 표가 든 런도 쪼갠다 (표가 복제된다)',
     'packages/doc/src/본문.ts',
-    "      if (아이들.length !== 1) continue;",
-    "      // 섞인 런도 쪼갬",
+    ['      const 아이들 = 런.children.filter((c) => c.kind === \'element\');',
+      '      if (아이들.length !== 1) continue;',
+      "      const 글 = textOf(글들[0]!);"],
+    ['      const 아이들 = 런.children.filter((c) => c.kind === \'element\');',
+      '      // 섞인 런도 쪼갠다',
+      "      const 글 = textOf(글들[0]!);"],
     'packages/doc',
   ],
   [
@@ -745,8 +938,8 @@ const 고장들 = [
   [
     '자간을 한 언어에만 건다 (그 언어 글자만 좁아진다)',
     'packages/doc/src/머리글.ts',
-    "        for (const 언어 of 언어들) {",
-    "        for (const 언어 of ['HANGUL'] as const) {",
+    ['        if (!e) return;', '        for (const 언어 of 언어들) {'],
+    ['        if (!e) return;', "        for (const 언어 of ['HANGUL'] as const) {"],
     'packages/doc',
   ],
   [
@@ -808,8 +1001,10 @@ const 고장들 = [
   [
     'replace 길목이 제어문자를 그냥 받는다 (딴 길로 새어 들어간다)',
     'packages/doc/src/본문.ts',
-    "    const 나쁜것 = 못쓰는제어문자(새글);",
-    "    const 나쁜것 = undefined; const _쓴다 = 못쓰는제어문자;",
+    ['    // 막는 자리는 글이 들어오는 길목마다 있어야 한다.',
+      '    const 나쁜것 = 못쓰는제어문자(새글);'],
+    ['    // 막는 자리는 글이 들어오는 길목마다 있어야 한다.',
+      '    const 나쁜것 = undefined; const _쓴다 = 못쓰는제어문자;'],
     'packages/server',
   ],
   [
@@ -822,8 +1017,10 @@ const 고장들 = [
   [
     'XML 이 못 쓰는 제어문자를 그냥 받는다 (한글이 그 파일을 못 연다)',
     'packages/doc/src/본문.ts',
-    "    const 나쁜것 = 못쓰는제어문자(새글);",
-    "    const 나쁜것 = undefined;",
+    ['    // 말없이 빼 버리면 글이 조용히 달라지니, 어디에 있는지 짚어 주고 멈춘다.',
+      '    const 나쁜것 = 못쓰는제어문자(새글);'],
+    ['    // 말없이 빼 버리면 글이 조용히 달라지니, 어디에 있는지 짚어 주고 멈춘다.',
+      '    const 나쁜것 = undefined;'],
     'packages/server',
   ],
   [
@@ -864,8 +1061,10 @@ const 고장들 = [
   [
     'delete_row 가 at 없이도 지운다 (엉뚱한 줄이 날아간다)',
     'packages/server/src/도구.ts',
-    "      if (e.at === undefined) {",
-    "      if (false) {",
+    ['      // 지우기에서 그런 기본값을 두면 **엉뚱한 줄을 말없이 지운다.**',
+      '      if (e.at === undefined) {'],
+    ['      // 지우기에서 그런 기본값을 두면 **엉뚱한 줄을 말없이 지운다.**',
+      '      if (false) {'],
     'packages/server',
   ],
   [
@@ -934,8 +1133,8 @@ const 고장들 = [
   [
     'get_content 가 필수라 적어 놓은 id 를 안 낸다 (엄격한 클라이언트가 답을 거절한다)',
     'packages/server/src/도구.ts',
-    "          { ok: true, id: 인자.doc_id, kind: 'document', text: 온글 });",
-    "          { ok: true, kind: 'document', text: 온글 });",
+    "          ok: true, id: 인자.doc_id, kind: 'document', text: 온글,",
+    "          ok: true, kind: 'document', text: 온글,",
     'packages/server',
   ],
   [
@@ -1095,15 +1294,52 @@ function 되돌리기() {
 process.on('exit', 되돌리기);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { 되돌리기(); process.exit(130); });
 
+// **자리만 세어 보고 끝낸다** (`--자리만`).
+//
+// 한 바퀴 도는 데 스무 분이 넘는다. 앵커가 겹쳤는지만 보려고 스무 분을 기다리면
+// 고치는 사람이 안 본다 — 안 보는 막이는 없는 것과 같다. 몇 초에 끝낸다.
+// **이름에 그 말이 든 것만 돈다** (`--골라 각주`).
+// 한 바퀴가 스무 분이 넘는다. 방금 더한 것 하나를 보려고 스무 분을 기다리면
+// 고치는 사람이 안 돌린다 — 안 돌리는 막이는 없는 것과 같다.
+const 고른말 = process.argv.includes('--골라')
+  ? process.argv[process.argv.indexOf('--골라') + 1] : undefined;
+const 돌릴것 = 고른말 === undefined
+  ? 고장들 : 고장들.filter(([이름]) => 이름.includes(고른말));
+if (고른말 !== undefined) {
+  console.log(`「${고른말}」 이 든 고장 ${돌릴것.length}가지만 돈다 (전체 ${고장들.length})`);
+}
+
+if (process.argv.includes('--자리만')) {
+  const 탈 = [];
+  for (const [이름, 파일, 원래글] of 돌릴것) {
+    let 원본;
+    try { 원본 = fs.readFileSync(파일, 'utf8'); }
+    catch { 탈.push([이름, `${파일} 파일이 없다`]); continue; }
+    const 찾을글 = 줄끝맞추기(원본, 줄잇기(원래글));
+    const 몇 = 원본.split(찾을글).length - 1;
+    if (몇 !== 1) 탈.push([이름, 몇 === 0 ? '자리를 못 찾았다' : `자리가 ${몇}군데다`]);
+  }
+  console.log(`고장 ${돌릴것.length}가지의 자리를 셌다 — 탈 ${탈.length}개`);
+  for (const [이름, 왜] of 탈) console.log(`  ✗ ${이름}: ${왜}`);
+  process.exit(탈.length ? 1 : 0);
+}
+
 let 잡음 = 0;
 const 못잡음 = [];
 
-for (const [이름, 파일, 원래글, 고장난글, 어디] of 고장들) {
+for (const [이름, 파일, 원래글, 고장난글, 어디] of 돌릴것) {
   const 원본 = fs.readFileSync(파일, 'utf8');
-  const 찾을글 = 줄끝맞추기(원본, 원래글);
-  const 넣을글 = 줄끝맞추기(원본, 고장난글);
+  const 찾을글 = 줄끝맞추기(원본, 줄잇기(원래글));
+  const 넣을글 = 줄끝맞추기(원본, 줄잇기(고장난글));
   if (!원본.includes(찾을글)) {
     못잡음.push([이름, '고장 낼 자리를 못 찾았다 — 소스가 바뀌었나']);
+    continue;
+  }
+  // **자리가 여럿이면 고장이 딴 데 난다.** `replace` 는 첫 자리만 갈아 끼우니,
+  // 내가 겨눈 곳이 아닌 데가 고장 나고도 시험은 빨개진다 — 초록이 아니라
+  // **거짓 빨강**이다. 「이걸 잡는다」고 적어 둔 말이 거짓이 된다.
+  if (원본.split(찾을글).length - 1 !== 1) {
+    못잡음.push([이름, `고장 낼 자리가 ${원본.split(찾을글).length - 1}군데다 — 앵커를 더 좁혀라`]);
     continue;
   }
   되돌릴것.set(파일, 원본);
@@ -1128,6 +1364,6 @@ for (const [이름, 파일, 원래글, 고장난글, 어디] of 고장들) {
 }
 
 console.log();
-console.log(`고장 ${고장들.length}가지 — 시험이 잡은 것 ${잡음} / 못 잡은 것 ${못잡음.length}`);
+console.log(`고장 ${돌릴것.length}가지 — 시험이 잡은 것 ${잡음} / 못 잡은 것 ${못잡음.length}`);
 for (const [이름, 왜] of 못잡음) console.log(`  ✗ ${이름}: ${왜}`);
 process.exit(못잡음.length ? 1 : 0);

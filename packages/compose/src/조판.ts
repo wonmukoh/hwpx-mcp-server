@@ -21,7 +21,8 @@
 
 import {
   parseXml, findAll, childrenNamed, firstChildNamed,
-  getAttr, setAttr, setText, appendChild, removeNode, insertAfter, 복제하기,
+  getAttr, setAttr, setText, appendChild, removeNode, removeAttr, insertAfter, 복제하기,
+  이름바꾸기,
   pt, ptToHwp, hwp,
   type ElementNode, textOf, createElement, insertBefore, 못쓰는제어문자,
 } from '@hwpx/owpml';
@@ -844,6 +845,7 @@ export class 조판기 {
       text?: string; width?: number; height?: number;
       border_color?: string; line_width?: number; background?: string;
       size?: number; align?: string; bold?: boolean; font?: string;
+      shape?: 'rect' | 'ellipse' | 'polygon'; points?: [number, number][];
     },
     번호: number,
   ): 결과<만든것> {
@@ -879,6 +881,10 @@ export class 조판기 {
       const p = firstChildNamed(rect, 태그);
       if (p) { setAttr(p, 'x', x); setAttr(p, 'y', y); }
     }
+
+    // 타원·다각형은 **가운데 기하만** 갈아 끼운다. 앞뒤는 사각형과 같다 (실측).
+    const 기하 = 기하갈기(rect, b.shape ?? 'rect', 너비, 높이, b.points);
+    if (!기하.ok) return 기하;
 
     // 선과 채움
     const 선 = firstChildNamed(rect, 'hp:lineShape');
@@ -1396,4 +1402,83 @@ export function 빈것빼기<T extends object>(o: T): Partial<T> {
   const 낸것: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(o)) if (v !== undefined) 낸것[k] = v;
   return 낸것 as Partial<T>;
+}
+
+/**
+ * **사각형 조각을 타원·다각형으로 갈아 끼운다.**
+ *
+ * 실측(도형 세 갈래를 나란히 놓고 자식 차례를 견줬다) — 앞뒤가 **똑같다**:
+ *
+ *     앞   offset · orgSz · curSz · flip · rotationInfo · renderingInfo
+ *          · lineShape · fillBrush · shadow
+ *     가운데  ← 여기만 다르다
+ *     뒤   sz · pos · outMargin · shapeComment
+ *
+ *     사각형   hc:pt0 hc:pt1 hc:pt2 hc:pt3      (네 꼭짓점)
+ *     타원     hc:center hc:ax1 hc:ax2 + 호 네 점
+ *     다각형   hc:pt × N                        (꼭짓점 목록, 첫 점을 끝에 한 번 더)
+ *
+ * 그래서 **뼈대를 다시 짜지 않는다.** 한글이 저장한 사각형을 떠서 이름과
+ * 가운데만 바꾼다. 맨땅에서 짜면 빠진 자식이 생기고, 한글은 빠진 것을
+ * 알려 주지 않고 그 뒤를 통째로 무시한다.
+ *
+ * 타원의 호 네 점(`start1`·`end1`·`start2`·`end2`)은 `hasArcPr="0"` 이면
+ * 안 쓴다 — 실측한 문서에 22억 같은 값이 들어 있었다. 우리는 0 으로 둔다.
+ */
+function 기하갈기(
+  도형: ElementNode,
+  갈래: 'rect' | 'ellipse' | 'polygon',
+  너비: number,
+  높이: number,
+  점들: readonly (readonly [number, number])[] | undefined,
+): 결과<void> {
+  if (갈래 === 'rect') return 됨(undefined);
+
+  const w = Math.round(너비), h = Math.round(높이);
+  const 그림자 = firstChildNamed(도형, 'hp:shadow');
+  if (그림자 === undefined) return 안됨('사각형 조각에 hp:shadow 가 없다', '조각을 다시 구워라.');
+
+  // 사각형의 네 꼭짓점을 걷어 낸다
+  for (const 태그 of ['hc:pt0', 'hc:pt1', 'hc:pt2', 'hc:pt3']) {
+    const e = firstChildNamed(도형, 태그);
+    if (e) removeNode(e);
+  }
+  removeAttr(도형, 'ratio');   // 사각형에만 있는 것
+
+  // 그림자 **바로 뒤**에 차례대로 끼운다. 뒤집히면 한글이 안 읽는다.
+  let 앞 = 그림자;
+  const 끼우기 = (태그: string, x: number, y: number): void => {
+    const e = createElement(태그, { x: String(Math.round(x)), y: String(Math.round(y)) });
+    insertAfter(앞, e);
+    앞 = e;
+  };
+
+  if (갈래 === 'ellipse') {
+    이름바꾸기(도형, 'hp:ellipse');
+    setAttr(도형, 'intervalDirty', '0');
+    setAttr(도형, 'hasArcPr', '0');
+    setAttr(도형, 'arcType', 'NORMAL');
+    끼우기('hc:center', w / 2, h / 2);
+    끼우기('hc:ax1', w, h / 2);
+    끼우기('hc:ax2', w / 2, 0);
+    for (const 태그 of ['hc:start1', 'hc:end1', 'hc:start2', 'hc:end2']) 끼우기(태그, 0, 0);
+    return 됨(undefined);
+  }
+
+  이름바꾸기(도형, 'hp:polygon');
+  const 기본 = [[w / 2, 0], [0, h], [w, h]] as const;
+  const 준것 = 점들 === undefined || 점들.length === 0
+    ? 기본.map(([x, y]) => [x, y] as const)
+    : 점들.map(([x, y]) => [ptToHwp(pt(x)), ptToHwp(pt(y))] as const);
+  if (준것.length < 3) {
+    return 안됨(
+      `다각형에 꼭짓점이 ${준것.length}개뿐이다`,
+      '셋 이상을 줘라. 둘이면 선이지 다각형이 아니다.',
+    );
+  }
+  for (const [x, y] of 준것) 끼우기('hc:pt', x, y);
+  // 첫 점을 한 번 더 — 실측한 다각형이 그렇게 닫혀 있다
+  const 첫 = 준것[0]!;
+  끼우기('hc:pt', 첫[0], 첫[1]);
+  return 됨(undefined);
 }

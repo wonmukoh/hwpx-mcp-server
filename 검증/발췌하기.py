@@ -59,6 +59,34 @@ sys.stdout.reconfigure(encoding='utf-8')
 
     ('덧말', 'dutmal — 글자 위에 다는 작은 글',
      r'<hp:dutmal\s[\s\S]*?</hp:dutmal>', 200),
+
+    # ── 남은 기능 (2026-09-10) ────────────────────────────────────────────
+    ('각주', 'footNote — 본문 아래에 다는 주석. 안이 subList 다',
+     r'<hp:footNote\s[\s\S]*?</hp:footNote>', 300),
+
+    ('미주', 'endNote — 문서 끝에 모으는 주석',
+     r'<hp:endNote\s[\s\S]*?</hp:endNote>', 300),
+
+    ('메모', 'memo — 본문에 안 찍히는 덧말. memoGroup 과 짝이다',
+     r'<hp:memo\s[\s\S]*?</hp:memo>', 300),
+
+    ('메모-묶음', 'memoGroup — 메모의 몸통이 여기 있다',
+     r'<hp:memoGroup[\s\S]*?</hp:memoGroup>', 200),
+
+    ('도형-다각형', 'polygon — 꼭짓점 목록이 어떻게 담기나',
+     r'<hp:polygon\s[\s\S]*?</hp:polygon>', 200),
+
+    ('개요-문단', 'heading type=OUTLINE 을 쓴 paraPr (머리글 XML)',
+     r'<hh:heading[^>]*type="OUTLINE"[^>]*/?>', 300),
+
+    ('개요-번호매김', 'hh:numbering — 개요 번호의 모양이 여기 있다',
+     r'<hh:numbering\s[\s\S]*?</hh:numbering>', 0),
+
+    ('바탕쪽', 'masterPage — 모든 쪽 뒤에 깔리는 바탕',
+     r'<hp:masterPage[\s\S]*?</hp:masterPage>|<hp:masterPage\s[^>]*/>', 200),
+
+    ('자동번호', 'autoNum — 쪽·각주 번호가 들어가는 자리',
+     r'<hp:autoNum\s[^>]*/>', 200),
 ]
 
 
@@ -83,7 +111,7 @@ def 본문(path):
     z = zipfile.ZipFile(path)
     out = []
     for n in z.namelist():
-        if re.match(r'Contents/section\d+\.xml$', n):
+        if re.match(r'Contents/(section\d+|header)\.xml$', n):
             out.append(z.read(n).decode('utf-8'))
     return '\n'.join(out)
 

@@ -25,7 +25,7 @@
  */
 
 import {
-  childrenNamed, findAll, firstChildNamed, getAttr, textOf, parseXml,
+  childElements, childrenNamed, findAll, firstChildNamed, getAttr, textOf, parseXml,
   hwp, hwpToMm, hwpToPt, readHwp,
   type ElementNode, type HwpUnit,
 } from '@hwpx/owpml';
@@ -120,6 +120,8 @@ function 스타일(짝: Record<string, string | undefined>): string {
 /** 엮는 동안 들고 다니는 것 */
 class 엮는이 {
   readonly 못옮긴것 = new Set<string>();
+  /** 본문에서 만난 각주·미주. 끝에 모아 붙인다 */
+  readonly 주들: { 갈래: '각주' | '미주'; 번호: string; 글: string }[] = [];
   문단수 = 0;
   표수 = 0;
   그림수 = 0;
@@ -209,11 +211,22 @@ function 런속엮기(것: ElementNode, 글모양: 글자모양 | undefined, c: 
     case 'hp:tab':
       // 탭 자리는 한글이 탭 설정으로 잡는다. 여기서는 눈에 보이는 만큼만 벌린다
       return '<span class="tab"></span>';
-    // 쪽 설정·조판 표시·줄 배치는 눈에 안 보이는 것이라 그냥 지난다
-    case 'hp:secPr':
+    // **`hp:ctrl` 안에 글이 든 것이 있다.** 그냥 지나가면 각주 글이 통째로
+    // 사라진다 — 한글 PDF 에는 쪽 아래에 찍히는 글이다. 우리 HTML 에만 없으면
+    // 「글이 사라진 것」이고, 그것 하나로 HTML 닮음 갈래가 깨진다.
     case 'hp:ctrl':
+      return 조종엮기(것, c);
+    // 쪽 설정·줄 배치는 눈에 안 보이는 것이라 그냥 지난다
+    case 'hp:secPr':
     case 'hp:linesegarray':
       return '';
+    // 수식은 그림으로 못 그린다. **적어도 글은 안 잃는다** —
+    // `hp:script` 가 한글 수식 스크립트다 (`{a} over {b}`).
+    case 'hp:equation': {
+      const 식 = firstChildNamed(것, 'hp:script');
+      c.못옮긴것.add('수식(글로만 옮겼다)');
+      return 식 === undefined ? '' : `<span class="수식">${감싸기(textOf(식))}</span>`;
+    }
     default:
       c.못옮긴것.add(못옮긴이름(것.name));
       return '';
@@ -311,6 +324,30 @@ function 칸엮기(tc: ElementNode, c: 엮는이): string {
     'padding-top': 안('top'),
     'padding-bottom': 안('bottom'),
   })}>${글통엮기(firstChildNamed(tc, 'hp:subList'), c)}</td>`;
+}
+
+/**
+ * `hp:ctrl` 안에 든 것.
+ *
+ *   각주·미주   글이 있다. 자리에 번호를 남기고 글은 **문서 끝에 모은다.**
+ *   메모        글이 있지만 **일부러 안 그린다** — 한글도 안 찍는다.
+ *               화면과 「메모 보기」에만 보이는 것이라, 그리면 원본과 달라진다.
+ *   그 밖       쪽 번호·자동 번호·책갈피 같은 표시. 눈에 안 보인다.
+ */
+function 조종엮기(틀: ElementNode, c: 엮는이): string {
+  let 나온것 = '';
+  for (const e of childElements(틀)) {
+    if (e.name !== 'hp:footNote' && e.name !== 'hp:endNote') continue;
+    const 갈래 = e.name === 'hp:footNote' ? '각주' : '미주';
+    const 번호 = getAttr(e, 'number') ?? String(c.주들.length + 1);
+    // 안에 든 `hp:autoNum` 은 번호 자리라 글로 옮기면 겹친다 — 글만 걷는다.
+    const 글 = childrenNamed(firstChildNamed(e, 'hp:subList') ?? e, 'hp:p')
+      .map((p) => findAll(p, 'hp:t').map((t) => textOf(t)).join(''))
+      .join(' ').trim();
+    c.주들.push({ 갈래, 번호, 글 });
+    나온것 += `<sup class="주표시">${감싸기(번호)}</sup>`;
+  }
+  return 나온것;
 }
 
 /** 글이 든 곳(`hp:subList`)의 문단들 */
@@ -578,8 +615,10 @@ function 못옮긴이름(태그: string): string {
     case 'hp:container': return '묶은 그림·도형';
     case 'hp:ole': return 'OLE 개체';
     case 'hp:chart': return '차트';
-    case 'hp:footnote': return '각주';
-    case 'hp:endnote': return '미주';
+    // **실물은 `hp:footNote` 다 (N 이 대문자).** 소문자로 적어 둔 동안
+    // 이 줄은 한 번도 안 걸렸다 — 있으나 마나 한 이름표였다.
+    case 'hp:footNote': return '각주';
+    case 'hp:endNote': return '미주';
     case 'hp:textart': return '글맵시';
     default: return 태그;
   }
@@ -646,6 +685,14 @@ export function 엮기(d: 문서, 설정: 엮기설정 = {}): 엮은것 {
 
   const 쪽들 = d.구역들.map((s, i) => 구역엮기(s, c, i === 0)).join('\n');
 
+  // **주는 끝에 모아 붙인다.** 한글은 쪽 아래에 찍지만 우리는 쪽을 나눠 그리지
+  // 못한다 — 자리는 못 맞춰도 **글은 안 잃는다.** 잃는 것과 자리가 다른 것은
+  // 다른 일이다 (HTML 닮음 갈래도 글이 사라지는 것만 깨뜨린다).
+  const 주모음 = c.주들.length === 0 ? '' : `
+<div class="주모음">
+${c.주들.map((n) => `<p class="주"><sup>${감싸기(n.번호)}</sup> ${감싸기(n.글)}</p>`).join('\n')}
+</div>`;
+
   const html = `<!doctype html>
 <html lang="ko">
 <head>
@@ -668,6 +715,12 @@ table { border-collapse: collapse; table-layout: fixed; max-width: 100% }
 td { vertical-align: top; word-break: break-all; overflow-wrap: anywhere }
 img { display: inline-block; object-fit: contain }
 .tab { display: inline-block; width: 8mm }
+/* 각주·미주 — 자리는 못 맞춰도 글은 안 잃는다 */
+.주표시 { font-size: .7em; vertical-align: super }
+.주모음 { max-width: 210mm; margin: 0 auto 6mm; padding: 4mm 6mm; background: #fff;
+  border-top: 0.3mm solid #999; font-size: .85em }
+.주모음 .주 { margin: 0 0 1mm }
+.수식 { font-family: 'HancomEQN', 'Cambria Math', serif; white-space: pre }
 .빈그림 { display: inline-block; border: 0.2mm dashed #bbb }
 /* 인쇄할 때는 종이가 제 여백을 갖는다 — 화면용 그림자와 바탕을 뺀다 */
 @media print {
@@ -677,7 +730,7 @@ img { display: inline-block; object-fit: contain }
 </style>
 </head>
 <body>
-${쪽들}
+${쪽들}${주모음}
 </body>
 </html>
 `;

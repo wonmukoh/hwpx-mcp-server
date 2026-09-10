@@ -348,20 +348,7 @@ export class 문서 {
     const p = this.문단찾기(id);
     if (!p.ok) return this.남기기('링크걸기', id, p);
 
-    // **아무 수나 뽑지 않는다.** 20억 중 하나를 뽑으면 우연히도 안 겹치니,
-    // 「겹침을 막는다」 는 코드가 있으나 없으나 똑같이 통과한다 — 재는 것이
-    // 아무것도 안 보게 된다. **쓰인 것 다음 수**로 정하면 겹칠 수 없고, 겹침을
-    // 막는지도 잴 수 있다.
-    //
-    // 바닥을 10억으로 두는 것은 한글이 쓰는 것과 자리수를 맞추려는 것이다
-    // (실측: 1177245413 · 627600491).
-    const 쓰인것 = this.쓰인밭아이디들();
-    let 다음 = 1_000_000_000;
-    for (const v of 쓰인것) {
-      const n = Number(v);
-      if (Number.isFinite(n) && n >= 다음) 다음 = n + 1;
-    }
-    const 둘 = [String(다음), String(다음 + 1)];
+    const 둘 = this.다음아이디들(2);
     return this.남기기('링크걸기', id, p.value.링크걸기(찾을글, 주소, (n) => 둘[n]!));
   }
 
@@ -407,12 +394,15 @@ export class 문서 {
    * `@id` 와 `@fieldid` 를 **둘 다** 모은다. 둘은 다른 이름이지만 같은 우물에서
    * 뽑는 것으로 보이고, 어느 쪽이 겹쳐도 짝이 어긋난다.
    */
-  private 쓰인밭아이디들(): Set<string> {
+  private 쓰인아이디들(): Set<string> {
     const 것 = new Set<string>();
     for (const s of this.구역들) {
-      for (const 이름 of ['hp:fieldBegin', 'hp:fieldEnd']) {
+      // 밭(링크·메모)과 **주·수식·도형**이 같은 우물을 쓴다.
+      // `instId`(주)와 `instid`(도형)는 대소문자가 다르다 — 한글이 그렇게 쓴다.
+      for (const 이름 of ['hp:fieldBegin', 'hp:fieldEnd', 'hp:footNote', 'hp:endNote',
+        'hp:equation', 'hp:rect', 'hp:ellipse', 'hp:polygon', 'hp:pic']) {
         for (const e of findAll(s.root, 이름)) {
-          for (const 키 of ['id', 'fieldid', 'beginIDRef']) {
+          for (const 키 of ['id', 'fieldid', 'beginIDRef', 'instId', 'instid']) {
             const v = getAttr(e, 키);
             if (v !== undefined) 것.add(v);
           }
@@ -420,6 +410,180 @@ export class 문서 {
       }
     }
     return 것;
+  }
+
+  /**
+   * **각주·미주를 단다.**
+   *
+   * 번호는 우리가 센다 — 문서에 이미 달린 같은 갈래의 주 수 + 1 이다.
+   * 한글은 열 때 제가 다시 매기지만, **틀린 번호를 적어 두면 저장 전에 읽는
+   * 쪽**(우리 `get_content`·render)이 거짓말을 하게 된다.
+   *
+   * 주석 칸의 문단·글자 모양은 **한글이 쓰는 「각주」·「미주」 스타일**을 찾아
+   * 쓴다. 없으면 0 번(바탕글)으로 간다 — 글은 제자리에 들어가고 생김새만 밋밋하다.
+   */
+  주달기(id: string, 내용: string, 갈래: '각주' | '미주', 찾을글?: string):
+  결과<{ 갈래: '각주' | '미주'; 번호: number }> {
+    const p = this.문단찾기(id);
+    if (!p.ok) return this.남기기('주달기', id, p);
+
+    const 태그 = 갈래 === '각주' ? 'hp:footNote' : 'hp:endNote';
+    const 이미 = this.구역들.reduce((n, s) => n + findAll(s.root, 태그).length, 0);
+    const 서식 = this.머리.스타일찾기(갈래, 갈래 === '각주' ? 'Footnote' : 'Endnote');
+    return this.남기기('주달기', id, p.value.주달기({
+      갈래, 내용, 번호: 이미 + 1,
+      instId: this.다음아이디들(1)[0]!,
+      ...(찾을글 !== undefined ? { 찾을글 } : {}),
+      ...서식,
+    }));
+  }
+
+  /** 문서 전체의 주들 */
+  get 주들(): { 갈래: '각주' | '미주'; 번호: string; 글: string }[] {
+    return this.구역들.flatMap((s) => s.모든문단들).flatMap((p) => p.주들);
+  }
+
+  /**
+   * **메모를 단다.**
+   *
+   * 메모는 본문에 안 찍힌다 — 화면과 「메모 보기」에만 보인다. 그래서 초안에
+   * 「여기 숫자 확인」 같은 말을 남겨 두는 데 쓴다.
+   *
+   * **지은이 기본값을 사람 이름으로 안 둔다.** 한글은 윈도 계정 이름을 넣는데,
+   * 그 문서를 남에게 보내면 계정 이름이 같이 간다. 부르는 쪽이 정하게 하고
+   * 기본은 도구 이름으로 둔다.
+   */
+  메모달기(id: string, 찾을글: string, 내용: string, 지은이 = 'hwpx-mcp'):
+  결과<{ 바뀐수: number }> {
+    const p = this.문단찾기(id);
+    if (!p.ok) return this.남기기('메모달기', id, p);
+
+    const 이미 = this.구역들.reduce(
+      (n, s) => n + findAll(s.root, 'hp:fieldBegin')
+        .filter((e) => getAttr(e, 'type') === 'MEMO').length, 0);
+    const 둘 = this.다음아이디들(2);
+    const 서식 = this.머리.스타일찾기('메모', 'Memo');
+    return this.남기기('메모달기', id, p.value.메모달기({
+      내용, 찾을글, 번호: 이미 + 1,
+      시작id: 둘[0]!, 밭id: 둘[1]!,
+      지은이,
+      때: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      ...서식,
+    }));
+  }
+
+  /** 문서 전체의 메모들 */
+  get 메모들(): { 글: string; 지은이: string }[] {
+    return this.구역들.flatMap((s) => s.모든문단들).flatMap((p) => p.메모들);
+  }
+
+  /**
+   * **수식을 넣는다.**
+   *
+   * 식은 한글 수식 스크립트다 — `{a} over {b}`, `x^2`, `sqrt{2}`, `SIGMA`.
+   * 빈칸은 `` ` `` 두 개로 쓴다 (실측: 교육부 기본계획이 그렇게 쓰고 있다).
+   */
+  수식넣기(id: string, 식: string, 찾을글?: string): 결과<{ 바뀐수: number }> {
+    const p = this.문단찾기(id);
+    if (!p.ok) return this.남기기('수식넣기', id, p);
+    return this.남기기('수식넣기', id, p.value.수식넣기({
+      식, instId: this.다음아이디들(1)[0]!,
+      ...(찾을글 !== undefined ? { 찾을글 } : {}),
+    }));
+  }
+
+  /** 문서 전체의 수식들 */
+  get 수식들(): string[] {
+    return this.구역들.flatMap((s) => s.모든문단들).flatMap((p) => p.수식들);
+  }
+
+  /**
+   * **문단에 개요 수준을 준다.** 0 이면 끈다.
+   *
+   * 문단모양 하나를 갈아 끼우는 일이라 `문단서식주기` 와 같은 길로 간다.
+   */
+  개요수준주기(id: string, 수준: number): 결과<{ paraPrId: string }> {
+    if (!Number.isInteger(수준) || 수준 < 0 || 수준 > 10) {
+      return this.남기기('개요수준주기', id, 안됨(
+        `개요 수준이 이상하다: ${수준}`,
+        '0(끔)부터 10 사이의 정수를 줘라. 한글이 지고 있는 수준이 열 벌이다.',
+      ));
+    }
+    return this.문단서식주기(id, { 개요수준: 수준 });
+  }
+
+  /**
+   * **단을 나눈다.** `구역이름` 을 안 주면 **모든 구역**에 준다.
+   *
+   * 쪽 테두리(`set_page`)와 같은 결이다 — 한 구역만 바꾸면 뒤 구역에서
+   * 조용히 한 단으로 돌아가 있어, 두 쪽짜리 문서가 반만 두 단이 된다.
+   */
+  단주기(단수: number, 간격?: number, 구역이름?: string):
+  결과<{ 구역수: number; 단수: number; 간격: number }> {
+    const 것들 = 구역이름 === undefined
+      ? this.구역들
+      : this.구역들.filter((s) => s.이름 === 구역이름);
+    if (것들.length === 0) {
+      return this.남기기('단주기', 구역이름 ?? '', 안됨(
+        구역이름 === undefined ? '구역이 하나도 없다' : `${구역이름} 구역이 없다`,
+        `있는 구역: ${this.구역이름들.join(', ')}`,
+      ));
+    }
+    let 됐수 = 0;
+    let 마지막: 결과<{ 단수: number; 간격: number }> | undefined;
+    for (const s of 것들) {
+      const r = s.단주기(단수, 간격);
+      마지막 = r;
+      if (r.ok) 됐수++;
+    }
+    if (됐수 === 0) {
+      return this.남기기('단주기', 구역이름 ?? '', 마지막 !== undefined && !마지막.ok
+        ? 마지막
+        : 안됨('단을 못 나눴다', '구역을 다시 보라.'));
+    }
+    return this.남기기('단주기', 구역이름 ?? '', 됨({
+      구역수: 됐수, 단수, 간격: 간격 ?? (단수 === 1 ? 0 : 2268),
+    }));
+  }
+
+  // **바탕쪽은 안 만든다 — 만들다 걷어냈다.**
+  //
+  // 규격(KS X 6101 5.2.6)대로 `hp:secPr` 안에 `hp:masterPage` 를 넣고
+  // `masterPageCnt="1"` 을 세웠더니 **한글이 그 파일을 아예 못 연다.**
+  // 자리를 다섯 가지로 바꿔 가며 한글에 먹여 봤다 (자료/실측.md 32항):
+  //
+  //     masterPageCnt="1" + secPr 안       열지 못한다
+  //     masterPageCnt="1" + subList 없이   열지 못한다
+  //     masterPageCnt="1" 만, 요소는 없이   **열지 못한다**
+  //     masterPageCnt="0" + secPr 안       열린다. 대신 한글이 바탕쪽을 버린다
+  //     masterPageCnt="0" + hs:sec 아래    열린다. 역시 버린다
+  //
+  // 셋째 줄이 말해 준다 — 한글은 `masterPageCnt` 를 믿고 **그 수만큼 딴 데서
+  // 찾는다.** HWPX 는 바탕쪽을 따로 둔 부품에 담는 것으로 보이는데, 표본 45편에
+  // 바탕쪽이 하나도 없어 그 부품이 어떻게 생겼는지 볼 데가 없다. 한글로
+  // 만들어 보려 해도 `MasterPage` 액션이 대화상자에서 멈춘다.
+  //
+  // 두 가지를 모르는 채로 짜면 **문서가 안 열린다.** 고칠 수 있는 탈 가운데
+  // 가장 나쁜 것이다. 바탕쪽을 쓴 문서가 하나라도 생기면 그때 다시 본다.
+
+  /**
+   * **안 겹치는 식별자를 개수만큼 낸다.**
+   *
+   * 링크·메모·주·수식이 다 이 우물에서 뽑는다. `id`·`fieldid`·`beginIDRef` 에
+   * 더해 **`instId`·`instid` 까지** 센다 — 도형과 주가 같은 우물을 쓰는 것으로
+   * 보이고, 어느 쪽이 겹쳐도 한글이 짝을 잘못 맺는다.
+   *
+   * **아무 수나 뽑지 않는다.** 20억 중 하나를 뽑으면 우연히도 안 겹치니,
+   * 「겹침을 막는다」 는 코드가 있으나 없으나 똑같이 통과한다 — 재는 것이
+   * 아무것도 안 보게 된다. 바닥 10억은 한글이 쓰는 것과 자리수를 맞춘 것이다.
+   */
+  private 다음아이디들(개수: number): string[] {
+    let 다음 = 1_000_000_000;
+    for (const v of this.쓰인아이디들()) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 다음) 다음 = n + 1;
+    }
+    return Array.from({ length: 개수 }, (_, i) => String(다음 + i));
   }
 
   /**

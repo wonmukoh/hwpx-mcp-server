@@ -2158,3 +2158,184 @@ describe('표 고침을 **도구로** 걸어 본다', () => {
     expect(await 표수(), '도로 하나가 되어야 한다').toBe(1);
   });
 });
+
+/**
+ * **남은 일곱을 도구로 부른다.**
+ *
+ * 문서 층 시험이 따로 있는데도 여기를 또 두는 까닭은, 그것이 **문서 층만**
+ * 지키기 때문이다. op 이름·인자 이름·ID 앞머리가 어긋나면 문서 층 시험은
+ * 파랑인 채로 도구가 안 먹는다 — 실제로 여섯 op 이 그렇게 안 걸리고 있었다.
+ * `검증/고침훑기.mjs` 가 그 어긋남을 세고, 여기가 그것을 메운다.
+ */
+describe('주·메모·수식·다단·개요 (도구로)', () => {
+  async function 글든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [
+        { kind: 'body', text: '가나다 라마바 사아자' },
+        { kind: 'body', text: '둘째 줄이다' },
+      ],
+    }, 방);
+    return { 방, doc_id };
+  }
+
+  /**
+   * `가나다` 가 든 문단. **「첫 문단」으로 고르지 않는다** — 구역의 첫 문단은
+   * 쪽 설정을 지고 있는 빈 문단이라, 거기다 대고 어구를 찾으면 늘 못 찾는다.
+   */
+  async function 글문단(방: 문서방, doc_id: string) {
+    const 뼈대 = await 도구부르기('get_outline', { doc_id }, 방);
+    const 것 = (뼈대.structuredContent!['items'] as
+      { id: string; kind: string; preview?: string }[])
+      .find((x) => x.kind === 'paragraph' && (x.preview ?? '').includes('가나다'));
+    expect(것, 'compose 로 넣은 글이 뼈대에 보여야 한다').toBeDefined();
+    return 것!;
+  }
+
+  /** 도구로 저장해 **파일에 진짜 들어갔나** 본다. 통과했다고 된 것이 아니다 */
+  async function 저장해서열기(방: 문서방, doc_id: string, 이름: string) {
+    const 낼곳 = path.join(os.tmpdir(), `hwpx-남은것-${이름}.hwpx`);
+    await 도구부르기('save_document', { doc_id, path: 낼곳, overwrite: true }, 방);
+    const { 문서: 문서클래스 } = await import('@hwpx/doc');
+    return 문서클래스.열기(fs.readFileSync(낼곳));
+  }
+
+  it('각주를 단다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const p = await 글문단(방, doc_id);
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'insert_note', id: p.id, text: '자료 출처', find: '라마바' }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+
+    const d = await 저장해서열기(방, doc_id, 'note');
+    expect(d.주들.map((x) => x.글)).toContain('자료 출처');
+    expect(d.검사()).toEqual([]);
+  });
+
+  it('미주는 note:"endnote" 로 가른다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const p = await 글문단(방, doc_id);
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'insert_note', id: p.id, text: '뒤에 모을 것', note: 'endnote' }],
+    }, 방);
+    const d = await 저장해서열기(방, doc_id, 'endnote');
+    expect(d.주들.map((x) => x.갈래)).toEqual(['미주']);
+  });
+
+  it('메모를 단다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const p = await 글문단(방, doc_id);
+    const r = await 도구부르기('edit', {
+      doc_id,
+      edits: [{ op: 'insert_memo', id: p.id, find: '사아자', text: '숫자 확인', name: '검토자' }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+
+    const d = await 저장해서열기(방, doc_id, 'memo');
+    expect(d.메모들.map((m) => m.글)).toContain('숫자 확인');
+    expect(d.메모들[0]!.지은이, 'name 이 지은이로 간다').toBe('검토자');
+    expect(d.검사()).toEqual([]);
+  });
+
+  it('수식을 넣는다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const p = await 글문단(방, doc_id);
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'insert_equation', id: p.id, text: '{a} over {b}' }],
+    }, 방);
+    const d = await 저장해서열기(방, doc_id, 'eq');
+    expect(d.수식들).toContain('{a} over {b}');
+    expect(d.검사()).toEqual([]);
+  });
+
+  it('단을 나눈다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_columns', count: 2 }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const d = await 저장해서열기(방, doc_id, 'col');
+    expect(d.구역들[0]!.단수).toBe(2);
+    expect(d.검사()).toEqual([]);
+  });
+
+  it('개요 수준을 준다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const p = await 글문단(방, doc_id);
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'set_outline', id: p.id, level: 1 }] }, 방);
+    const d = await 저장해서열기(방, doc_id, 'outline');
+    const { firstChildNamed: 첫자식, getAttr: 속성 } = await import('@hwpx/owpml');
+    const 첫것 = d.구역들[0]!.문단들.find((x) => x.글.includes('가나다'))!;
+    const 모양 = d.머리.낱개('hh:paraProperties', 첫것.문단모양)!;
+    expect(속성(첫자식(모양, 'hh:heading')!, 'type')).toBe('OUTLINE');
+    expect(d.검사()).toEqual([]);
+  });
+
+  it('**짜임을 바꾸는 op 은 ids_stale 을 켠다**', async () => {
+    // 주·메모·수식은 런 안에 요소를 하나 더 내고, 바탕쪽은 문단을 하나 더 낸다.
+    // 안 알리면 모델이 옛 ID 로 다음 고침을 걸고 엉뚱한 데를 고친다.
+    const { 방, doc_id } = await 글든문서();
+    const p = await 글문단(방, doc_id);
+    await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'insert_note', id: p.id, text: '주' }],
+    }, 방);
+    const 낼곳 = path.join(os.tmpdir(), 'hwpx-남은것-stale.hwpx');
+    const s = await 도구부르기('save_document', { doc_id, path: 낼곳, overwrite: true }, 방);
+    expect(s.structuredContent!['ids_stale']).toBe(true);
+  });
+});
+
+/**
+ * **써 놓고 확인할 길이 없으면 안 쓴 것과 같다.**
+ *
+ * 주·메모·수식은 본문 글에 안 섞인다 — 주는 주석 칸에, 메모는 화면에만,
+ * 수식은 개체 안에 있다. `get_content` 가 `text` 만 주면 넣어 놓고도 **되읽을
+ * 길이 없어** 「됐다」는 말만 믿어야 한다. 표 쪽넘김에서 이미 겪은 자리다.
+ */
+describe('넣은 것을 도구로 되읽는다', () => {
+  it('**주·메모·수식·단이 get_content 로 돌아온다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'body', text: '가나다 라마바 사아자' }],
+    }, 방);
+    const 뼈대 = await 도구부르기('get_outline', { doc_id }, 방);
+    const p = (뼈대.structuredContent!['items'] as
+      { id: string; kind: string; preview?: string }[])
+      .find((x) => x.kind === 'paragraph' && (x.preview ?? '').includes('가나다'))!;
+
+    await 도구부르기('edit', {
+      doc_id,
+      edits: [
+        { op: 'insert_note', id: p.id, text: '교육부(2026), 업무계획.' },
+        { op: 'insert_memo', id: p.id, find: '사아자', text: '출처 확인', name: '검토자' },
+        { op: 'insert_equation', id: p.id, text: '{a} over {b}' },
+        { op: 'set_columns', count: 2 },
+      ],
+    }, 방);
+
+    const r = await 도구부르기('get_content', { doc_id }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 것 = r.structuredContent!;
+
+    const 주들 = 것['notes'] as { kind: string; number: string; text: string }[];
+    expect(주들.map((n) => n.text), '주석 글이 돌아와야 한다').toContain('교육부(2026), 업무계획.');
+    expect(주들[0]!.kind).toBe('footnote');
+
+    const 메모들 = 것['memos'] as { text: string; author: string }[];
+    expect(메모들.map((m) => m.text)).toContain('출처 확인');
+    expect(메모들[0]!.author, 'name 이 지은이로 간다').toBe('검토자');
+
+    expect(것['equations']).toContain('{a} over {b}');
+    expect(것['columns'], '몇 단인지도 되읽을 수 있어야 한다').toBe(2);
+
+    // **본문 글에는 안 섞인다.** 섞이면 문서를 읽는 쪽이 주석을 본문으로 읽는다.
+    expect(것['text'] as string).not.toContain('교육부(2026)');
+    expect(것['text'] as string).not.toContain('출처 확인');
+  });
+});

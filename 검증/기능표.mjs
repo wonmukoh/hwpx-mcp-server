@@ -72,7 +72,11 @@ const 기능들 = [
       const e = findAll(d.구역들[0].root, 'hp:footer')[0];
       return e !== undefined && findAll(e, 'hp:t').some((t) => textOf(t).includes('한빛'));
     } },
-  { 갈래: '문서·구역', 이름: '다단', 안됨: '넣을 길이 없다' },
+  // 실측 60개 가운데 59개가 colCount="1" — 요소는 늘 있으니 **세는 값을 바꾸는** 일이다.
+  { 갈래: '문서·구역', 이름: '다단',
+    블록: [{ kind: 'body', text: '가' }],
+    고침: () => [{ op: 'set_columns', count: 2 }],
+    본다: (d) => d.구역들[0]?.단수 === 2 },
   { 갈래: '문서·구역', 이름: '구역 나누기',
     블록: [{ kind: 'body', text: '첫 구역' }, { kind: 'section_break' }, { kind: 'body', text: '둘째 구역' }],
     본다: (d) => d.구역이름들.length === 2
@@ -91,7 +95,11 @@ const 기능들 = [
       return bf !== undefined
         && 속성(firstChildNamed(bf, 'hh:leftBorder'), 'color') === '#2A5DA8';
     } },
-  { 갈래: '문서·구역', 이름: '바탕쪽', 안됨: '넣을 길이 없다' },
+  // **만들다 걷어냈다.** 규격대로 짰더니 한글이 파일을 아예 못 열었다.
+  // 자리를 다섯 가지로 바꿔 봐도 같았다 (자료/실측.md 32항).
+  // 「아직 안 만든 것」이 아니라 **「모르는 채로는 안 만드는 것」**이다.
+  { 갈래: '문서·구역', 이름: '바탕쪽',
+    안됨: '규격대로 짜면 한글이 파일을 못 연다 (표본 45편에 하나도 없어 볼 데가 없다)' },
 
   // ── 문단 ───────────────────────────────────────────────────────────────
   { 갈래: '문단', 이름: '정렬', 블록: [{ kind: 'body', text: '가', align: 'center' }],
@@ -109,7 +117,21 @@ const 기능들 = [
     본다: (d) => d.구역들[0].모든문단들.filter((p) => (p.글 ?? '').trim()).length >= 2 },
   { 갈래: '문단', 이름: '탭', 블록: [{ kind: 'body', text: 'Ⅰ. 추진 배경	3', indent: false }],
     본다: (d) => findAll(d.구역들[0].root, 'hp:tab').length === 1 },
-  { 갈래: '문단', 이름: '개요 번호(자동 번호)', 안됨: '넣을 길이 없다' },
+  // `hh:heading/@type` 한 글자가 스위치다. 번호 모양은 한글이 만든 문서에
+  // 이미 다 들어 있어 **가리키기만** 한다.
+  { 갈래: '문단', 이름: '개요 번호(자동 번호)',
+    블록: [{ kind: 'body', text: '개요를 줄 줄' }],
+    고침: (것들) => [{
+      op: 'set_outline',
+      id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('개요를')).id,
+      level: 1,
+    }],
+    본다: (d, 머리) => {
+      const p = d.구역들[0].문단들.find((x) => x.글.includes('개요를'));
+      if (!p) return false;
+      const 모양 = findAll(머리, 'hh:paraPr').find((e) => getAttr(e, 'id') === p.문단모양);
+      return 속성(firstChildNamed(모양, 'hh:heading'), 'type') === 'OUTLINE';
+    } },
   // `hh:paraPr > hh:border/@borderFillIDRef` 다. 문단모양 2565개가 전부 갖고 있다.
   { 갈래: '문단', 이름: '문단 테두리·배경',
     블록: [{ kind: 'body', text: '가' }],
@@ -242,7 +264,24 @@ const 기능들 = [
       return findAll(rect, 'hp:drawText').length === 1
         && findAll(rect, 'hp:t').some((t) => textOf(t).includes('3주기'));
     } },
-  { 갈래: '개체', 이름: '타원·다각형', 안됨: '넣을 길이 없다 (161편에 5편뿐)' },
+  // 사각형과 **앞뒤가 같고 가운데 기하만 다르다.** 그래서 뼈대를 다시 안 짜고
+  // 사각형 조각을 떠서 이름과 가운데만 갈아 끼운다 (자료/실측.md 32항).
+  { 갈래: '개체', 이름: '타원·다각형',
+    블록: [
+      { kind: 'shape', shape: 'ellipse', text: '핵심', width: 120, height: 60 },
+      { kind: 'shape', shape: 'polygon', width: 100, height: 60,
+        points: [[50, 0], [0, 60], [100, 60]] },
+    ],
+    본다: (d) => {
+      const 뿌리 = d.구역들[0].root;
+      const 타원 = findAll(뿌리, 'hp:ellipse')[0];
+      const 다각 = findAll(뿌리, 'hp:polygon')[0];
+      if (!타원 || !다각) return false;
+      // 사각형의 네 꼭짓점이 남아 있으면 갈아 끼우다 만 것이다
+      return findAll(타원, 'hc:center').length === 1
+        && findAll(타원, 'hc:pt0').length === 0
+        && findAll(다각, 'hc:pt').length === 4;   // 세 점 + 닫는 점
+    } },
   // **표에 「안 된다」고 적혀 있었는데 되고 있었다.** 조판에 `조각.글자리` 로
   // 이미 들어 있었고, 한글에 먹여 보니 hp:drawText 가 글째로 살아남는다.
   // 기능이 된 뒤에 표를 안 고친 것이다 — 표는 코드보다 늦게 늙는다.
@@ -260,10 +299,44 @@ const 기능들 = [
       return 글.includes('상자 안 글')
         && findAll(상자들[0], 'hp:subList').some((sl) => 속성(sl, 'vertAlign') === 'CENTER');
     } },
-  { 갈래: '개체', 이름: '수식', 안됨: '넣을 길이 없다' },
+  // 개체인데 `hp:script` 한 줄이 전부다. 빈칸은 `` 두 개로 쓴다.
+  { 갈래: '개체', 이름: '수식',
+    블록: [{ kind: 'body', text: '비율은 다음과 같다' }],
+    고침: (것들) => [{
+      op: 'insert_equation',
+      id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('비율은')).id,
+      text: '{a} over {b}',
+    }],
+    본다: (d) => {
+      const e = findAll(d.구역들[0].root, 'hp:equation')[0];
+      if (!e) return false;
+      // 크기가 0 이면 한글이 식을 안 그린다 — 넣긴 넣었는데 안 보이는 꼴
+      const 크기 = firstChildNamed(e, 'hp:sz');
+      return d.수식들.includes('{a} over {b}') && Number(속성(크기, 'width')) > 0;
+    } },
 
   // ── 참조 ───────────────────────────────────────────────────────────────
-  { 갈래: '참조', 이름: '각주·미주', 안됨: '넣을 길이 없다' },
+  // `hp:footNote`/`hp:endNote` 요소고, 안에 `hp:autoNum` 이 있어야 번호가 보인다.
+  { 갈래: '참조', 이름: '각주·미주',
+    블록: [{ kind: 'body', text: '근거가 있는 문장이다' }],
+    고침: (것들) => [
+      { op: 'insert_note',
+        id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('근거가')).id,
+        text: '교육부(2026), 업무계획.', find: '근거' },
+      { op: 'insert_note',
+        id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('근거가')).id,
+        text: '문서 끝에 모을 것.', note: 'endnote' },
+    ],
+    본다: (d) => {
+      const 뿌리 = d.구역들[0].root;
+      const 각 = findAll(뿌리, 'hp:footNote')[0];
+      const 미 = findAll(뿌리, 'hp:endNote')[0];
+      if (!각 || !미) return false;
+      // **번호가 안 보이면 무엇이 어느 주인지 못 읽는다**
+      return 속성(findAll(각, 'hp:autoNum')[0], 'numType') === 'FOOTNOTE'
+        && 속성(findAll(미, 'hp:autoNum')[0], 'numType') === 'ENDNOTE'
+        && d.주들.some((x) => x.글.includes('교육부(2026)'));
+    } },
   // fieldBegin~fieldEnd **쌍**이다. id 로 짝을 맺고 주소는 hp:parameters 에 있다.
   // **짝이 다 있는지**까지 본다 — 시작만 있으면 링크가 문서 끝까지 이어진다.
   { 갈래: '참조', 이름: '하이퍼링크',
@@ -292,7 +365,23 @@ const 기능들 = [
       name: '가는곳',
     }],
     본다: (d) => d.책갈피들.includes('가는곳') },
-  { 갈래: '참조', 이름: '메모', 안됨: '넣을 길이 없다' },
+  // **요소가 아니라 밭이다.** `<hp:memo>` 를 찾으면 표본 45편에 하나도 없다 —
+  // 없는 게 아니라 엉뚱한 것을 찾고 있었다 (자료/실측.md 32항).
+  { 갈래: '참조', 이름: '메모',
+    블록: [{ kind: 'body', text: '이 숫자를 다시 보자' }],
+    고침: (것들) => [{
+      op: 'insert_memo',
+      id: 것들.find((x) => x.kind === 'paragraph' && x.preview.includes('이 숫자')).id,
+      find: '이 숫자', text: '출처 확인 필요',
+    }],
+    본다: (d) => {
+      const 시작 = findAll(d.구역들[0].root, 'hp:fieldBegin')
+        .find((e) => getAttr(e, 'type') === 'MEMO');
+      if (!시작) return false;
+      // 몸통이 비면 메모는 달렸는데 글이 없다
+      return d.메모들.some((m) => m.글 === '출처 확인 필요')
+        && findAll(d.구역들[0].root, 'hp:fieldEnd').length > 0;
+    } },
 
   // ── 읽기 ───────────────────────────────────────────────────────────────
   { 갈래: '읽기', 이름: '표 안까지 뼈대 보기', 도구: 'get_outline', 인자: { in_tables: true },

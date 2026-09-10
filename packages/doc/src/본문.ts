@@ -31,6 +31,59 @@ import { 됨, 안됨, type 결과 } from './결과.js';
 /** 글이 든 곳 — 본문이든 표 셀 안이든 */
 export type 글통 = ElementNode;   // hp:sec 또는 hp:subList
 
+/**
+ * 속에 딸린 문단 목록(`hp:subList`)의 속성.
+ *
+ * 주·메모·글상자·셀이 **다 같은 열 개**를 쓴다 (실측). 하나라도 빠지면 한글이
+ * 그 안을 통째로 안 읽는다 — 주는 달렸는데 글이 없는 꼴이 된다.
+ */
+const 속목록속성: Record<string, string> = {
+  id: '', textDirection: 'HORIZONTAL', lineWrap: 'BREAK', vertAlign: 'TOP',
+  linkListIDRef: '0', linkListNextIDRef: '0', textWidth: '0', textHeight: '0',
+  hasTextRef: '0', hasNumRef: '0',
+};
+
+/** 각주·미주 하나를 다는 데 드는 것 */
+export interface 주설정 {
+  갈래: '각주' | '미주';
+  /** 주석 칸에 들어갈 글 */
+  내용: string;
+  /** 보일 번호. 문서가 이미 달린 주를 세어 정한다 */
+  번호: number;
+  /** 문서 안에서 안 겹치는 수 (`instId`) */
+  instId: string;
+  /** 이 어구 **바로 뒤**에 단다. 안 주면 문단 끝 */
+  찾을글?: string;
+  /** 주석 칸 문단·글자 모양. 한글은 「각주」·「미주」 스타일을 쓴다 */
+  문단모양?: string; 스타일?: string; 글자모양?: string;
+}
+
+/** 메모 하나를 다는 데 드는 것 */
+export interface 메모설정 {
+  /** 메모 칸에 들어갈 글 */
+  내용: string;
+  /** 이 어구에 메모를 건다 */
+  찾을글: string;
+  /** 몇 번째 메모인가 (1부터). `ID`·`Number` 에 들어간다 */
+  번호: number;
+  시작id: string; 밭id: string;
+  /** 메모를 단 사람. 한글은 윈도 계정 이름을 넣는다 */
+  지은이: string;
+  /** 만든 때. `2026-09-10T09:45:44Z` 꼴 */
+  때: string;
+  문단모양?: string; 스타일?: string; 글자모양?: string;
+}
+
+/** 수식 하나를 넣는 데 드는 것 */
+export interface 수식설정 {
+  /** 한글 수식 스크립트. 빈칸은 `` `` `` 두 개다 */
+  식: string;
+  /** 이 어구 바로 뒤에 넣는다. 안 주면 문단 끝 */
+  찾을글?: string;
+  /** 문서 안에서 안 겹치는 수 */
+  instId: string;
+}
+
 export class 문단 {
   /**
    * `source` 는 이 노드가 살던 글이다 (`XmlDocument.source`).
@@ -383,6 +436,16 @@ export class 문단 {
     }
 
     if (바뀐수 === 0) {
+      // **「못 찾았다」로 뭉뚱그리지 않는다.** 글은 있는데 그 런을 못 건드리는
+      // 때가 있다 — 이미 주·메모가 걸려 런이 여러 조각이거나, 표·그림이 같이
+      // 든 런이다. 둘을 같은 말로 알리면 부르는 쪽이 어구를 고치며 헤맨다.
+      if (this.글.includes(찾을글)) {
+        return 안됨(
+          `'${찾을글}' 은 있는데 **런을 쪼갤 수 없는 자리**다`,
+          '그 어구가 든 런에 표·그림이 같이 있거나, 이미 주·메모가 걸려 조각나 있다. '
+          + '앞뒤로 더 넓은 어구를 주거나, 링크를 먼저 걸고 주·메모를 나중에 달아라.',
+        );
+      }
       return 안됨(
         `문단에서 '${찾을글}' 을 못 찾았다`,
         `이 문단의 글: '${this.글.slice(0, 60)}${this.글.length > 60 ? '…' : ''}'`,
@@ -435,6 +498,335 @@ export class 문단 {
           .find((x) => getAttr(x, 'name') === 'Command');
         return p === undefined ? [] : [textOf(p)];
       });
+  }
+
+  /**
+   * **각주·미주를 단다.**
+   *
+   * 실측(`ref-note.hwpx`) — 주는 **런 안**에 `hp:ctrl` 로 들어간다.
+   * 글 옆에 붙는 표시일 뿐이라 런을 쪼개지 않는다. 하이퍼링크와 다른 점이다.
+   *
+   * ```xml
+   * hp:run > hp:t «각주를 달 문장이다.»
+   *        > hp:ctrl > hp:footNote number="1" suffixChar="41" instId="…"
+   *                      └ hp:subList > hp:p > hp:run
+   *                           ├ hp:ctrl > hp:autoNum num="1" numType="FOOTNOTE"
+   *                           │              └ hp:autoNumFormat type="DIGIT" suffixChar=")"
+   *                           └ hp:t « 각주 내용이다.»
+   * ```
+   *
+   * **`hp:autoNum` 이 빠지면 번호가 안 보인다.** 주는 달렸는데 본문에도 주석 칸에도
+   * 숫자가 없어, 무엇이 어느 주인지 못 읽는 문서가 된다. 미주는 `numType` 만
+   * `ENDNOTE` 로 다르다 — 나머지는 똑같다.
+   *
+   * `suffixChar="41"` 은 글자 코드 41, 곧 `)` 다. 안쪽 `autoNumFormat` 의
+   * `suffixChar=")"` 와 같은 것을 **두 자리에** 적는다 (한글이 그렇게 쓴다).
+   */
+  주달기(설정: 주설정): 결과<{ 갈래: '각주' | '미주'; 번호: number }> {
+    if (설정.내용.trim().length === 0) {
+      return 안됨('주 내용이 비었다', `${설정.갈래}에 넣을 글을 적어라.`);
+    }
+    const 나쁜것 = 못쓰는제어문자(설정.내용);
+    if (나쁜것) {
+      return 안됨(
+        `${나쁜것.자리}번째 글자 ${나쁜것.글자} 는 XML 이 못 쓰는 제어문자다`,
+        '이 글자가 든 파일은 한글이 못 연다. 빼고 다시 줘라.',
+      );
+    }
+
+    // 어느 글 뒤에 붙일까. 찾을글이 있으면 **그 어구 바로 뒤**, 없으면 문단 끝.
+    let 붙일곳: ElementNode | undefined;
+    let 뒤글 = '';
+    바깥: for (const 런 of this.런들) {
+      for (const t of childrenNamed(런, 'hp:t')) {
+        const 글 = textOf(t);
+        if (설정.찾을글 === undefined) { 붙일곳 = t; continue; }
+        const i = 글.indexOf(설정.찾을글);
+        if (i === -1) continue;
+        const 끝 = i + 설정.찾을글.length;
+        붙일곳 = t;
+        뒤글 = 글.slice(끝);
+        setText(t, 글.slice(0, 끝));
+        break 바깥;
+      }
+    }
+    if (붙일곳 === undefined) {
+      return 안됨(
+        설정.찾을글 === undefined
+          ? '이 문단에 글이 없어 주를 달 자리가 없다'
+          : `문단에서 '${설정.찾을글}' 을 못 찾았다`,
+        `이 문단의 글: '${this.글.slice(0, 60)}${this.글.length > 60 ? '…' : ''}'`,
+      );
+    }
+
+    const 갈래이름 = 설정.갈래 === '각주' ? 'hp:footNote' : 'hp:endNote';
+    const 번호종류 = 설정.갈래 === '각주' ? 'FOOTNOTE' : 'ENDNOTE';
+
+    const 틀 = createElement('hp:ctrl', {});
+    const 주 = createElement(갈래이름, {
+      number: String(설정.번호), suffixChar: '41', instId: 설정.instId,
+    });
+    const 목록 = createElement('hp:subList', 속목록속성);
+    const 안문단 = createElement('hp:p', {
+      id: '0', paraPrIDRef: 설정.문단모양 ?? '0', styleIDRef: 설정.스타일 ?? '0',
+      pageBreak: '0', columnBreak: '0', merged: '0',
+    });
+    const 안런 = createElement('hp:run', { charPrIDRef: 설정.글자모양 ?? '0' });
+
+    const 번호틀 = createElement('hp:ctrl', {});
+    const 자동번호 = createElement('hp:autoNum', {
+      num: String(설정.번호), numType: 번호종류,
+    });
+    appendChild(자동번호, createElement('hp:autoNumFormat', {
+      type: 'DIGIT', userChar: '', prefixChar: '', suffixChar: ')', supscript: '0',
+    }));
+    appendChild(번호틀, 자동번호);
+    appendChild(안런, 번호틀);
+
+    const 글칸 = createElement('hp:t', {});
+    setText(글칸, ` ${설정.내용}`);
+    appendChild(안런, 글칸);
+
+    appendChild(안문단, 안런);
+    appendChild(목록, 안문단);
+    appendChild(주, 목록);
+    appendChild(틀, 주);
+    insertAfter(붙일곳, 틀);
+
+    // 어구 뒤에 남은 글은 **주 뒤로** 옮긴다. 안 옮기면 주가 문장 끝으로 밀린다.
+    if (뒤글.length > 0) {
+      const 남은 = createElement('hp:t', {});
+      setText(남은, 뒤글);
+      insertAfter(틀, 남은);
+    }
+    return 됨({ 갈래: 설정.갈래, 번호: 설정.번호 });
+  }
+
+  /** 이 문단에 달린 주들 */
+  get 주들(): { 갈래: '각주' | '미주'; 번호: string; 글: string }[] {
+    const 것: { 갈래: '각주' | '미주'; 번호: string; 글: string }[] = [];
+    for (const [태그, 갈래] of [['hp:footNote', '각주'], ['hp:endNote', '미주']] as const) {
+      for (const e of findAll(this.el, 태그)) {
+        것.push({ 갈래, 번호: getAttr(e, 'number') ?? '', 글: textOf(e).trim() });
+      }
+    }
+    return 것;
+  }
+
+  /**
+   * **메모를 단다.**
+   *
+   * 실측(`ref-memo.hwpx`) — 메모는 요소가 아니라 **밭(field)** 이다.
+   * `<hp:memo>` 를 찾으면 표본 45편에서 **하나도 안 나온다.** 그래서 「메모는
+   * 안 쓴다」로 세고 있었는데, 실은 **엉뚱한 것을 찾고 있었다.**
+   *
+   * ```xml
+   * hp:run > hp:ctrl > hp:fieldBegin type="MEMO" id="…" fieldid="…"
+   *                      ├ hp:parameters cnt="7"   (Author·ID·Number·CreateDateTime …)
+   *                      └ hp:subList > hp:p > hp:run > hp:t «메모 내용»   ← 몸통이 여기다
+   *        > hp:t «메모를 달 문장»
+   *        > hp:ctrl > hp:fieldEnd beginIDRef="…" fieldid="…"
+   * ```
+   *
+   * 하이퍼링크와 짜임이 같은데 **런 하나 안에 다 든다** — 한글이 그렇게 쓴다.
+   * 시작·글·끝이 한 런의 자식으로 나란히 놓인다.
+   *
+   * **메모 글은 `hp:subList` 안에 있다.** 처음 만든 기준 파일은 메모를 넣기만 하고
+   * 글을 안 쳐서 그 자리가 비어 있었다 — 「어디 담기나」를 못 보던 것이다.
+   * 기준 파일 만드는 절차에 글 치는 것을 넣고서야 보였다.
+   */
+  메모달기(설정: 메모설정): 결과<{ 바뀐수: number }> {
+    if (설정.내용.trim().length === 0) return 안됨('메모 내용이 비었다', '메모에 적을 글을 줘라.');
+    if (설정.찾을글.length === 0) return 안됨('빈 글은 찾을 수 없다', '메모를 달 어구를 적어라.');
+
+    // **런을 복제하지 않는다.** 글칸(`hp:t`) 하나를 셋으로 가르고 그 사이에
+    // 표시를 끼울 뿐이라, 표·그림이 같이 든 런이라도 다치게 할 것이 없다.
+    // (링크는 런을 복제하므로 거기서는 막는다 — 짜임이 달라 규칙도 다르다.)
+    const 후보 = this.런들.flatMap((런) => childrenNamed(런, 'hp:t').map((t) => ({ 런, t })));
+    for (const { t: 글칸 } of 후보) {
+      const 글 = textOf(글칸);
+      const i = 글.indexOf(설정.찾을글);
+      if (i === -1) continue;
+
+      const 앞 = 글.slice(0, i);
+      const 뒤 = 글.slice(i + 설정.찾을글.length);
+
+      const 시작틀 = createElement('hp:ctrl', {});
+      const 밭 = createElement('hp:fieldBegin', {
+        id: 설정.시작id, type: 'MEMO', name: '', editable: '1',
+        dirty: '1', zorder: '1', fieldid: 설정.밭id,
+      });
+      const 값들 = createElement('hp:parameters', { cnt: '7', name: '' });
+      const 셈 = (태그: string, 이름: string, 값: string): void => {
+        const e = createElement(태그, { name: 이름 });
+        appendChild(e, createText(값));
+        appendChild(값들, e);
+      };
+      셈('hp:integerParam', 'Prop', '0');
+      // Command 는 한글이 제 안에서 쓰는 손잡이다. 가운데 두 수는 만들 때마다
+      // 달라졌다 (실측: 같은 절차로 두 번 만든 기준 파일이 서로 달랐다) —
+      // 뜻을 지고 있지 않다. 꼴만 맞춰 준다.
+      셈('hp:stringParam', 'Command',
+        `MEMO/65535/${설정.번호}/${설정.밭id}/${설정.시작id}/${설정.지은이}/\\;;`);
+      셈('hp:stringParam', 'ID', `memo${설정.번호}`);
+      셈('hp:integerParam', 'Number', String(설정.번호));
+      셈('hp:stringParam', 'Author', 설정.지은이);
+      셈('hp:stringParam', 'MemoShapeIDRef', '65535');
+      셈('hp:stringParam', 'CreateDateTime', 설정.때);
+      appendChild(밭, 값들);
+
+      const 목록 = createElement('hp:subList', 속목록속성);
+      const 안문단 = createElement('hp:p', {
+        id: '0', paraPrIDRef: 설정.문단모양 ?? '0', styleIDRef: 설정.스타일 ?? '0',
+        pageBreak: '0', columnBreak: '0', merged: '0',
+      });
+      const 안런 = createElement('hp:run', { charPrIDRef: 설정.글자모양 ?? '0' });
+      const 몸통 = createElement('hp:t', {});
+      setText(몸통, 설정.내용);
+      appendChild(안런, 몸통);
+      appendChild(안문단, 안런);
+      appendChild(목록, 안문단);
+      appendChild(밭, 목록);
+      appendChild(시작틀, 밭);
+
+      const 끝틀 = createElement('hp:ctrl', {});
+      appendChild(끝틀, createElement('hp:fieldEnd', {
+        beginIDRef: 설정.시작id, fieldid: 설정.밭id,
+      }));
+
+      // 앞글 → 시작 → 메모 걸린 글 → 끝 → 뒷글. **다 한 런 안이다.**
+      setText(글칸, 앞);
+      insertAfter(글칸, 시작틀);
+      const 가운데 = createElement('hp:t', {});
+      setText(가운데, 설정.찾을글);
+      insertAfter(시작틀, 가운데);
+      insertAfter(가운데, 끝틀);
+      const 뒷글칸 = createElement('hp:t', {});
+      setText(뒷글칸, 뒤);
+      insertAfter(끝틀, 뒷글칸);
+
+      return 됨({ 바뀐수: 1 });
+    }
+
+    return 안됨(
+      `문단에서 '${설정.찾을글}' 을 못 찾았다`,
+      `이 문단의 글: '${this.글.slice(0, 60)}${this.글.length > 60 ? '…' : ''}'`,
+    );
+  }
+
+  /** 이 문단에 달린 메모들 */
+  get 메모들(): { 글: string; 지은이: string }[] {
+    return findAll(this.el, 'hp:fieldBegin')
+      .filter((e) => getAttr(e, 'type') === 'MEMO')
+      .map((e) => {
+        const 값들 = firstChildNamed(e, 'hp:parameters');
+        const 지은이 = 값들 === undefined ? undefined
+          : childrenNamed(값들, 'hp:stringParam').find((x) => getAttr(x, 'name') === 'Author');
+        const 목록 = firstChildNamed(e, 'hp:subList');
+        return {
+          글: 목록 === undefined ? '' : textOf(목록),
+          지은이: 지은이 === undefined ? '' : textOf(지은이),
+        };
+      });
+  }
+
+  /**
+   * **수식을 넣는다.**
+   *
+   * 실측(교육부 기본계획) — 수식은 도형처럼 개체인데 **`hp:script` 한 줄이 전부**다.
+   * 그 안이 한글 수식 스크립트다 (`{a} over {b}`, `x^2`, `sqrt{2}` …).
+   *
+   * ```xml
+   * hp:run > hp:equation version="Equation Version 60" baseLine="66" …
+   *            ├ hp:sz · hp:pos · hp:outMargin · hp:shapeComment
+   *            └ hp:script «{해당``유형``입학정원} over {전체``입학정원}»
+   * ```
+   *
+   * **`` ` `` 두 개가 빈칸 하나다.** 한글 수식 문법이 그렇다 — 그냥 빈칸을 넣으면
+   * 한글이 토막을 갈라 읽어 식이 달라진다. 부르는 쪽 글을 그대로 넣는다.
+   *
+   * 크기는 우리가 못 잰다 — 한글이 식을 그려 봐야 안다. 실측한 값(9400×2300)을
+   * 바탕으로 글자 수에 맞춰 늘린다. **한글이 열면 제가 다시 잰다.**
+   */
+  수식넣기(설정: 수식설정): 결과<{ 바뀐수: number }> {
+    if (설정.식.trim().length === 0) return 안됨('수식이 비었다', '넣을 식을 적어라.');
+    const 나쁜것 = 못쓰는제어문자(설정.식);
+    if (나쁜것) {
+      return 안됨(
+        `${나쁜것.자리}번째 글자 ${나쁜것.글자} 는 XML 이 못 쓰는 제어문자다`,
+        '이 글자가 든 파일은 한글이 못 연다. 빼고 다시 줘라.',
+      );
+    }
+
+    let 붙일곳: ElementNode | undefined;
+    for (const 런 of this.런들) {
+      for (const t of childrenNamed(런, 'hp:t')) {
+        if (설정.찾을글 === undefined) { 붙일곳 = t; continue; }
+        const 글 = textOf(t);
+        const i = 글.indexOf(설정.찾을글);
+        if (i === -1) continue;
+        const 끝 = i + 설정.찾을글.length;
+        const 뒤 = 글.slice(끝);
+        setText(t, 글.slice(0, 끝));
+        붙일곳 = t;
+        if (뒤.length > 0) {
+          const 남은 = createElement('hp:t', {});
+          setText(남은, 뒤);
+          insertAfter(t, 남은);
+        }
+        break;
+      }
+      if (설정.찾을글 !== undefined && 붙일곳 !== undefined) break;
+    }
+    if (붙일곳 === undefined) {
+      return 안됨(
+        설정.찾을글 === undefined
+          ? '이 문단에 글이 없어 수식을 놓을 자리가 없다'
+          : `문단에서 '${설정.찾을글}' 을 못 찾았다`,
+        `이 문단의 글: '${this.글.slice(0, 60)}${this.글.length > 60 ? '…' : ''}'`,
+      );
+    }
+
+    // 글자 수로 폭을 어림한다. 한글이 열 때 다시 재니 **어림이면 된다** —
+    // 다만 0 으로 두면 한글이 식을 안 그린다 (실측: 그림에서 겪은 것과 같다).
+    // 실측: `x^2 + y^2 = z^2` (15자) 를 한글이 5200×1163 으로 잡았다 — 한 자에 350 남짓.
+    const 너비 = Math.max(1200, Math.min(40000, [...설정.식].length * 350));
+    const 높이 = 1163;
+    const 식 = createElement('hp:equation', {
+      id: 설정.instId, zOrder: '0', numberingType: 'EQUATION',
+      textWrap: 'TOP_AND_BOTTOM', textFlow: 'BOTH_SIDES', lock: '0',
+      dropcapstyle: 'None', version: 'Equation Version 60', baseLine: '89',
+      textColor: '#000000', baseUnit: '1000', lineMode: 'CHAR', font: 'HancomEQN',
+    });
+    appendChild(식, createElement('hp:sz', {
+      width: String(너비), widthRelTo: 'ABSOLUTE',
+      height: String(높이), heightRelTo: 'ABSOLUTE', protect: '0',
+    }));
+    appendChild(식, createElement('hp:pos', {
+      treatAsChar: '1', affectLSpacing: '0', flowWithText: '1', allowOverlap: '0',
+      holdAnchorAndSO: '0', vertRelTo: 'PARA', horzRelTo: 'PARA',
+      vertAlign: 'TOP', horzAlign: 'LEFT', vertOffset: '0', horzOffset: '0',
+    }));
+    appendChild(식, createElement('hp:outMargin', {
+      left: '56', right: '56', top: '0', bottom: '0',
+    }));
+    const 말 = createElement('hp:shapeComment', {});
+    setText(말, '수식입니다.');
+    appendChild(식, 말);
+    const 본문 = createElement('hp:script', {});
+    setText(본문, 설정.식);
+    appendChild(식, 본문);
+
+    insertAfter(붙일곳, 식);
+    return 됨({ 바뀐수: 1 });
+  }
+
+  /** 이 문단에 든 수식들 (스크립트 그대로) */
+  get 수식들(): string[] {
+    return findAll(this.el, 'hp:equation').map((e) => {
+      const s = firstChildNamed(e, 'hp:script');
+      return s === undefined ? '' : textOf(s);
+    });
   }
 
   /**
@@ -607,6 +999,74 @@ export class 구역 {
   }
 
   /**
+   * **몇 단인가.** 안 나뉘었으면 1.
+   *
+   * 실측 — `hp:colPr` 는 문서 45편에 **60개**가 있는데 그 가운데 **59개가
+   * `colCount="1"`** 이다. 곧 「요소가 있다」는 「다단을 쓴다」가 아니다.
+   * 구역마다 늘 하나씩 놓이고, 안 나뉜 구역도 이걸 지고 있다.
+   */
+  get 단수(): number {
+    const c = findAll(this.root, 'hp:colPr')[0];
+    if (c === undefined) return 1;
+    const n = Number(getAttr(c, 'colCount'));
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  }
+
+  /** 단 사이 간격 (HWPUNIT). 안 나뉘었으면 0 */
+  get 단간격(): number {
+    const c = findAll(this.root, 'hp:colPr')[0];
+    if (c === undefined) return 0;
+    const n = Number(getAttr(c, 'sameGap'));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  /**
+   * **단을 나눈다.**
+   *
+   *     hp:p > hp:run > hp:ctrl > hp:colPr type="NEWSPAPER" layout="LEFT"
+   *                                        colCount="2" sameSz="1" sameGap="2268"
+   *
+   * 쪽 설정(`hp:secPr`)과 **같은 런**에 들어간다. 구역의 첫 문단이다.
+   *
+   * 폭은 안 적는다 — `sameSz="1"` 이면 한글이 남은 너비를 똑같이 나눈다.
+   * `hp:colSz` 로 단마다 폭을 따로 주는 길도 있지만, 실측 60개 가운데 그렇게
+   * 한 것이 **하나도 없다.** 없는 길을 만들면 맞는지 잴 데가 없다.
+   *
+   * `sameGap` 기본 2268 HWPUNIT = 8mm 다 (실측: `ref-column.hwpx`).
+   */
+  단주기(단수: number, 간격?: number): 결과<{ 단수: number; 간격: number }> {
+    if (!Number.isInteger(단수) || 단수 < 1 || 단수 > 12) {
+      return 안됨(`단 수가 이상하다: ${단수}`, '1부터 12 사이의 정수를 줘라. 1이면 안 나눈다.');
+    }
+    const 새간격 = Math.round(간격 ?? (단수 === 1 ? 0 : 2268));
+    if (새간격 < 0) return 안됨(`단 간격이 음수다: ${새간격}`, '0 이상을 줘라.');
+
+    let c = findAll(this.root, 'hp:colPr')[0];
+    if (c === undefined) {
+      // 없으면 만든다. **쪽 설정이 든 런**에 붙인다 — 한글이 거기서 찾는다.
+      const 런 = this.첫런;
+      if (런 === undefined) {
+        return 안됨('이 구역에 런이 없어 단 설정을 놓을 데가 없다', '빈 구역이거나 깨진 문서다.');
+      }
+      const 틀 = createElement('hp:ctrl', {});
+      c = createElement('hp:colPr', {
+        id: '', type: 'NEWSPAPER', layout: 'LEFT',
+        colCount: '1', sameSz: '1', sameGap: '0',
+      });
+      appendChild(틀, c);
+      appendChild(런, 틀);
+    }
+
+    if (getAttr(c, 'colCount') === String(단수) && getAttr(c, 'sameGap') === String(새간격)) {
+      return 안됨('이미 그 단이라 바뀐 것이 없다', '다른 값을 주거나 지금 값을 먼저 읽어 보라.');
+    }
+    setAttr(c, 'colCount', String(단수));
+    setAttr(c, 'sameSz', '1');
+    setAttr(c, 'sameGap', String(새간격));
+    return 됨({ 단수, 간격: 새간격 });
+  }
+
+  /**
    * 문단을 새로 만든다. **쓰던 문단을 복제해서** 만든다.
    *
    * 맨땅에서 짜면 빠진 자식이 생기고, 한글은 그걸 알려 주지 않고 무시한다.
@@ -667,4 +1127,26 @@ function 짜임같나(옛: string, 새: string): boolean {
   const b = [...새];
   if (a.length !== b.length) return false;
   return a.every((c, i) => 폭갈래(c) === 폭갈래(b[i] ?? ''));
+}
+
+/**
+ * **곁글인가** — 각주·미주·메모 **안에** 든 문단인가.
+ *
+ * 본문 글이 아니다. 한글은 각주를 쪽 아래에, 메모를 화면에만 그린다.
+ * 그런데 XML 로는 다 `hp:p` 라, 문단을 통째로 훑으면 **본문 글에 섞여 나온다.**
+ *
+ * 실제로 겪었다 — `get_content` 로 문서를 읽으면
+ *
+ *     가나다 라마바 사아자
+ *     출처 확인            ← 메모다. 본문에 없는 글이다
+ *     교육부(2026), 업무계획. ← 각주다
+ *
+ * 이렇게 나왔다. 읽는 쪽은 이것이 본문인 줄 안다. **섞이면 안 되는 것이다.**
+ */
+export function 곁글인가(p: ElementNode): boolean {
+  for (let 위 = p.parent; 위 !== undefined; 위 = 위.parent) {
+    if (위.name === 'hp:footNote' || 위.name === 'hp:endNote') return true;
+    if (위.name === 'hp:fieldBegin' && getAttr(위, 'type') === 'MEMO') return true;
+  }
+  return false;
 }

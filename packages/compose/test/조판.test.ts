@@ -948,3 +948,71 @@ describe('칸 안에서 줄을 바꾸고 굵게 쓴다', () => {
     expect(런서식.some((id) => 굵은것.includes(id!))).toBe(true);
   });
 });
+
+describe('타원·다각형', () => {
+  /** 도형 블록 하나로 문서를 만들고 그 개체를 준다 */
+  function 도형만들기(b: Record<string, unknown>, 태그: string) {
+    const d = 문서.새로();
+    d.ID매기기();
+    const r = 조판(d, [{ kind: 'shape', ...b } as never]);
+    expect(r.ok, r.ok ? '' : r.이유).toBe(true);
+    const e = findAll(d.구역들[0]!.root, 태그)[0];
+    expect(e, `${태그} 가 안 만들어졌다`).toBeDefined();
+    return { d, 개체: e! };
+  }
+
+  it('**타원은 중심과 두 축으로 그린다** — 네 꼭짓점이 아니다', () => {
+    const { 개체 } = 도형만들기({ shape: 'ellipse', width: 100, height: 60 }, 'hp:ellipse');
+    expect(findAll(개체, 'hc:pt0').length, '사각형의 꼭짓점은 걷어 내야 한다').toBe(0);
+    const 중심 = findAll(개체, 'hc:center')[0];
+    expect(중심, 'hc:center 가 있어야 한다').toBeDefined();
+    expect(getAttr(중심!, 'x'), '너비 100pt 의 절반').toBe('5000');
+    expect(getAttr(중심!, 'y'), '높이 60pt 의 절반').toBe('3000');
+    expect(getAttr(findAll(개체, 'hc:ax1')[0]!, 'x'), '가로 축은 오른쪽 끝').toBe('10000');
+    expect(getAttr(findAll(개체, 'hc:ax2')[0]!, 'y'), '세로 축은 위 끝').toBe('0');
+    expect(getAttr(개체, 'hasArcPr'), '호가 아니라 온 타원이다').toBe('0');
+  });
+
+  it('**앞뒤는 사각형과 똑같다** — 가운데만 갈렸나', () => {
+    // 뼈대를 손으로 다시 짜면 자식이 빠지고, 한글은 빠진 것을 알려 주지 않고
+    // 그 뒤를 통째로 무시한다. 그래서 사각형에서 떠 온다 — 그것을 여기서 잰다.
+    const { 개체: 사각 } = 도형만들기({ width: 100, height: 60 }, 'hp:rect');
+    const { 개체: 타원 } = 도형만들기({ shape: 'ellipse', width: 100, height: 60 }, 'hp:ellipse');
+    const 이름들 = (e: typeof 사각) => e.children
+      .filter((c) => c.kind === 'element').map((c) => (c as { name: string }).name);
+    const 앞 = (xs: string[]) => xs.slice(0, xs.indexOf('hp:shadow') + 1);
+    const 뒤 = (xs: string[]) => xs.slice(xs.findIndex((n) => n === 'hp:sz'));
+    expect(앞(이름들(타원)), '그림자까지는 같아야 한다').toEqual(앞(이름들(사각)));
+    expect(뒤(이름들(타원)), 'hp:sz 부터도 같아야 한다').toEqual(뒤(이름들(사각)));
+  });
+
+  it('**다각형은 꼭짓점 목록이고 첫 점으로 닫힌다**', () => {
+    const { 개체 } = 도형만들기(
+      { shape: 'polygon', width: 100, height: 60, points: [[50, 0], [0, 60], [100, 60]] },
+      'hp:polygon');
+    const 점들 = findAll(개체, 'hc:pt').map((p) => [getAttr(p, 'x'), getAttr(p, 'y')]);
+    expect(점들.length, '세 점에 닫는 점 하나').toBe(4);
+    expect(점들[0]).toEqual(['5000', '0']);
+    expect(점들[1]).toEqual(['0', '6000']);
+    expect(점들[2]).toEqual(['10000', '6000']);
+    expect(점들[3], '첫 점을 한 번 더 — 실측한 다각형이 그렇게 닫혀 있다').toEqual(점들[0]);
+  });
+
+  it('점을 안 주면 삼각형, 두 점이면 거절한다', () => {
+    const { 개체 } = 도형만들기({ shape: 'polygon', width: 80, height: 40 }, 'hp:polygon');
+    expect(findAll(개체, 'hc:pt').length, '삼각형 세 점 + 닫는 점').toBe(4);
+
+    const d = 문서.새로();
+    d.ID매기기();
+    const r = 조판(d, [{ kind: 'shape', shape: 'polygon', points: [[0, 0], [10, 10]] } as never]);
+    expect(r.ok, '두 점이면 선이지 다각형이 아니다').toBe(false);
+  });
+
+  it('타원·다각형에도 **글이 들어간다**', () => {
+    const { 개체 } = 도형만들기(
+      { shape: 'ellipse', text: '핵심', width: 120, height: 60 }, 'hp:ellipse');
+    const dt = findAll(개체, 'hp:drawText');
+    expect(dt.length, '글자리가 하나 있어야 한다').toBe(1);
+    expect(findAll(dt[0]!, 'hp:t').some((t) => textOf(t).includes('핵심'))).toBe(true);
+  });
+});

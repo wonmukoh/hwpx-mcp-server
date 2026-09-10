@@ -20,7 +20,7 @@
  */
 
 import {
-  getAttr, setAttr, appendChild, createElement, removeNode,
+  getAttr, setAttr, appendChild, createElement, removeNode, insertAfter,
   findFirst, childrenNamed, firstChildNamed,
   parseXml, serializeXml, serializeNode, 복제하기, 지문,
   ptToHwp, 굵기맞추기,
@@ -146,6 +146,21 @@ export interface 문단모양패치 {
    * 뼈대가 지저분해지고 쪽 넘김도 달라진다.
    */
   테두리?: 테두리패치;
+  /**
+   * **개요 수준** (1~10). 0 이면 개요를 끈다.
+   *
+   * `hh:paraPr > hh:heading/@type` 하나가 스위치다 — 실측으로 확인했다:
+   * 한글에서 개요 1수준을 준 문단의 paraPr 은 안 준 것과 **`type` 한 글자만**
+   * 다르다 (`NONE` → `OUTLINE`). 나머지 서른 몇 줄이 글자까지 똑같다.
+   *
+   * 번호 모양은 `hh:numbering` 에 있고 구역이 `outlineShapeIDRef` 로 가리킨다.
+   * **한글이 만든 문서에는 이미 다 들어 있다** (표본 36편이 수준 0~9 열 벌을
+   * 다 지고 있었다). 그래서 우리는 모양을 만들지 않고 **가리키기만** 한다.
+   *
+   * 실측 한 가지 더 — 표본 45편에서 개요 번호를 **실제로 쓰는 문단은 0개**다.
+   * 요소는 다 있는데 아무도 안 쓴다. 정부 문서는 `□ ○ -` 를 손으로 친다.
+   */
+  개요수준?: number;
 }
 
 /** 여백 이름 → 태그 */
@@ -242,6 +257,33 @@ export class 머리글 {
     const 낱 = 낱개이름[목록이름];
     if (!낱) throw new Error(`${목록이름} 의 낱개 이름을 모른다`);
     return childrenNamed(this.목록(목록이름), 낱);
+  }
+
+  /**
+   * **이름으로 스타일을 찾아** 그 문단·글자 모양까지 준다.
+   *
+   * 각주·미주·메모는 한글이 저마다 스타일을 갖고 있다 (실측: 「각주」 15번 →
+   * paraPr 10 · charPr 3). 우리가 주를 달 때 그 셋을 그대로 쓰면 **한글이
+   * 만든 것과 같은 값**이 된다 — 흉내가 아니라 같은 것이다.
+   *
+   * 한글 이름과 영문 이름(`engName`)을 **둘 다** 본다. 영문판 한글로 만든
+   * 문서에는 `name` 이 `Footnote` 로 들어 있다.
+   */
+  스타일찾기(이름: string, 영문이름?: string):
+  { 문단모양?: string; 스타일?: string; 글자모양?: string } {
+    const st = this.낱개들('hh:styles').find(
+      (e) => getAttr(e, 'name') === 이름
+        || (영문이름 !== undefined && getAttr(e, 'engName') === 영문이름),
+    );
+    if (st === undefined) return {};
+    const id = getAttr(st, 'id');
+    const pp = getAttr(st, 'paraPrIDRef');
+    const cp = getAttr(st, 'charPrIDRef');
+    return {
+      ...(id !== undefined ? { 스타일: id } : {}),
+      ...(pp !== undefined ? { 문단모양: pp } : {}),
+      ...(cp !== undefined ? { 글자모양: cp } : {}),
+    };
   }
 
   /** id 로 낱개 찾기 */
@@ -468,6 +510,27 @@ export class 머리글 {
         if (a && getAttr(a, 'horizontal') !== 패치.정렬) {
           setAttr(a, 'horizontal', 패치.정렬);
           바꿨나 = true;
+        }
+      }
+
+      // 개요 수준. `hh:heading` 은 실측 2565개가 **다** 갖고 있다 —
+      // 그러니 만드는 일이 아니라 `type` 을 갈아 주는 일이다.
+      if (패치.개요수준 !== undefined) {
+        const 켬 = 패치.개요수준 >= 1;
+        const 종류 = 켬 ? 'OUTLINE' : 'NONE';
+        const 수준 = String(켬 ? 패치.개요수준 - 1 : 0);
+        const h = firstChildNamed(el, 'hh:heading');
+        if (h === undefined) {
+          // 없으면 만든다. **`hh:align` 바로 뒤**다 — 차례가 어긋나면 한글이
+          // 그 뒤를 안 읽는다.
+          const 새것 = createElement('hh:heading', { type: 종류, idRef: '0', level: 수준 });
+          const a2 = firstChildNamed(el, 'hh:align');
+          if (a2 === undefined) appendChild(el, 새것);
+          else insertAfter(a2, 새것);
+          바꿨나 = true;
+        } else {
+          if (getAttr(h, 'type') !== 종류) { setAttr(h, 'type', 종류); 바꿨나 = true; }
+          if (getAttr(h, 'level') !== 수준) { setAttr(h, 'level', 수준); 바꿨나 = true; }
         }
       }
 

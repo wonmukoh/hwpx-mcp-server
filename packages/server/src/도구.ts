@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import {
-  문서, 표, 문단, 됨, 안됨, 셀아이디풀기,
+  문서, 표, 문단, 됨, 안됨, 셀아이디풀기, 곁글인가,
   type 결과, type 글자모양패치, 그림들이기,
 } from '@hwpx/doc';
 import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각, 면풀기 }
@@ -222,6 +222,13 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   // shape 블록. 실측: 도형 쓰는 34편 가운데 33편이 hp:rect 다 (254개).
   border_color: 글자('shape 테두리 색 · table 테두리 색 #RRGGBB'),
   line_width: 숫자('shape 테두리 굵기 pt'),
+  shape: 고름(
+    'shape 의 모양. 안 주면 rect. **셋은 뼈대가 같고 가운데 기하만 다르다**',
+    ['rect', 'ellipse', 'polygon']),
+  points: 목록(
+    'shape 가 polygon 일 때 꼭짓점. 상자 왼쪽 위가 (0,0) 인 pt 자리다. '
+    + '안 주면 이등변 삼각형. 셋보다 적으면 거절한다',
+    목록('한 점 [x, y]', 숫자('좌표 pt'))),
   indent: 참거짓('body 의 첫 줄 들여쓰기. 기본 true'),
   line_spacing: 숫자('줄 간격 %. 기본 160'),
   letter_spacing: 숫자('자간 %. 음수면 좁아진다'),
@@ -262,7 +269,9 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
       'insert_col', 'delete_col', 'merge_cells', 'split_cell', 'set_table',
       'split_table', 'join_tables', 'insert_image',
       'delete_paragraph', 'delete_table', 'set_page',
-      'set_link', 'set_bookmark']),
+      'set_link', 'set_bookmark',
+      'insert_note', 'insert_memo', 'insert_equation',
+      'set_columns', 'set_outline']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -284,14 +293,25 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   ),
   background: 글자('set_style·set_page — 배경색 #RRGGBB. none 이면 안 채운다'),
   url: 글자('set_link — 링크가 갈 곳. 웹 주소나 문서 안 책갈피 이름'),
-  name: 글자('set_bookmark — 책갈피 이름. 문서 안에서 겹치면 안 된다'),
+  name: 글자(
+    'set_bookmark — 책갈피 이름 (문서 안에서 겹치면 안 된다). '
+    + 'insert_memo — 메모를 단 사람. 안 주면 hwpx-mcp',
+  ),
+  note: 고름('insert_note — 각주(footnote)냐 미주(endnote)냐. 기본 footnote',
+    ['footnote', 'endnote']),
+  level: 정수(
+    'set_outline — 개요 수준 1~10. **0 이면 개요를 끈다.** '
+    + '번호 모양은 한글이 만든 문서에 이미 다 들어 있어 가리키기만 한다',
+  ),
+  gap: 숫자('set_columns — 단 사이 간격 HWPUNIT. 안 주면 2268 (8mm)'),
   size: 숫자('set_style — 글자 크기 pt'),
   color: 글자('set_style — 글자색 #RRGGBB'),
   font: 글자('set_style — 글꼴 이름'),
   align: 고름('set_style — 정렬', ['left', 'center', 'right', 'justify']),
   at: 정수('insert_row·insert_col — 몇 번째 자리에 넣을까 (0부터). 안 주면 맨 뒤. '
     + 'delete_row·delete_col — 몇 번째부터 지울까 (0부터). **이건 꼭 줘야 한다**'),
-  count: 정수('insert_row·delete_row 는 줄 수, insert_col·delete_col 은 칸 수. 기본 1'),
+  count: 정수('insert_row·delete_row 는 줄 수, insert_col·delete_col 은 칸 수. 기본 1. '
+    + 'set_columns 는 **단 수** (1이면 안 나눈다)'),
   // **지우는 것은 되돌릴 수 없다.** 그래서 기본은 빈 것만 지운다.
   force: 참거짓(
     'delete_row·delete_col·delete_paragraph·delete_table — 글이 든 것도 지울까. '
@@ -690,6 +710,18 @@ export const 도구들: 도구[] = [
         covered_by: 글자('**덮인 자리**일 때 — 이 자리를 덮는 칸의 ID. 여긴 글을 못 쓴다'),
       })),
       empty: 참거짓('표일 때 — 칸이 다 비었나'),
+      // 문서를 통째로 읽을 때만. **본문 글에 안 섞이는 것들**이라 따로 준다.
+      notes: 목록('문서일 때 — 각주·미주', 묶음('주 하나', {
+        kind: 글자('footnote 각주 · endnote 미주'),
+        number: 글자('보이는 번호'),
+        text: 글자('주석 칸에 든 글'),
+      })),
+      memos: 목록('문서일 때 — 메모 (본문에 안 찍힌다)', 묶음('메모 하나', {
+        text: 글자('메모 글'),
+        author: 글자('단 사람'),
+      })),
+      equations: 목록('문서일 때 — 수식 스크립트', 글자('한글 수식 스크립트')),
+      columns: 정수('문서일 때 — 첫 구역이 몇 단인가. 1 이면 안 나눈 것'),
       // **써 놓고 확인할 길이 없으면 안 쓴 것과 같다.** set_table 로 넣고 저장한 뒤
       // 다시 열어도 돌아오는 것이 없어, 부르는 쪽이 「됐다」 는 말만 믿어야 했다.
       page_break: 글자(
@@ -712,10 +744,33 @@ export const 도구들: 도구[] = [
       // id 가 없다 = 문서를 통째로 읽겠다는 뜻.
       if (인자.id === undefined) {
         const 온글 = 것.it.d.구역들
-          .flatMap((s) => s.모든문단들.map((p) => p.글))
+          // **곁글은 본문에 안 섞는다.** 각주·메모도 XML 로는 다 `hp:p` 라
+          // 통째로 훑으면 본문 글로 딸려 나온다 — 읽는 쪽은 그것이 본문인 줄 안다.
+          // 아래 `notes`·`memos` 로 따로 준다.
+          .flatMap((s) => s.모든문단들.filter((p) => !곁글인가(p.el)).map((p) => p.글))
           .join('\n');
-        return 잘됨(`문서 전체 글 (${온글.length}자)`,
-          { ok: true, id: 인자.doc_id, kind: 'document', text: 온글 });
+        // **써 놓고 확인할 길이 없으면 안 쓴 것과 같다.**
+        //
+        // 주·메모·수식은 본문 글에 안 섞인다 — 주는 주석 칸에, 메모는 화면에만,
+        // 수식은 개체 안에 있다. 그래서 `text` 만 주면 넣어 놓고도 **되읽을 길이
+        // 없다.** 「됐다」 는 말만 믿어야 하는 것은 표 쪽넘김에서 이미 겪었다.
+        const 주들 = 것.it.d.주들;
+        const 메모들 = 것.it.d.메모들;
+        const 수식들 = 것.it.d.수식들;
+        const 덧 = [
+          주들.length ? `주 ${주들.length}` : '',
+          메모들.length ? `메모 ${메모들.length}` : '',
+          수식들.length ? `수식 ${수식들.length}` : '',
+        ].filter(Boolean).join(' · ');
+        return 잘됨(`문서 전체 글 (${온글.length}자)${덧 ? ` — ${덧}` : ''}`, {
+          ok: true, id: 인자.doc_id, kind: 'document', text: 온글,
+          notes: 주들.map((n) => ({
+            kind: n.갈래 === '각주' ? 'footnote' : 'endnote', number: n.번호, text: n.글,
+          })),
+          memos: 메모들.map((m) => ({ text: m.글, author: m.지은이 })),
+          equations: 수식들,
+          columns: 것.it.d.구역들[0]?.단수 ?? 1,
+        });
       }
 
       const r = 것.it.d.찾기(인자.id);
@@ -800,6 +855,9 @@ export const 도구들: 도구[] = [
         cols: 정수('표일 때 — 칸 수'),
         empty: 참거짓('표일 때 — 칸이 다 비었나'),
         in_cell: 글자('칸 안에 든 문단일 때 — 그 칸 ID'),
+        // **본문에서 찾은 것과 곁글에서 찾은 것은 다르다.** 안 갈라 주면
+        // 각주·메모에서 걸린 것을 본문인 줄 알고 고치러 간다.
+        in_note: 참거짓('각주·미주·메모 **안**에서 찾았다 — 본문 글이 아니다'),
       })),
       // **잘렸다는 것을 답에 담는다.** count 와 matches.length 를 견주라고
       // 맡겨 두면 아무도 안 견준다 — 그러면 못 본 것을 못 봤는지도 모른다.
@@ -848,6 +906,7 @@ export const 도구들: 도구[] = [
             나온것.push({
               id: d.이름표.아이디(p.el), kind: 'paragraph', preview: 미리보기(p.글),
               ...(칸 !== undefined ? { in_cell: 칸 } : {}),
+              ...(곁글인가(p.el) ? { in_note: true } : {}),
             });
           }
         }
@@ -1184,6 +1243,8 @@ interface 고침 {
   op: 'set_text' | 'replace' | 'set_style' | 'insert_row' | 'delete_row'
   | 'delete_paragraph' | 'delete_table' | 'set_page'
   | 'set_link' | 'set_bookmark'
+  | 'insert_note' | 'insert_memo' | 'insert_equation'
+  | 'set_columns' | 'set_outline'
   | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell'
   | 'set_table' | 'split_table' | 'join_tables' | 'insert_image';
   id?: string;
@@ -1197,6 +1258,7 @@ interface 고침 {
   strike?: boolean; script?: 'super' | 'sub' | 'none'; emphasis?: string;
   border?: string; background?: string;
   url?: string; name?: string;
+  note?: 'footnote' | 'endnote'; level?: number; gap?: number;
   rowspan?: number; colspan?: number;
   rows?: number; cols?: number;
   page_break?: string; repeat_header?: boolean;
@@ -1576,6 +1638,64 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       return 됨(1);
     }
 
+    // 각주·미주·메모. 셋 다 **본문에 안 찍히는 글**을 다는 일인데 짜임이 다르다 —
+    // 주는 `hp:footNote`/`hp:endNote` 요소고, 메모는 `type="MEMO"` 인 밭이다
+    // (`자료/실측.md` 32항).
+    case 'insert_note': {
+      if (!e.id) return 안됨('insert_note 에 id 가 없다', '주를 달 문단 ID(p_…)를 줘라.');
+      if (!e.text) return 안됨('insert_note 에 text 가 없다', '주석 칸에 넣을 글을 적어라.');
+      const 갈래 = e.note === 'endnote' ? '미주' : '각주';
+      const r = d.주달기(e.id, e.text, 갈래, e.find);
+      if (!r.ok) return r;
+      return 됨(1);
+    }
+
+    case 'insert_memo': {
+      if (!e.id) return 안됨('insert_memo 에 id 가 없다', '메모를 달 문단 ID(p_…)를 줘라.');
+      if (!e.find) {
+        return 안됨('insert_memo 에 find 가 없다',
+          '문단의 어느 어구에 달지 적어라 — 메모는 고른 글에 걸린다.');
+      }
+      if (!e.text) return 안됨('insert_memo 에 text 가 없다', '메모에 적을 글을 줘라.');
+      const r = d.메모달기(e.id, e.find, e.text, e.name);
+      if (!r.ok) return r;
+      return 됨(r.value.바뀐수);
+    }
+
+    // 수식. 개체인데 `hp:script` 한 줄이 전부다. 빈칸은 `` 두 개로 쓴다.
+    case 'insert_equation': {
+      if (!e.id) return 안됨('insert_equation 에 id 가 없다', '수식을 넣을 문단 ID(p_…)를 줘라.');
+      if (!e.text) {
+        return 안됨('insert_equation 에 text 가 없다',
+          "한글 수식 스크립트를 줘라 (예: `{a} over {b}`, `x^2`, `sqrt{2}`).");
+      }
+      const r = d.수식넣기(e.id, e.text, e.find);
+      if (!r.ok) return r;
+      return 됨(r.value.바뀐수);
+    }
+
+    // 다단. `hp:colPr/@colCount` 다. 실측 60개 가운데 59개가 colCount="1" —
+    // 요소는 늘 있으니 **만드는 일이 아니라 세는 값을 바꾸는 일**이다.
+    case 'set_columns': {
+      if (e.count === undefined) {
+        return 안됨('set_columns 에 count 가 없다', '몇 단으로 나눌지 줘라. 1이면 안 나눈다.');
+      }
+      const r = d.단주기(e.count, e.gap);
+      if (!r.ok) return r;
+      return 됨(r.value.구역수);
+    }
+
+    // 개요 수준. `hh:paraPr > hh:heading/@type` 한 글자가 스위치다.
+    case 'set_outline': {
+      if (!e.id) return 안됨('set_outline 에 id 가 없다', '개요를 줄 문단 ID(p_…)를 줘라.');
+      if (e.level === undefined) {
+        return 안됨('set_outline 에 level 이 없다', '1~10 을 주거나, 0 으로 개요를 끈다.');
+      }
+      const r = d.개요수준주기(e.id, e.level);
+      if (!r.ok) return r;
+      return 됨(1);
+    }
+
     case 'delete_paragraph': {
       if (!e.id) return 안됨('delete_paragraph 에 id 가 없다', 'get_outline 이 준 문단 ID(p_…)를 줘라.');
       const r = d.문단지우기(e.id, e.force !== true);
@@ -1665,6 +1785,9 @@ const 구조를바꾸나 = new Set([
   // 링크는 런을 셋으로 쪼갠다 — 문단 수는 그대로지만 안쪽 짜임이 달라진다.
   // 책갈피도 런을 하나 더 낸다.
   'set_link', 'set_bookmark',
+  // 주·메모·수식은 런 안에 요소를 하나 더 낸다. 바탕쪽은 **구역 안에 문단을**
+  // 하나 더 내니 문단 ID 가 통째로 밀린다.
+  'insert_note', 'insert_memo', 'insert_equation', 'set_columns',
 ]);
 
 export const 쪽넘김밖이름 = { 나눔: 'split', 셀단위: 'cell', 안나눔: 'none' } as const;

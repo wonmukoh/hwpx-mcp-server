@@ -26,7 +26,7 @@ const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
 const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
-const { 문서, 표 } = await import(B('doc'));
+const { 문서, 표, 곁글인가 } = await import(B('doc'));
 const { parseXml, findAll, findFirst, firstChildNamed, getAttr, childrenNamed, textOf }
   = await import(B('owpml'));
 const { HwpxContainer, 부품 } = await import(B('hwpx'));
@@ -63,7 +63,8 @@ for (const 이름 of 목록) {
     const pid = d.이름표.아이디(쓸문단.el);
 
     const 한일 = { 글: false, 글자서식: false, 문단서식: false, 강조: false, 표: false,
-      꾸밈: false, 링크: false, 책갈피: false };
+      꾸밈: false, 링크: false, 책갈피: false,
+      각주: false, 미주: false, 메모: false, 수식: false, 다단: false, 개요: false };
 
     const r1 = d.글바꾸기(pid, 표시);
     한일.글 = r1.ok;
@@ -94,6 +95,21 @@ for (const 이름 of 목록) {
     // **거절은 실패가 아니다.** 표·그림과 같은 런에 든 글은 쪼개면 안 되니 거절한다.
     // 그 까닭을 모아 두고 끝에 보여 준다 — 안 보여 주면 거절이 조용해진다.
     const 거절 = r4.ok ? null : r4.이유;
+
+    // **남은 일곱이 한글을 넘는가.**
+    //
+    // 여섯은 다 한글이 저장한 것을 오려 왔으니 「같은 것」인지만 보면 된다.
+    // (일곱째 바탕쪽은 **여기가 걷어내라고 말해 줬다** — 규격만 보고 짠 것을
+    //  먹였더니 기준 파일 27편이 다 안 열렸다. 자료/실측.md 32항.)
+    //
+    // 강조하기 뒤에 둔다. 앞에 두면 런이 조각나 강조가 거절되고,
+    // 그러면 원래 재던 것을 조용히 덜 재게 된다.
+    한일.각주 = d.주달기(pid, '수용시험 각주다.', '각주').ok;
+    한일.미주 = d.주달기(pid, '수용시험 미주다.', '미주').ok;
+    한일.메모 = d.메모달기(pid, 강조할것, '수용시험 메모다').ok;
+    한일.수식 = d.수식넣기(pid, '{a} over {b}').ok;
+    한일.다단 = d.단주기(2).ok;
+    한일.개요 = d.개요수준주기(pid, 1).ok;
 
     // 표가 있으면 만져 본다
     let 표잰것 = null;
@@ -155,7 +171,8 @@ for (const 줄 of 결과.split(/\r?\n/)) {
 let 통과 = 0;
 const 실패 = [...준비실패];
 const 확인한것 = { 글: 0, 굵게: 0, 취소선: 0, 첨자: 0, 강조점: 0,
-  링크: 0, 책갈피: 0, 여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0 };
+  링크: 0, 책갈피: 0, 여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0,
+  각주: 0, 미주: 0, 메모: 0, 수식: 0, 다단: 0, 개요: 0 };
 
 for (const 이름 of 목록) {
   const 낸것 = 한것.get(이름);
@@ -171,7 +188,19 @@ for (const 이름 of 목록) {
     const 문제 = [];
 
     // 글
-    const 온글 = findAll(구역.root, 'hp:t').map((t) => (t.children[0]?.raw ?? '')).join('');
+    // **곁글을 빼고 잇는다.**
+    //
+    // 각주·메모 글도 `hp:t` 라, 통째로 이어 붙이면 **본문 글 사이에 끼어든다.**
+    //
+    //     넣은 글    DOC3단계표시
+    //     이어 붙이면  DOC3단계 · 수용시험 메모다 · 표시   ← 「글이 사라졌다」가 된다
+    //
+    // 메모는 고른 어구를 감싸므로 몸통이 딱 그 가운데에 들어간다. 그래서
+    // 스물다섯 편이 한꺼번에 「한글이 글을 버렸다」로 보였다 — **버린 것은
+    // 한글이 아니라 우리 눈이었다.** `get_content` 에서 겪은 것과 같은 자리다.
+    const 온글 = findAll(구역.root, 'hp:t')
+      .filter((t) => !곁글인가(t))
+      .map((t) => (t.children[0]?.raw ?? '')).join('');
     if (낸것.한일.글) {
       if (!온글.includes(표시)) 문제.push('우리가 넣은 글이 사라졌다');
       else 확인한것.글++;
@@ -239,7 +268,11 @@ for (const 이름 of 목록) {
       else 확인한것.여백++;
 
       const 가운데정렬있나 = findAll(머리.root, 'hh:paraPr')
-        .some((pp) => getAttr(firstChildNamed(pp, 'hh:align') ?? {}, 'horizontal') === 'CENTER');
+        .some((pp) => {
+          // 여기도 `?? {}` 를 쓰고 있었다. `hh:align` 은 늘 있어 안 걸렸을 뿐이다.
+          const a = firstChildNamed(pp, 'hh:align');
+          return a !== undefined && getAttr(a, 'horizontal') === 'CENTER';
+        });
       if (!가운데정렬있나) 문제.push('가운데 정렬이 사라졌다');
       else 확인한것.정렬++;
     }
@@ -249,6 +282,74 @@ for (const 이름 of 목록) {
       const 빨간게있나 = findAll(머리.root, 'hh:charPr').some((cp) => getAttr(cp, 'textColor') === '#C00000');
       if (!빨간게있나) 문제.push('강조한 빨간 글자모양이 사라졌다');
       else 확인한것.강조++;
+    }
+
+    // ── 남은 일곱 ─────────────────────────────────────────────────────
+    //
+    // **갈래마다 따로 센다.** 한꺼번에 세면 하나만 살아도 통과한다.
+    if (낸것.한일.각주 || 낸것.한일.미주) {
+      for (const [무엇, 태그, 번호종류] of [
+        ['각주', 'hp:footNote', 'FOOTNOTE'], ['미주', 'hp:endNote', 'ENDNOTE'],
+      ]) {
+        if (!낸것.한일[무엇]) continue;
+        const 것들 = findAll(구역.root, 태그);
+        if (!것들.length) { 문제.push(`${무엇}가 한글을 넘으며 사라졌다`); continue; }
+        // **번호가 살아 있나.** 주는 남았는데 hp:autoNum 이 없으면
+        // 본문에도 주석 칸에도 숫자가 없어 무엇이 어느 주인지 못 읽는다.
+        const 번호살음 = 것들.some((e) => findAll(e, 'hp:autoNum')
+          .some((n) => getAttr(n, 'numType') === 번호종류));
+        const 글살음 = 것들.some((e) => textOf(e).includes(`수용시험 ${무엇}다.`));
+        if (!번호살음) 문제.push(`${무엇}는 남았는데 번호(hp:autoNum)가 사라졌다`);
+        else if (!글살음) 문제.push(`${무엇}는 남았는데 안에 든 글이 사라졌다`);
+        else 확인한것[무엇]++;
+      }
+    }
+
+    if (낸것.한일.메모) {
+      const 시작 = findAll(구역.root, 'hp:fieldBegin')
+        .filter((e) => getAttr(e, 'type') === 'MEMO');
+      const 끝들 = findAll(구역.root, 'hp:fieldEnd');
+      if (!시작.length) 문제.push('메모가 한글을 넘으며 사라졌다');
+      else if (!시작.some((b2) => 끝들.some((e) => getAttr(e, 'beginIDRef') === getAttr(b2, 'id')))) {
+        문제.push('메모의 fieldEnd 짝이 끊겼다');
+      } else if (!시작.some((b2) => textOf(firstChildNamed(b2, 'hp:subList') ?? b2)
+        .includes('수용시험 메모다'))) {
+        문제.push('메모는 남았는데 몸통 글이 사라졌다');
+      } else 확인한것.메모++;
+    }
+
+    if (낸것.한일.수식) {
+      const 식들 = findAll(구역.root, 'hp:equation');
+      if (!식들.length) 문제.push('수식이 한글을 넘으며 사라졌다');
+      else if (!식들.some((e) => textOf(firstChildNamed(e, 'hp:script') ?? e).includes('over'))) {
+        문제.push('수식은 남았는데 hp:script 가 사라졌다');
+      } else 확인한것.수식++;
+    }
+
+    if (낸것.한일.다단) {
+      const c2 = findAll(구역.root, 'hp:colPr')[0];
+      if (!c2 || getAttr(c2, 'colCount') !== '2') 문제.push('다단이 한 단으로 돌아갔다');
+      else 확인한것.다단++;
+    }
+
+    if (낸것.한일.개요) {
+      // **`?? {}` 를 getAttr 에 넘기면 터진다.** 빈 객체엔 `attrs` 가 없다.
+      // `hh:align` 은 문단모양마다 늘 있어 그 버릇이 여태 안 걸렸는데,
+      // `hh:heading` 은 없는 것이 있다 — 스물다섯 편이 한꺼번에 터졌다.
+      const 개요인가 = (pp) => {
+        const h = firstChildNamed(pp, 'hh:heading');
+        return h !== undefined && getAttr(h, 'type') === 'OUTLINE';
+      };
+      const 개요있나 = findAll(머리.root, 'hh:paraPr').some(개요인가);
+      // 요소는 한글 기본틀에도 열 벌이 있다. **문단이 실제로 그것을 가리키나**까지 본다.
+      const 쓰는문단있나 = (() => {
+        const 개요id = new Set(findAll(머리.root, 'hh:paraPr')
+          .filter(개요인가).map((pp) => getAttr(pp, 'id')));
+        return findAll(구역.root, 'hp:p').some((x) => 개요id.has(getAttr(x, 'paraPrIDRef')));
+      })();
+      if (!개요있나) 문제.push('개요 문단모양이 사라졌다');
+      else if (!쓰는문단있나) 문제.push('개요 문단모양은 남았는데 그것을 쓰는 문단이 없다');
+      else 확인한것.개요++;
     }
 
     // 표

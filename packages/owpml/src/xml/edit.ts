@@ -239,3 +239,24 @@ export function createText(text: string): TextNode {
     raw: escapeXml(text), dirty: true,
   };
 }
+
+/**
+ * **요소의 이름을 바꾼다.**
+ *
+ * 왜 있나 — 도형은 앞뒤가 다 같고 **가운데 기하만 다르다.** 실측(도형 세 갈래):
+ *
+ *     사각형   … shadow → hc:pt0 hc:pt1 hc:pt2 hc:pt3 → sz → pos …
+ *     타원     … shadow → hc:center hc:ax1 hc:ax2 …    → sz → pos …
+ *     다각형   … shadow → hc:pt × N                    → sz → pos …
+ *
+ * 앞(offset·orgSz·curSz·flip·rotationInfo·renderingInfo·lineShape·fillBrush·shadow)과
+ * 뒤(sz·pos·outMargin)는 셋이 **똑같다.** 그래서 사각형 조각을 떠서 이름과 기하만
+ * 갈아 끼우면 타원·다각형이 된다 — 뼈대를 손으로 다시 짜지 않는다.
+ *
+ * 이름을 바꾸면 여는 태그도 닫는 태그도 새 이름으로 나간다 (`dirty` 로 표시하므로).
+ */
+export function 이름바꾸기(el: ElementNode, 새이름: string): void {
+  if (el.name === 새이름) return;
+  el.name = 새이름;
+  markDirty(el);
+}

@@ -30,6 +30,10 @@ function 열기 {
     $script:hwp = New-Object -ComObject HWPFrame.HwpObject
     try { $script:hwp.RegisterModule("FilePathCheckDLL", "FilePathCheckerModule") | Out-Null } catch { }
     $script:hwp.XHwpDocuments.Add(0) | Out-Null
+    # **창을 숨긴다.** 안 숨기면 한글 창이 앞으로 튀어나와, 도는 동안 사용자가
+    # 다른 프로그램에 누른 클릭을 한글이 먹는다 (2026-09-07 에 겪었다).
+    try { $script:hwp.XHwpWindows.Item(0).Visible = $false } catch {}
+    try { $script:hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}
 }
 
 function 닫기 {
@@ -261,8 +265,49 @@ $목록 = [ordered]@{
             실행 "MoveLineBegin" | Out-Null
             실행 "MoveSelLineEnd" | Out-Null
             실행중하나 @("InsertFieldMemo","MemoInsert") | Out-Null
+            # 메모를 넣으면 커서가 메모 안으로 간다. 거기에 글을 친다 —
+            # 안 치면 몸통이 빈 채로 저장돼 **메모 글이 어디 담기는지 못 본다.**
+            글 "메모 내용이다"
+            실행중하나 @("CloseEx","Close") | Out-Null
         }
     }
+
+    # ── 타원·다각형도 여기서 못 만든다 (2026-09-10) ───────────────────────
+    #
+    # `DrawObjCreatorEllipse` · `DrawObjCreatorPolygon` 은 **「그리기 모드」만
+    # 켠다.** 도형은 마우스로 끌어야 생긴다. 그런데 액션은 `$true` 를 돌려주고
+    # 파일도 저장되니, 조리법은 **초록인 채로 빈 파일을 낸다** — 열어 보니
+    # `hp:ellipse` 가 0개였다. (사각형만 우연히 됐다.)
+    #
+    # **「됐다」는 말과 「생겼다」는 것은 다르다.** 그래서 타원·다각형은
+    # 실제 정부 문서에서 오려 재고(자료/기준파일/발췌/), 만들 때는 사각형
+    # 조각에서 **기하만 갈아 끼운다** — 셋은 앞뒤가 같다 (자료/실측.md 32항).
+
+    "ref-outline" = @{
+        확인 = "개요 번호 — 문단이 개요 수준을 가지면 paraPr 이 어떻게 달라지나"
+        만들기 = {
+            글 "개요 1수준"
+            $h = $script:hwp
+            $act = $h.CreateAction("ParagraphShape"); $set = $act.CreateSet(); $act.GetDefault($set)
+            # 값 이름도 값도 판마다 다를 수 있다. 되는 것을 찾아 넣는다.
+            foreach ($k in @("HeadingType","Heading")) {
+                try { $set.SetItem($k, 1) } catch { }
+            }
+            try { $set.SetItem("Level", 0) } catch { }
+            $act.Execute($set) | Out-Null
+        }
+    }
+
+    # ── 바탕쪽은 여기서 못 만든다 (2026-09-10) ─────────────────────────────
+    #
+    # `MasterPage` 액션은 **대화상자를 띄우고 멈춘다.** 창을 숨겨 놨으니 눈에도
+    # 안 보이고, SetMessageBoxMode 로도 안 막힌다. 더 나쁜 것은 그 뒤다 —
+    # 멈춘 한글이 자동화 인스턴스로 남아, **그 뒤에 뜨는 한글 시험이 전부
+    # OPENFAIL 로 떨어진다.** 실제로 겪었다 (기준 파일 27편이 다 못 열렸다).
+    #
+    # 그래서 되살리지 않는다. 바탕쪽은 규격(KS X 6101 5.2.6)을 보고 짜고,
+    # **한글이 그 파일을 열어 주는지**로 판가름한다 (검증/문서층수용시험.mjs).
+    # 대화상자를 넘기는 길을 찾거든 그때 되살려라 — 그전엔 안 된다.
 
     "ref-page-setup" = @{
         확인 = "용지·여백·방향과 쪽 테두리/배경이 secPr 에 어떻게 적히나"

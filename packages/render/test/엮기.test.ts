@@ -424,3 +424,60 @@ describe('표본 아홉 편을 다 엮는다', () => {
     });
   }
 });
+
+describe('주·수식·메모 — 글을 안 잃는다', () => {
+  /**
+   * **`hp:ctrl` 을 그냥 지나가면 각주 글이 통째로 사라진다.**
+   *
+   * 한글 PDF 에는 쪽 아래에 찍히는 글이다. 우리 HTML 에만 없으면 그건
+   * 「자리가 다른 것」이 아니라 **「글이 사라진 것」**이고, HTML 닮음 갈래를
+   * 깨뜨리는 것도 그 하나뿐이다.
+   */
+  it('**각주 글이 HTML 에 남는다**', () => {
+    const d = 열기(기준파일, 'ref-text-basic.hwpx');
+    d.ID매기기();
+    const p = d.구역들[0]!.문단들.find((x) => !x.비었나)!;
+    const r = d.주달기(d.이름표.아이디(p.el), '교육부(2026), 업무계획.', '각주');
+    expect(r.ok, r.ok ? '' : r.이유).toBe(true);
+
+    const 엮은것 = 엮기(d);
+    expect(엮은것.html, '주석 글이 어디엔가는 있어야 한다').toContain('교육부(2026), 업무계획.');
+    expect(엮은것.html, '자리에는 번호 표시가 남아야 한다').toContain('주표시');
+  });
+
+  it('미주도 마찬가지다', () => {
+    const d = 열기(기준파일, 'ref-text-basic.hwpx');
+    d.ID매기기();
+    const p = d.구역들[0]!.문단들.find((x) => !x.비었나)!;
+    expect(d.주달기(d.이름표.아이디(p.el), '문서 끝에 모을 것.', '미주').ok).toBe(true);
+    expect(엮기(d).html).toContain('문서 끝에 모을 것.');
+  });
+
+  /**
+   * **메모는 일부러 안 그린다.** 한글도 안 찍는다 — 화면과 「메모 보기」에만
+   * 보이는 것이라, 그리면 원본과 달라진다. 「안 그리는 것」과 「잃는 것」은 다르다.
+   */
+  it('**메모는 일부러 안 그린다** — 한글도 안 찍는다', () => {
+    const d = 열기(기준파일, 'ref-text-basic.hwpx');
+    d.ID매기기();
+    const p = d.구역들[0]!.문단들.find((x) => !x.비었나)!;
+    const 어구 = p.글.trim().slice(0, 2);
+    expect(d.메모달기(d.이름표.아이디(p.el), 어구, '출처 확인 필요').ok).toBe(true);
+
+    const html = 엮기(d).html;
+    expect(html, '메모 글은 안 그린다').not.toContain('출처 확인 필요');
+    expect(html, '**메모가 걸린 본문 글은 그대로 있어야 한다**').toContain(어구);
+  });
+
+  it('**수식은 글로라도 남긴다** — 못 그린다고 잃지는 않는다', () => {
+    const d = 열기(기준파일, 'ref-text-basic.hwpx');
+    d.ID매기기();
+    const p = d.구역들[0]!.문단들.find((x) => !x.비었나)!;
+    expect(d.수식넣기(d.이름표.아이디(p.el), '{a} over {b}').ok).toBe(true);
+
+    const 엮은것 = 엮기(d);
+    expect(엮은것.html).toContain('{a} over {b}');
+    // 못 그렸다는 것을 **말해 준다.** 조용히 넘어가면 쓰는 쪽이 모른다.
+    expect(엮은것.못옮긴것.join(' ')).toContain('수식');
+  });
+});

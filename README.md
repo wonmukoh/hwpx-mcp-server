@@ -127,19 +127,43 @@ args = ["-y", "hwpx-mcp"]
 `edit` 은 `op` 하나로 갈린다:
 
 ```
-set_text      그 자리 글을 통째로 다시 쓴다
-replace       어구를 찾아 바꾼다
-set_style     굵게·크기·색·정렬
-insert_row    표에 줄을 넣는다
-delete_row    표에서 줄을 뺀다 — **빈 줄만** (양식에 남는 줄을 걷어낸다)
-insert_col    표에 칸(열)을 넣는다
-delete_col    표에서 칸을 뺀다 — **빈 칸만**
-merge_cells   칸을 합친다
-split_cell    합침을 푼다. rows·cols 를 주면 성한 칸에 금을 긋는다
-split_table   표를 두 개로 가른다
-join_tables   표 둘을 이어 붙인다
-set_table     쪽 경계에서 나누는 방식 · 머리 줄 되풀이
-insert_image  그림을 넣는다
+글
+
+  set_text          그 자리 글을 통째로 다시 쓴다
+  replace           어구를 찾아 바꾼다
+  set_style         굵게·기울임·밑줄·취소선·첨자·강조점·크기·색·정렬·테두리
+
+표
+
+  insert_row        표에 줄을 넣는다
+  delete_row        표에서 줄을 뺀다 — **빈 줄만** (양식에 남는 줄을 걷어낸다)
+  insert_col        표에 칸(열)을 넣는다
+  delete_col        표에서 칸을 뺀다 — **빈 칸만**
+  merge_cells       칸을 합친다
+  split_cell        합침을 푼다. rows·cols 를 주면 성한 칸에 금을 긋는다
+  split_table       표를 두 개로 가른다
+  join_tables       표 둘을 이어 붙인다
+  set_table         쪽 경계에서 나누는 방식 · 머리 줄 되풀이
+
+넣고 빼기
+
+  insert_image      그림을 넣는다
+  insert_equation   수식을 넣는다 (한글 수식 스크립트)
+  insert_note       각주·미주를 단다 (note: footnote | endnote)
+  insert_memo       메모를 단다 — 본문에 안 찍히고 「메모 보기」에만 보인다
+  delete_paragraph  문단을 지운다 — **빈 것만** (force 로 넘긴다)
+  delete_table      표를 지운다 — **빈 것만**
+
+가리키기
+
+  set_link          어구에 하이퍼링크를 건다
+  set_bookmark      책갈피를 단다 (링크가 갈 곳)
+
+쪽·구역
+
+  set_page          쪽 테두리·배경
+  set_columns       단을 나눈다 (count: 몇 단, gap: 사이 간격)
+  set_outline       문단에 개요 수준을 준다 (level 1~10, 0 이면 끈다)
 ```
 
 `delete_row` · `delete_col` 은 지우는 것이라 **막는 것이 셋** 있다 — 마지막 줄·칸,

@@ -1,12 +1,11 @@
 /**
  * **각주·미주·메모·수식·개요·다단·바탕쪽.**
  *
- * 남아 있던 일곱 가운데 **여섯**을 만든 자리다. 짜임은 `자료/실측.md` 32항에 있다.
- * 여섯은 다 한글이 저장한 것을 오려 왔다.
+ * 남아 있던 일곱을 만든 자리다. 짜임은 `자료/실측.md` 32항에 있다.
+ * 일곱 다 **한글이 저장한 것을 오려 왔다.**
  *
- * 일곱째인 **바탕쪽은 만들다 걷어냈다.** 규격만 보고 짰더니 한글이 그 파일을
- * 아예 못 열었다 — 자리를 다섯 가지로 바꿔 봐도 같았다. 까닭은 `문서.ts` 에
- * 적어 뒀다. 여기 시험이 없는 것은 **기능이 없기 때문이지 안 재서가 아니다.**
+ * 바탕쪽 하나는 규격만 보고 짰다가 한글이 파일을 못 여는 것을 보고 물렀다.
+ * 한글에 직접 만들게 해 보니 **`hp:secPr` 안이 아니라 딴 부품**이었다.
  *
  * 여기서 재는 것은 **한글이 쓰는 것과 같은 자리에 같은 것이 들어갔나** 다.
  * 「불렀더니 ok 가 났다」는 아무것도 안 보는 것이다 — 값을 대 본다.
@@ -15,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { childrenNamed, findAll, firstChildNamed, getAttr, textOf } from '@hwpx/owpml';
+import { childrenNamed, findAll, firstChildNamed, getAttr, parseXml, textOf } from '@hwpx/owpml';
 import { 문서 } from '../src/index.js';
 
 const 기준파일 = path.join(path.resolve(__dirname, '../../..'), '자료', '기준파일');
@@ -24,6 +23,11 @@ function 열기(이름 = 'ref-text-basic.hwpx') {
   const d = 문서.열기(fs.readFileSync(path.join(기준파일, 이름)));
   d.ID매기기();
   return d;
+}
+
+/** 문서 안 부품 하나를 파싱해 뿌리를 준다 */
+function parse받기(d: 문서, 이름: string) {
+  return parseXml(d.컨테이너.readText(이름)).root;
 }
 
 /** 글이 든 첫 문단의 ID 와 그 글 */
@@ -310,6 +314,137 @@ describe('다단', () => {
     expect(d.단주기(2).ok).toBe(true);
     const 다시 = d.단주기(2);
     expect(다시.ok, '같은 값을 또 주면 실패로 알린다 — 조용히 0 을 돌려주지 않는다').toBe(false);
+  });
+});
+
+describe('바탕쪽', () => {
+  it('**딴 부품에 담기고 구역이 가리킨다**', () => {
+    const d = 열기();
+    const r = d.바탕쪽주기('내부 검토용');
+    expect(r.ok, r.ok ? '' : r.이유).toBe(true);
+
+    // 부품이 하나 더 생겨야 한다 — `hp:secPr` 안에 넣으면 한글이 파일을 못 연다
+    expect(d.컨테이너.바탕쪽이름들()).toEqual(['Contents/masterpage0.xml']);
+
+    // 구역은 **가리키기만** 한다
+    const sp = d.구역들[0]!.쪽설정!;
+    expect(getAttr(sp, 'masterPageCnt'), '개수를 안 세우면 한글이 안 읽는다').toBe('1');
+    expect(d.구역들[0]!.바탕쪽참조들).toEqual(['masterpage0']);
+    expect(findAll(sp, 'hp:masterPage').length, '가리키는 표는 secPr 안에 하나').toBe(1);
+
+    expect(d.바탕쪽들).toContain('내부 검토용');
+    expect(d.검사()).toEqual([]);
+  });
+
+  it('**manifest 에 적는다** — 안 적으면 한글이 부품을 못 찾는다', () => {
+    const d = 열기();
+    expect(d.바탕쪽주기('워터마크').ok).toBe(true);
+    const hpf = d.컨테이너.readText('Contents/content.hpf');
+    expect(hpf).toContain('href="Contents/masterpage0.xml"');
+    // **spine 에는 안 넣는다.** 바탕쪽은 읽는 차례가 있는 것이 아니다.
+    const spine = hpf.slice(hpf.indexOf('<opf:spine>'));
+    expect(spine, 'spine 에 들어가면 한글이 본문 차례에 끼워 읽는다')
+      .not.toContain('masterpage0');
+  });
+
+  it('**글 자리를 재서 넣는다** — 한글이 넣는 값과 같다', () => {
+    // 실측(ref-masterpage.hwpx): textWidth 42520 · textHeight 65762
+    //
+    // **우리가 쓴 것을 읽어서 댄다.** 처음엔 여기서 너비·높이를 다시 계산해
+    // 한글 것과 견줬는데, 그건 **우리가 낸 부품을 한 번도 안 보는 시험**이었다 —
+    // `textHeight` 를 0 으로 박는 고장을 내도 그대로 통과했다.
+    const 기준 = 열기('ref-masterpage.hwpx');
+    const 한글속 = findAll(parse받기(기준, 기준.컨테이너.바탕쪽이름들()[0]!), 'hp:subList')[0]!;
+
+    // 같은 용지·여백인 문서에 우리가 새로 낸다
+    const d = 열기('ref-text-basic.hwpx');
+    expect(d.바탕쪽주기('가').ok).toBe(true);
+    const 우리속 = findAll(parse받기(d, 'Contents/masterpage0.xml'), 'hp:subList')[0]!;
+
+    expect(getAttr(우리속, 'textWidth'), '글 너비가 한글 것과 같아야 한다')
+      .toBe(getAttr(한글속, 'textWidth'));
+    expect(getAttr(우리속, 'textHeight'), '글 높이가 한글 것과 같아야 한다')
+      .toBe(getAttr(한글속, 'textHeight'));
+    expect(Number(getAttr(우리속, 'textHeight')), '0 이면 한글이 글을 못 앉힌다')
+      .toBeGreaterThan(0);
+  });
+
+  it('**쪽 설정이 딸려 들어가지 않는다**', () => {
+    // 구역의 첫 문단은 hp:secPr 을 지고 있다. 그대로 뜨면 쪽 설정이 둘이 된다.
+    const d = 열기();
+    expect(d.바탕쪽주기('가').ok).toBe(true);
+    const 바탕 = parse받기(d, 'Contents/masterpage0.xml');
+    expect(findAll(바탕, 'hp:secPr').length, '바탕쪽 안에 쪽 설정이 있으면 안 된다').toBe(0);
+    expect(findAll(바탕, 'hp:tbl').length, '표도 딸려 가면 안 된다').toBe(0);
+  });
+
+  it('**구역마다 하나씩 낸다** — 나눠 쓰면 한글이 죽는다', () => {
+    // 둘이 같은 부품을 가리키게 했더니 한글이 **RPC 가 끊기며 죽었다.**
+    // 못 여는 것보다 나쁘다 — 그 뒤에 열던 문서까지 줄줄이 떨어진다.
+    const d = 열기('ref-section-break.hwpx');
+    expect(d.구역이름들.length, '구역이 둘이라야 이 시험이 뭔가를 본다').toBe(2);
+    expect(d.바탕쪽주기('바탕쪽 글').ok).toBe(true);
+
+    expect(d.컨테이너.바탕쪽이름들().length, '구역 수만큼 부품이 있어야 한다').toBe(2);
+    const 가리킴 = d.구역들.map((s) => s.바탕쪽참조들);
+    expect(가리킴).toEqual([['masterpage0'], ['masterpage1']]);
+    expect(new Set(가리킴.flat()).size, '두 구역이 같은 것을 가리키면 안 된다').toBe(2);
+  });
+
+  it('**부품 차례가 「바탕쪽 → 그 구역」 짝이다**', () => {
+    // 한글이 저장한 두 구역 문서가 그렇다:
+    //   header · masterpage0 · section0 · masterpage1 · section1
+    const d = 열기('ref-section-break.hwpx');
+    expect(d.바탕쪽주기('가').ok).toBe(true);
+    const 차례 = d.컨테이너.names().filter((n) => /^Contents\/(masterpage|section)\d+\.xml$/.test(n));
+    expect(차례).toEqual([
+      'Contents/masterpage0.xml', 'Contents/section0.xml',
+      'Contents/masterpage1.xml', 'Contents/section1.xml',
+    ]);
+  });
+
+  it('한글이 만든 바탕쪽과 **뿌리 속성이 같다**', () => {
+    const 기준 = 열기('ref-masterpage.hwpx');
+    const 한글것 = parse받기(기준, 기준.컨테이너.바탕쪽이름들()[0]!);
+
+    const d = 열기();
+    expect(d.바탕쪽주기('가').ok).toBe(true);
+    const 우리것 = parse받기(d, 'Contents/masterpage0.xml');
+
+    expect(우리것.name, '접두사 없는 masterPage 다').toBe('masterPage');
+    for (const 키 of ['id', 'type', 'pageNumber', 'pageDuplicate', 'pageFront']) {
+      expect(getAttr(우리것, 키), `${키} 가 한글 것과 같아야 한다`).toBe(getAttr(한글것, 키));
+    }
+    // 이름공간이 빠지면 한글이 안쪽 hp: 를 못 읽는다
+    const 이름공간 = (e: typeof 우리것) =>
+      e.attrs.filter((a) => a.name.startsWith('xmlns')).map((a) => a.name).sort();
+    expect(이름공간(우리것)).toEqual(이름공간(한글것));
+  });
+});
+
+describe('겹쳐 달기', () => {
+  it('**주가 걸린 런에 링크를 걸면 왜 안 되는지 말한다**', () => {
+    // 전에는 「못 찾았다」로 뭉뚱그렸다. 글은 멀쩡히 있는데 그렇게 말하면
+    // 부르는 쪽이 어구를 고치며 헤맨다 — 고칠 데는 어구가 아니라 차례다.
+    const d = 열기();
+    const { id, 글 } = 글있는문단(d);
+    const 어구 = 글.slice(0, 2);
+    expect(d.메모달기(id, 어구, '메모').ok).toBe(true);
+
+    const r = d.링크걸기(id, 어구, 'https://x.kr');
+    expect(r.ok, '이미 조각난 런이라 못 건다').toBe(false);
+    expect(r.ok ? '' : r.이유, '「못 찾았다」가 아니라야 한다').not.toContain('못 찾았다');
+    expect(r.ok ? '' : r.어떻게).toContain('먼저');
+  });
+
+  it('차례를 바꾸면 **둘 다 걸린다**', () => {
+    const d = 열기();
+    const { id, 글 } = 글있는문단(d);
+    const 어구 = 글.slice(0, 2);
+    expect(d.링크걸기(id, 어구, 'https://x.kr').ok, '링크를 먼저').toBe(true);
+    expect(d.메모달기(id, 어구, '메모').ok, '메모를 나중에').toBe(true);
+    expect(d.링크들).toContain('https://x.kr');
+    expect(d.메모들.map((m) => m.글)).toContain('메모');
   });
 });
 

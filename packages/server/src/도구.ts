@@ -271,7 +271,7 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
       'delete_paragraph', 'delete_table', 'set_page',
       'set_link', 'set_bookmark',
       'insert_note', 'insert_memo', 'insert_equation',
-      'set_columns', 'set_outline']),
+      'set_columns', 'set_outline', 'set_master_page']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
   text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
   find: 글자('replace 로 찾을 글'),
@@ -721,6 +721,7 @@ export const 도구들: 도구[] = [
         author: 글자('단 사람'),
       })),
       equations: 목록('문서일 때 — 수식 스크립트', 글자('한글 수식 스크립트')),
+      master_pages: 목록('문서일 때 — 바탕쪽 글 (모든 쪽 뒤에 깔린다)', 글자('바탕쪽 글')),
       columns: 정수('문서일 때 — 첫 구역이 몇 단인가. 1 이면 안 나눈 것'),
       // **써 놓고 확인할 길이 없으면 안 쓴 것과 같다.** set_table 로 넣고 저장한 뒤
       // 다시 열어도 돌아오는 것이 없어, 부르는 쪽이 「됐다」 는 말만 믿어야 했다.
@@ -770,6 +771,7 @@ export const 도구들: 도구[] = [
           memos: 메모들.map((m) => ({ text: m.글, author: m.지은이 })),
           equations: 수식들,
           columns: 것.it.d.구역들[0]?.단수 ?? 1,
+          master_pages: 것.it.d.바탕쪽들,
         });
       }
 
@@ -1244,7 +1246,7 @@ interface 고침 {
   | 'delete_paragraph' | 'delete_table' | 'set_page'
   | 'set_link' | 'set_bookmark'
   | 'insert_note' | 'insert_memo' | 'insert_equation'
-  | 'set_columns' | 'set_outline'
+  | 'set_columns' | 'set_outline' | 'set_master_page'
   | 'insert_col' | 'delete_col' | 'merge_cells' | 'split_cell'
   | 'set_table' | 'split_table' | 'join_tables' | 'insert_image';
   id?: string;
@@ -1696,6 +1698,15 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       return 됨(1);
     }
 
+    // 바탕쪽. **`hp:secPr` 안이 아니라 딴 부품**이다 — 규격만 보고 짰다가
+    // 한글이 파일을 아예 못 여는 것을 보고서야 알았다 (자료/실측.md 32항).
+    case 'set_master_page': {
+      if (!e.text) return 안됨('set_master_page 에 text 가 없다', '바탕쪽에 놓을 글을 줘라.');
+      const r = d.바탕쪽주기(e.text);
+      if (!r.ok) return r;
+      return 됨(r.value.구역수);
+    }
+
     case 'delete_paragraph': {
       if (!e.id) return 안됨('delete_paragraph 에 id 가 없다', 'get_outline 이 준 문단 ID(p_…)를 줘라.');
       const r = d.문단지우기(e.id, e.force !== true);
@@ -1788,6 +1799,8 @@ const 구조를바꾸나 = new Set([
   // 주·메모·수식은 런 안에 요소를 하나 더 낸다. 바탕쪽은 **구역 안에 문단을**
   // 하나 더 내니 문단 ID 가 통째로 밀린다.
   'insert_note', 'insert_memo', 'insert_equation', 'set_columns',
+  // 바탕쪽은 **부품을 하나 더 낸다.** 문단 ID 는 안 밀리지만 부품 차례가 달라진다.
+  'set_master_page',
 ]);
 
 export const 쪽넘김밖이름 = { 나눔: 'split', 셀단위: 'cell', 안나눔: 'none' } as const;

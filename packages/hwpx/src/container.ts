@@ -270,6 +270,67 @@ export class HwpxContainer {
     return 이름;
   }
 
+  /** 들어 있는 바탕쪽 부품 이름들 */
+  바탕쪽이름들(): string[] {
+    return this.names().filter((n) => /^Contents\/masterpage\d+\.xml$/.test(n));
+  }
+
+  /**
+   * **바탕쪽 부품을 하나 낸다.**
+   *
+   * 바탕쪽은 `hp:secPr` 안에 들어가는 것이 아니라 **딴 부품**이다.
+   * 규격 문서(HWPML)만 보고 `hp:secPr` 안에 넣었더니 한글이 파일을 아예 못 열었다 —
+   * 자리를 다섯 가지로 바꿔 봐도 같았다. 한글에 직접 만들게 해 보고서야 보였다
+   * (`자료/실측.md` 32항).
+   *
+   *     Contents/masterpage0.xml   <masterPage id="masterpage0" type="BOTH" …>
+   *     Contents/section0.xml      <hp:secPr masterPageCnt="1"> … <hp:masterPage idRef="masterpage0"/>
+   *     Contents/content.hpf       <opf:item id="masterpage0" href="Contents/masterpage0.xml" …/>
+   *
+   * 구역과 달리 **spine 에는 안 넣는다.** 바탕쪽은 읽는 차례가 있는 것이 아니라
+   * 구역이 `idRef` 로 가리키는 것이다 (한글이 저장한 문서가 그렇다).
+   *
+   * **구역마다 하나씩 낸다.** 두 구역이 같은 부품을 가리키게 했더니 **한글이
+   * 죽었다** (RPC 가 끊긴다 — 못 여는 것보다 나쁘다). 한글이 저장한 두 구역
+   * 문서를 열어 보니 부품이 둘이었다:
+   *
+   *     header.xml · masterpage0.xml · section0.xml · masterpage1.xml · section1.xml
+   *
+   * 차례도 저렇다 — 바탕쪽은 **제 구역 바로 앞**에 놓인다. 그래서 어느 구역
+   * 앞에 둘지 받는다.
+   */
+  바탕쪽더하기(내용: string, 앞에둘구역: string): { 이름: string; id: string } {
+    const 번호 = this.바탕쪽이름들()
+      .reduce((큰, n) => Math.max(큰, Number(/masterpage(\d+)/.exec(n)?.[1] ?? -1)), -1) + 1;
+    const id = `masterpage${번호}`;
+    const 이름 = `Contents/${id}.xml`;
+    this.writeText(이름, 내용);
+
+    // **제 구역 바로 앞**으로 옮긴다. 새 부품은 맨 끝에 붙는데, 한글이 저장한
+    // 문서는 바탕쪽과 구역이 짝지어 놓여 있다. 구역에서 겪은 것과 같은 자리다.
+    const 새자리 = this.zip.entries.findIndex((e) => e.name === 이름);
+    if (새자리 !== -1) {
+      const [옮길것] = this.zip.entries.splice(새자리, 1);
+      const 구역자리 = 이름들끝(this.zip.entries, 앞에둘구역);
+      this.zip.entries.splice(구역자리 === -1 ? this.zip.entries.length : 구역자리, 0, 옮길것!);
+    }
+
+    if (this.zip.byName.has(부품.manifest)) {
+      let hpf = this.readText(부품.manifest);
+      if (!hpf.includes('</opf:manifest>')) {
+        throw new HwpxError(
+          'manifest 에 </opf:manifest> 가 없다',
+          '깨진 문서다. 바탕쪽을 더할 수 없다.',
+        );
+      }
+      const 항목 = `<opf:item id="${id}" href="${이름}" media-type="application/xml"/>`;
+      hpf = hpf.replace('</opf:manifest>', `${항목}</opf:manifest>`);
+      // **spine 에는 안 넣는다.** 넣으면 한글이 바탕쪽을 본문 차례에 끼워 읽는다.
+      this.writeText(부품.manifest, hpf);
+    }
+    return { 이름, id };
+  }
+
   manifest검사(): string[] {
     if (!this.zip.byName.has(부품.manifest)) return [];
     const 문제: string[] = [];

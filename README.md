@@ -164,6 +164,7 @@ args = ["-y", "hwpx-mcp"]
   set_page          쪽 테두리·배경
   set_columns       단을 나눈다 (count: 몇 단, gap: 사이 간격)
   set_outline       문단에 개요 수준을 준다 (level 1~10, 0 이면 끈다)
+  set_master_page   바탕쪽에 글을 놓는다 — 모든 쪽 뒤에 깔린다
 ```
 
 `delete_row` · `delete_col` 은 지우는 것이라 **막는 것이 셋** 있다 — 마지막 줄·칸,

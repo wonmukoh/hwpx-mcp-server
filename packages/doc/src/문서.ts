@@ -19,7 +19,8 @@
 
 import { HwpxContainer, 부품 } from '@hwpx/container';
 import {
-  parseXml, serializeXml, findAll, getAttr, textOf,
+  parseXml, serializeXml, serializeNode, findAll, getAttr, textOf,
+  createElement, appendChild,
   type ElementNode, type XmlDocument, childrenNamed, removeNode, setText, 못쓰는제어문자,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
@@ -546,25 +547,109 @@ export class 문서 {
     }));
   }
 
-  // **바탕쪽은 안 만든다 — 만들다 걷어냈다.**
-  //
-  // 규격(KS X 6101 5.2.6)대로 `hp:secPr` 안에 `hp:masterPage` 를 넣고
-  // `masterPageCnt="1"` 을 세웠더니 **한글이 그 파일을 아예 못 연다.**
-  // 자리를 다섯 가지로 바꿔 가며 한글에 먹여 봤다 (자료/실측.md 32항):
-  //
-  //     masterPageCnt="1" + secPr 안       열지 못한다
-  //     masterPageCnt="1" + subList 없이   열지 못한다
-  //     masterPageCnt="1" 만, 요소는 없이   **열지 못한다**
-  //     masterPageCnt="0" + secPr 안       열린다. 대신 한글이 바탕쪽을 버린다
-  //     masterPageCnt="0" + hs:sec 아래    열린다. 역시 버린다
-  //
-  // 셋째 줄이 말해 준다 — 한글은 `masterPageCnt` 를 믿고 **그 수만큼 딴 데서
-  // 찾는다.** HWPX 는 바탕쪽을 따로 둔 부품에 담는 것으로 보이는데, 표본 45편에
-  // 바탕쪽이 하나도 없어 그 부품이 어떻게 생겼는지 볼 데가 없다. 한글로
-  // 만들어 보려 해도 `MasterPage` 액션이 대화상자에서 멈춘다.
-  //
-  // 두 가지를 모르는 채로 짜면 **문서가 안 열린다.** 고칠 수 있는 탈 가운데
-  // 가장 나쁜 것이다. 바탕쪽을 쓴 문서가 하나라도 생기면 그때 다시 본다.
+  /**
+   * **바탕쪽에 글을 놓는다.** 모든 쪽 뒤에 깔린다 (워터마크·양식 테두리).
+   *
+   * ## 바탕쪽은 `hp:secPr` 안에 있는 것이 아니다
+   *
+   * 규격 문서(HWPML 5.2.6)는 `MASTERPAGE` 의 부모가 `SECDEF` 라고 적어 뒀다.
+   * 그대로 `hp:secPr` 안에 넣었더니 **한글이 파일을 아예 못 열었다.** 자리를
+   * 다섯 가지로 바꿔 봐도 같았고, `masterPageCnt="1"` 만 세우고 요소를 아예 안
+   * 넣어도 못 열었다 — 한글은 그 수만큼 **딴 데서** 찾고 있었던 것이다.
+   *
+   * 한글에 직접 만들게 해 보고서야 보였다 (`자료/실측.md` 32항):
+   *
+   *     Contents/masterpage0.xml   ← 부품이 하나 더 생긴다
+   *       <masterPage id="masterpage0" type="BOTH" pageNumber="0"
+   *                   pageDuplicate="0" pageFront="0">
+   *         <hp:subList textWidth="…" textHeight="…"> <hp:p>…</hp:p> </hp:subList>
+   *
+   *     Contents/section0.xml
+   *       <hp:secPr masterPageCnt="1"> … <hp:masterPage idRef="masterpage0"/> </hp:secPr>
+   *
+   *     Contents/content.hpf
+   *       <opf:item id="masterpage0" href="Contents/masterpage0.xml" …/>   (spine 엔 안 넣는다)
+   *
+   * 셋을 다 해야 한다. 부품만 내고 안 가리키면 한글이 무시하고, 가리키기만 하고
+   * 부품이 없으면 **문서를 못 연다.**
+   *
+   * ## 글 자리 크기는 재서 넣는다
+   *
+   * `hp:subList` 의 `textWidth`·`textHeight` 는 본문이 놓이는 자리다.
+   * 실측한 값과 맞춰 봤다:
+   *
+   *     textWidth  = 용지 너비 − 왼쪽 − 오른쪽                    42520
+   *     textHeight = 용지 높이 − 위 − 아래 − 머리말 − 꼬리말       65762
+   *
+   * ## 이름공간은 구역에서 뜬다
+   *
+   * `<masterPage>` 는 **접두사가 없는** 뿌리인데 안쪽은 `hp:` 를 쓴다. 그래서
+   * 이름공간 선언이 열넷 다 있어야 한다. 손으로 적지 않고 **구역 뿌리에서 뜬다** —
+   * 한글이 저장한 그 목록 그대로다.
+   */
+  바탕쪽주기(글: string, 구역이름?: string): 결과<{ id: string; 구역수: number }> {
+    const 것들 = 구역이름 === undefined
+      ? this.구역들
+      : this.구역들.filter((s) => s.이름 === 구역이름);
+    if (것들.length === 0) {
+      return this.남기기('바탕쪽주기', 구역이름 ?? '', 안됨(
+        구역이름 === undefined ? '구역이 하나도 없다' : `${구역이름} 구역이 없다`,
+        `있는 구역: ${this.구역이름들.join(', ')}`,
+      ));
+    }
+
+    // **구역마다 부품을 따로 낸다.** 둘이 같은 것을 가리키게 했더니 **한글이
+    // 죽었다** — 못 여는 것보다 나쁘다. 한글도 구역마다 하나씩 낸다.
+    let 첫id: string | undefined;
+    let 됐수 = 0;
+    let 마지막: 결과<{ idRef: string }> | undefined;
+    for (const s of 것들) {
+      const 문단 = s.바탕쪽문단(글);
+      if (!문단.ok) return this.남기기('바탕쪽주기', s.이름, 문단);
+
+      const 크기 = s.용지크기;
+      const 여백 = s.쪽여백;
+      if (크기 === undefined || 여백 === undefined) {
+        return this.남기기('바탕쪽주기', s.이름, 안됨(
+          `${s.이름} 의 용지 크기나 여백을 못 읽었다`,
+          '한글이 만든 문서라면 늘 있다. 깨진 문서다.',
+        ));
+      }
+      // 구역마다 용지·여백이 다를 수 있다 — **그 구역 것으로** 잰다
+      const 글너비 = 크기.너비 - (여백['left'] ?? 0) - (여백['right'] ?? 0);
+      const 글높이 = 크기.높이 - (여백['top'] ?? 0) - (여백['bottom'] ?? 0)
+        - (여백['header'] ?? 0) - (여백['footer'] ?? 0);
+
+      // **부품을 먼저 낸다.** 가리키기부터 하면, 부품 내기가 실패했을 때
+      // 「가리키는데 없는」 문서가 남는다 — 그 문서는 한글이 못 연다.
+      const 미리id = `masterpage${this.통.바탕쪽이름들().length}`;
+      const xml = 바탕쪽XML(s.root, 미리id, 글너비, 글높이, 문단.value);
+      const 낸것 = this.통.바탕쪽더하기(xml, s.이름);
+      if (낸것.id !== 미리id) {
+        // 번호를 잘못 짚었으면 안쪽 id 를 고쳐 다시 쓴다 (이름이 어긋나면 안 열린다)
+        this.통.writeText(낸것.이름, xml.replace(`id="${미리id}"`, `id="${낸것.id}"`));
+      }
+      첫id ??= 낸것.id;
+
+      const r = s.바탕쪽걸기(낸것.id);
+      마지막 = r;
+      if (r.ok) 됐수++;
+    }
+    if (됐수 === 0 || 첫id === undefined) {
+      return this.남기기('바탕쪽주기', 구역이름 ?? '', 마지막 !== undefined && !마지막.ok
+        ? 마지막
+        : 안됨('바탕쪽을 못 걸었다', '구역을 다시 보라.'));
+    }
+    return this.남기기('바탕쪽주기', 구역이름 ?? '', 됨({ id: 첫id, 구역수: 됐수 }));
+  }
+
+  /** 문서에 든 바탕쪽 글들 */
+  get 바탕쪽들(): string[] {
+    return this.통.바탕쪽이름들().map((n) => {
+      const doc = parseXml(this.통.readText(n));
+      return findAll(doc.root, 'hp:t').map((t) => textOf(t)).join('').trim();
+    });
+  }
 
   /**
    * **안 겹치는 식별자를 개수만큼 낸다.**
@@ -895,4 +980,33 @@ function 안에있나(root: ElementNode, node: ElementNode): boolean {
     p = p.parent;
   }
   return false;
+}
+
+/**
+ * 바탕쪽 부품 한 장을 짓는다.
+ *
+ * `<masterPage>` 는 **접두사가 없는** 뿌리인데 안쪽은 `hp:` 를 쓴다. 그래서
+ * 이름공간 선언이 다 있어야 한다 — 손으로 적지 않고 **구역 뿌리에서 뜬다.**
+ * 한글이 저장한 그 목록 그대로다 (열넷이다).
+ */
+function 바탕쪽XML(
+  구역뿌리: ElementNode, id: string, 글너비: number, 글높이: number, 문단: ElementNode,
+): string {
+  const 이름공간 = 구역뿌리.attrs
+    .filter((a) => a.name === 'xmlns' || a.name.startsWith('xmlns:'))
+    .map((a) => ` ${a.name}="${a.raw}"`)
+    .join('');
+  const 속 = createElement('hp:subList', {
+    id: '', textDirection: 'HORIZONTAL', lineWrap: 'BREAK', vertAlign: 'TOP',
+    linkListIDRef: '0', linkListNextIDRef: '0',
+    textWidth: String(Math.max(0, Math.round(글너비))),
+    textHeight: String(Math.max(0, Math.round(글높이))),
+    hasTextRef: '0', hasNumRef: '0',
+  });
+  appendChild(속, 문단);
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>'
+    + `<masterPage${이름공간} id="${id}" type="BOTH" pageNumber="0"`
+    + ' pageDuplicate="0" pageFront="0">'
+    + serializeNode(속, '')
+    + '</masterPage>';
 }

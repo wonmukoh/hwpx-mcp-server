@@ -1067,6 +1067,78 @@ export class 구역 {
   }
 
   /**
+   * **이 구역이 가리키는 바탕쪽 id 들.** 없으면 빈 배열.
+   *
+   * 바탕쪽 자체는 `hp:secPr` 안이 아니라 **딴 부품**에 있다. 여기 있는 것은
+   * 가리키는 표 하나뿐이다 (`자료/실측.md` 32항).
+   */
+  get 바탕쪽참조들(): string[] {
+    const sp = this.쪽설정;
+    if (sp === undefined) return [];
+    return childrenNamed(sp, 'hp:masterPage')
+      .map((e) => getAttr(e, 'idRef'))
+      .filter((v): v is string => v !== undefined);
+  }
+
+  /**
+   * **바탕쪽을 가리키게 한다.**
+   *
+   *     <hp:secPr … masterPageCnt="1">
+   *        … <hp:pageBorderFill …/>
+   *        <hp:masterPage idRef="masterpage0"/>     ← 맨 뒤다
+   *     </hp:secPr>
+   *
+   * **`masterPageCnt` 를 안 세우면 한글이 안 읽는다.** 반대로 세워 놓고 가리키는
+   * 부품이 없으면 **파일을 아예 못 연다** — 한글은 그 수만큼 딴 데서 찾는다.
+   * 그래서 부품을 먼저 내고 그 id 를 받아서 부른다.
+   */
+  바탕쪽걸기(idRef: string): 결과<{ idRef: string }> {
+    const sp = this.쪽설정;
+    if (sp === undefined) {
+      return 안됨('이 구역에 쪽 설정(hp:secPr)이 없다', '한글이 만든 문서라면 늘 있다.');
+    }
+    if (this.바탕쪽참조들.includes(idRef)) {
+      return 안됨(`이 구역이 이미 ${idRef} 을 가리킨다`, '한 번만 걸면 된다.');
+    }
+    appendChild(sp, createElement('hp:masterPage', { idRef }));
+    setAttr(sp, 'masterPageCnt', String(childrenNamed(sp, 'hp:masterPage').length));
+    return 됨({ idRef });
+  }
+
+  /**
+   * 바탕쪽 부품에 넣을 **글 자리**를 만든다.
+   *
+   * 문단은 **쓰던 것을 뜬다** — 맨땅에서 짜면 자식이 빠지고, 한글은 빠진 것을
+   * 알려 주지 않고 그 뒤를 통째로 무시한다.
+   *
+   * 다만 구역의 첫 문단은 **쪽 설정을 지고 있다.** 그대로 뜨면 바탕쪽 안에
+   * `hp:secPr` 이 딸려 들어간다 — 쪽 설정이 둘인 문서가 된다. 글만 남긴다.
+   */
+  바탕쪽문단(글: string): 결과<ElementNode> {
+    const 바탕 = this.문단들.find((p) => !p.비었나) ?? this.문단들[0];
+    if (바탕 === undefined) {
+      return 안됨('이 구역에 문단이 없다', '빈 구역이라 바탕쪽에 넣을 문단을 못 뜬다.');
+    }
+    const 새것 = 복제하기(바탕.el, 바탕.source);
+    const p = new 문단(새것, 바탕.source);
+    p.줄배치지우기();
+    // 글 말고는 다 걷어낸다 — 쪽 설정·표·그림이 딸려 가면 안 된다
+    for (const r of childrenNamed(새것, 'hp:run')) {
+      const 아이들 = r.children.filter((c) => c.kind === 'element') as ElementNode[];
+      if (아이들.some((c) => c.name !== 'hp:t')) { removeNode(r); continue; }
+    }
+    if (childrenNamed(새것, 'hp:run').length === 0) {
+      const 런 = createElement('hp:run', { charPrIDRef: '0' });
+      appendChild(런, createElement('hp:t', {}));
+      appendChild(새것, 런);
+    }
+    const r2 = new 문단(새것, 바탕.source).글바꾸기(글);
+    if (!r2.ok) return r2;
+    void p;
+    return 됨(새것);
+  }
+
+  /**
    * 문단을 새로 만든다. **쓰던 문단을 복제해서** 만든다.
    *
    * 맨땅에서 짜면 빠진 자식이 생기고, 한글은 그걸 알려 주지 않고 무시한다.

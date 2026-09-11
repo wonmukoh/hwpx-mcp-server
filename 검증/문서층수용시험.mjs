@@ -64,7 +64,8 @@ for (const 이름 of 목록) {
 
     const 한일 = { 글: false, 글자서식: false, 문단서식: false, 강조: false, 표: false,
       꾸밈: false, 링크: false, 책갈피: false,
-      각주: false, 미주: false, 메모: false, 수식: false, 다단: false, 개요: false };
+      각주: false, 미주: false, 메모: false, 수식: false, 다단: false, 개요: false,
+      바탕쪽: false };
 
     const r1 = d.글바꾸기(pid, 표시);
     한일.글 = r1.ok;
@@ -99,8 +100,9 @@ for (const 이름 of 목록) {
     // **남은 일곱이 한글을 넘는가.**
     //
     // 여섯은 다 한글이 저장한 것을 오려 왔으니 「같은 것」인지만 보면 된다.
-    // (일곱째 바탕쪽은 **여기가 걷어내라고 말해 줬다** — 규격만 보고 짠 것을
-    //  먹였더니 기준 파일 27편이 다 안 열렸다. 자료/실측.md 32항.)
+    // (바탕쪽은 **여기가 물리라고 말해 줬다** — 규격만 보고 `hp:secPr` 안에
+    //  넣었더니 기준 파일 27편이 다 안 열렸다. 한글에 직접 만들게 해 보니
+    //  딴 부품이었다. 자료/실측.md 32항.)
     //
     // 강조하기 뒤에 둔다. 앞에 두면 런이 조각나 강조가 거절되고,
     // 그러면 원래 재던 것을 조용히 덜 재게 된다.
@@ -110,6 +112,7 @@ for (const 이름 of 목록) {
     한일.수식 = d.수식넣기(pid, '{a} over {b}').ok;
     한일.다단 = d.단주기(2).ok;
     한일.개요 = d.개요수준주기(pid, 1).ok;
+    한일.바탕쪽 = d.바탕쪽주기('수용시험 바탕쪽').ok;
 
     // 표가 있으면 만져 본다
     let 표잰것 = null;
@@ -157,9 +160,27 @@ try {
   }
 } finally { try { $hwp.Quit() | Out-Null } catch {} }
 `;
-const 결과 = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
-  encoding: 'buffer', timeout: 900_000, maxBuffer: 1 << 24,
-}).toString('utf8');
+// **powershell 이 0 이 아닌 값으로 끝나도 판정은 이미 나와 있다.**
+//
+// 마지막 명령 하나가 실패하면(예: Quit) 종료 코드가 1 이 되는데, `execFileSync` 는
+// 그때 터진다. 그러면 **한글이 이미 뱉어 놓은 판정 스물여섯 개를 통째로 버린다** —
+// 무엇이 열리고 무엇이 안 열렸는지 한 줄도 안 보여 주고 갈래가 죽는다.
+// 실제로 겪었다: 한글은 다 열었는데 갈래만 빨갰다.
+//
+// 그러니 **뱉은 것을 먼저 챙기고** 종료 코드는 곁들여 알린다. 판정이 안 온 파일은
+// 아래에서 「한글이 아무 말도 안 했다」로 잡히니, 조용히 넘어가지 않는다.
+let 결과 = '';
+try {
+  결과 = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
+    encoding: 'buffer', timeout: 900_000, maxBuffer: 1 << 24,
+  }).toString('utf8');
+} catch (e) {
+  결과 = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf8') : String(e.stdout ?? '');
+  console.log(`※ powershell 이 ${e.status} 로 끝났다 — 뱉어 놓은 판정은 그대로 읽는다`);
+  if (결과.trim().length === 0) {
+    console.log('  (뱉은 것도 없다. 한글이 아예 안 떴을 수 있다)');
+  }
+}
 
 const 한글판정 = new Map();
 for (const 줄 of 결과.split(/\r?\n/)) {
@@ -172,7 +193,7 @@ let 통과 = 0;
 const 실패 = [...준비실패];
 const 확인한것 = { 글: 0, 굵게: 0, 취소선: 0, 첨자: 0, 강조점: 0,
   링크: 0, 책갈피: 0, 여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0,
-  각주: 0, 미주: 0, 메모: 0, 수식: 0, 다단: 0, 개요: 0 };
+  각주: 0, 미주: 0, 메모: 0, 수식: 0, 다단: 0, 개요: 0, 바탕쪽: 0 };
 
 for (const 이름 of 목록) {
   const 낸것 = 한것.get(이름);
@@ -350,6 +371,23 @@ for (const 이름 of 목록) {
       if (!개요있나) 문제.push('개요 문단모양이 사라졌다');
       else if (!쓰는문단있나) 문제.push('개요 문단모양은 남았는데 그것을 쓰는 문단이 없다');
       else 확인한것.개요++;
+    }
+
+    if (낸것.한일.바탕쪽) {
+      // **부품으로 남아 있나.** secPr 안에서 찾으면 늘 없다 — 거기 있는 것은
+      // 가리키는 표 하나뿐이다.
+      const 부품들 = c.바탕쪽이름들();
+      const sp = findFirst(구역.root, 'hp:secPr');
+      const 가리킴 = sp === undefined ? [] : childrenNamed(sp, 'hp:masterPage');
+      if (!부품들.length) 문제.push('바탕쪽 부품이 한글을 넘으며 사라졌다');
+      else if (!가리킴.length) 문제.push('바탕쪽 부품은 남았는데 구역이 안 가리킨다');
+      else if (getAttr(sp, 'masterPageCnt') !== '1') 문제.push('masterPageCnt 가 안 맞는다');
+      else {
+        const 안글 = parseXml(c.readText(부품들[0])).root;
+        if (!findAll(안글, 'hp:t').map((t) => textOf(t)).join('').includes('수용시험 바탕쪽')) {
+          문제.push('바탕쪽은 남았는데 글이 사라졌다');
+        } else 확인한것.바탕쪽++;
+      }
     }
 
     // 표

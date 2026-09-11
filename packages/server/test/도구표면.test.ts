@@ -2167,7 +2167,7 @@ describe('표 고침을 **도구로** 걸어 본다', () => {
  * 파랑인 채로 도구가 안 먹는다 — 실제로 여섯 op 이 그렇게 안 걸리고 있었다.
  * `검증/고침훑기.mjs` 가 그 어긋남을 세고, 여기가 그것을 메운다.
  */
-describe('주·메모·수식·다단·개요 (도구로)', () => {
+describe('주·메모·수식·다단·개요·바탕쪽 (도구로)', () => {
   async function 글든문서() {
     const 방 = new 문서방();
     const doc_id = (await 도구부르기('create_document', {}, 방))
@@ -2273,6 +2273,24 @@ describe('주·메모·수식·다단·개요 (도구로)', () => {
     const 모양 = d.머리.낱개('hh:paraProperties', 첫것.문단모양)!;
     expect(속성(첫자식(모양, 'hh:heading')!, 'type')).toBe('OUTLINE');
     expect(d.검사()).toEqual([]);
+  });
+
+  it('바탕쪽에 글을 놓는다', async () => {
+    const { 방, doc_id } = await 글든문서();
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_master_page', text: '내부 검토용' }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+
+    const d = await 저장해서열기(방, doc_id, 'master');
+    // **부품이 하나 더 생긴다.** secPr 안에 넣으면 한글이 파일을 못 연다.
+    expect(d.컨테이너.바탕쪽이름들().length).toBe(1);
+    expect(d.바탕쪽들).toContain('내부 검토용');
+    expect(d.검사()).toEqual([]);
+
+    // 되읽을 수 있어야 한다 — 넣어 놓고 확인할 길이 없으면 안 쓴 것과 같다
+    const 본것 = await 도구부르기('get_content', { doc_id }, 방);
+    expect(본것.structuredContent!['master_pages']).toContain('내부 검토용');
   });
 
   it('**짜임을 바꾸는 op 은 ids_stale 을 켠다**', async () => {

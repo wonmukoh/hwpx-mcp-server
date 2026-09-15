@@ -2357,3 +2357,102 @@ describe('넣은 것을 도구로 되읽는다', () => {
     expect(것['text'] as string).not.toContain('출처 확인');
   });
 });
+
+/**
+ * **뼈대가 글상자 안을 안 보고 있었다.**
+ *
+ * 스킬을 만들고 모르는 에이전트에게 진짜 학교 양식을 채우게 해 봤더니 나왔다.
+ * 그 양식은 절 제목 넷(「추진 개요」·「세부 추진 내용」…)이 전부 글상자 안에
+ * 있어서 `get_outline` 에 **한 줄도 안 나왔다.** 뼈대만 믿고 채웠으면 큰 제목에
+ * 옛 사업명이 그대로 남을 뻔했다 — `find` 로 훑어서 겨우 찾았다.
+ *
+ * 실측: 글상자는 표본 33편에 90개, 8편에 들어 있다. 학교·정부 양식이 절 제목을
+ * 거기 넣는다.
+ */
+describe('뼈대는 글상자 안 글도 준다', () => {
+  async function 글상자든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id,
+      blocks: [
+        { kind: 'shape', text: '추진 개요', width: 300, height: 40 },
+        { kind: 'body', text: '본문 한 줄' },
+      ],
+    }, 방);
+    return { 방, doc_id };
+  }
+
+  it('**글상자 안 절 제목이 뼈대에 나온다**', async () => {
+    const { 방, doc_id } = await 글상자든문서();
+    const r = await 도구부르기('get_outline', { doc_id }, 방);
+    const 것들 = r.structuredContent!['items'] as
+      { id: string; kind: string; preview?: string; in_shape?: boolean }[];
+
+    const 상자글 = 것들.find((x) => (x.preview ?? '').includes('추진 개요'));
+    expect(상자글, '글상자 안 글이 뼈대에 있어야 한다').toBeDefined();
+    expect(상자글!.in_shape, '어디서 온 글인지 밝혀야 한다').toBe(true);
+    expect(상자글!.kind).toBe('paragraph');
+  });
+
+  it('**`in_tables` 를 안 켜도 나온다** — 글상자 글은 쪽에 보이는 본문이다', async () => {
+    // 셀은 파고들어야 나오는 속살이지만 글상자 글은 그냥 보인다.
+    // 플래그 뒤에 숨기면 「안 켰으니 없는 줄」 알고 지나친다.
+    const { 방, doc_id } = await 글상자든문서();
+    const r = await 도구부르기('get_outline', { doc_id, in_tables: false }, 방);
+    const 것들 = r.structuredContent!['items'] as { preview?: string }[];
+    expect(것들.some((x) => (x.preview ?? '').includes('추진 개요'))).toBe(true);
+  });
+
+  it('**그 ID 로 바로 고칠 수 있다**', async () => {
+    const { 방, doc_id } = await 글상자든문서();
+    const 것들 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; preview?: string }[];
+    const 상자글 = 것들.find((x) => (x.preview ?? '').includes('추진 개요'))!;
+
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: 상자글.id, text: '연수 개요' }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+
+    const 다시 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { preview?: string }[];
+    expect(다시.some((x) => (x.preview ?? '').includes('연수 개요'))).toBe(true);
+  });
+});
+
+/**
+ * **「이미 같다」가 묶음을 멈춰 세우고 있었다.**
+ *
+ * 양식을 채울 때는 이미 맞게 적힌 칸이 섞이기 마련이다(머리글·고정 문구).
+ * 그것 하나에 `edit` 묶음이 거기서 죽어 **뒤따르는 고침 50개가 통째로 안
+ * 들어간** 일이 있었다. 「이미 그랬다」는 `changed: 0` 으로 말하면 된다 —
+ * `도구.ts` 가 스스로 그렇게 못 박아 두고 있었는데 코드가 어기고 있었다.
+ */
+describe('이미 같은 값은 0 이지 실패가 아니다', () => {
+  it('**이미 맞게 적힌 칸이 섞여도 뒤엣것이 다 들어간다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'table', headers: ['구분', '내용'], rows: [['일시', ''], ['장소', '']] }],
+    }, 방);
+    const f = await 도구부르기('find', { doc_id, text: '일시' }, 방);
+    const 칸 = (f.structuredContent!['matches'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'cell')!;
+
+    const r = await 도구부르기('edit', {
+      doc_id,
+      edits: [
+        { op: 'set_text', id: 칸.id, text: '일시' },          // 이미 같다
+        { op: 'set_text', id: 칸.id.replace('_0', '_1'), text: '본교 강당' },
+      ],
+    }, 방);
+    expect(r.isError, '이미 같은 것 하나에 묶음이 죽으면 안 된다').toBeUndefined();
+
+    const 결과 = r.structuredContent!['results'] as { changed: number }[];
+    expect(결과[0]!.changed, '안 바뀐 것은 0 으로 말한다').toBe(0);
+    expect(결과[1]!.changed, '뒤엣것은 들어가야 한다').toBe(1);
+  });
+});

@@ -28,7 +28,7 @@ const 뿌리 = path.dirname(여기);
 const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
 const { HwpxContainer } = await import(B('hwpx'));
-const { parseXml, serializeXml, findAll, findFirst, childrenNamed, firstChildNamed, getAttr, setAttr } =
+const { parseXml, serializeXml, findAll, findFirst, childrenNamed, firstChildNamed, getAttr, setAttr, removeNode } =
   await import(B('owpml'));
 
 // 경로에 한글을 넣지 않는다
@@ -51,6 +51,18 @@ function 만들기(이름, hasMargin) {
   setAttr(cm, 'right', String(여백));
   setAttr(첫셀, 'hasMargin', hasMargin);
 
+  // **낡은 줄 배치를 걷어낸다 — 안 걷으면 이 갈래가 아무것도 안 본다.**
+  //
+  // 이 갈래는 한글이 다시 쓴 `horzsize` 로 「어느 여백을 썼나」를 가린다.
+  // 그런데 원본에 이미 `horzsize=12964` 가 적혀 있고, **한글은 다시 잴 까닭이
+  // 없으면 그 값을 그대로 두고 저장한다.** 그러면 hasMargin 이 0이든 1이든
+  // 같은 수가 나와 늘 「표 여백을 썼다」로 읽힌다 — 초록이든 빨강이든
+  // **재는 것이 없다.**
+  //
+  // 2026-09-15 에 이것 때문에 갈래가 빨개졌고, 건드린 적 없는 옛 커밋에서도
+  // 똑같이 빨갰다. 오래 초록이던 것이 무엇을 보고 초록이었는지 의심해야 했다.
+  for (const arr of findAll(doc.root, 'hp:linesegarray')) removeNode(arr);
+
   c.writeText(구역, serializeXml(doc));
   const 낸것 = path.join(무대, 이름);
   fs.writeFileSync(낸것, c.save());
@@ -70,6 +82,14 @@ function 한글에게(파일) {
     'try { $hwp.RegisterModule("FilePathCheckDLL","FilePathCheckerModule") | Out-Null } catch {}',
     'try {',
     `  if (-not $hwp.Open('${파일}', "", "forceopen:true")) { throw "open fail" }`,
+    // **한글에게 다시 재라고 시킨다.**
+    //
+    // 열고 바로 저장하면 한글은 줄 배치를 **다시 안 잰다.** 원본 값을 그대로
+    // 두거나, 지워 놨으면 없는 채로 저장한다. 그러면 여기서 보는 `horzsize` 는
+    // 한글의 판단이 아니라 우리가 넣어 준 값이다 — **재는 것이 없는 자**다.
+    // 쪽 수를 다시 세게 하면 그 김에 줄 배치도 다시 잰다.
+    '  try { $hwp.HAction.Run("RecalcPageCount") | Out-Null } catch {}',
+    '  try { $hwp.XHwpDocuments.Item(0).XHwpPrint.RunMakePreview() | Out-Null } catch {}',
     `  if (Test-Path '${저장본}') { Remove-Item '${저장본}' -Force }`,
     `  $hwp.SaveAs('${저장본}', "HWPX", "") | Out-Null`,
     '  Write-Output "OK"',

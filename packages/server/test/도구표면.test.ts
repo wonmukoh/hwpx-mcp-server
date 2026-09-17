@@ -2420,6 +2420,113 @@ describe('뼈대는 글상자 안 글도 준다', () => {
       .structuredContent!['items'] as { preview?: string }[];
     expect(다시.some((x) => (x.preview ?? '').includes('연수 개요'))).toBe(true);
   });
+
+  /**
+   * **글상자를 붙든 문단은 뼈대에서 그냥 빈 줄이다.**
+   *
+   * Draftsmith 가 재다가 찾았다(2026-09-17) — 「빈 줄 하나 치우자」고
+   * `delete_paragraph` 를 부르면 **force 없이** 지워지고 절 제목이 같이 날아갔다.
+   * 막이가 표·그림·묶음·수식 넷만 보고 도형을 빠뜨리고 있었다.
+   */
+  async function 도형둘든문서() {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방))
+      .structuredContent!['doc_id'] as string;
+    const 짬 = await 도구부르기('compose', {
+      doc_id,
+      blocks: [
+        { kind: 'body', text: '머리 문단' },
+        { kind: 'shape', text: '추진 배경', width: 300, height: 40 },
+        { kind: 'body', text: '본문 하나' },
+        { kind: 'shape', shape: 'ellipse', width: 60, height: 60 },
+        { kind: 'body', text: '본문 둘' },
+      ],
+    }, 방);
+    const 만든것 = 짬.structuredContent!['created'] as { kind: string; ids: string[] }[];
+    const [상자, 타원] = 만든것.filter((x) => x.kind === 'shape').map((x) => x.ids[0]!);
+    const 뼈대 = async () => (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { id: string; preview?: string; in_shape?: boolean }[];
+    return { 방, doc_id, 상자: 상자!, 타원: 타원!, 뼈대 };
+  }
+
+  it('**`in_shape` 문단은 자기를 붙든 문단 바로 뒤에 온다** — 우연이 아니라 약속이다', async () => {
+    // Draftsmith 지침이 「빈 문단을 지우기 전에 바로 다음 항목이 in_shape 인지
+    // 보라」에 기댄다. 그러니 이 차례는 못 박아 둔다.
+    const { 상자, 뼈대 } = await 도형둘든문서();
+    const 것들 = await 뼈대();
+    const i = 것들.findIndex((x) => x.id === 상자);
+    expect(i, '글상자를 붙든 문단이 뼈대에 있어야 한다').toBeGreaterThanOrEqual(0);
+    expect(것들[i]!.preview, '붙든 문단은 빈 줄로 보인다').toBe('');
+    expect(것들[i + 1]?.in_shape, '바로 뒤가 글상자 글이어야 한다').toBe(true);
+    expect(것들[i + 1]?.preview).toBe('추진 배경');
+  });
+
+  it('**글상자를 붙든 빈 문단은 force 로도 못 지운다**', async () => {
+    const { 방, doc_id, 상자, 뼈대 } = await 도형둘든문서();
+    for (const force of [false, true]) {
+      const r = await 도구부르기('edit', {
+        doc_id, edits: [{ op: 'delete_paragraph', id: 상자, force }],
+      }, 방);
+      expect(r.isError, `force=${force} 인데 글상자를 붙든 문단이 지워졌다`).toBe(true);
+      expect(r.content[0]?.text).toContain('hp:rect');
+    }
+    const 것들 = await 뼈대();
+    expect(것들.some((x) => x.id === 상자), '막혔으면 문단이 남아야 한다').toBe(true);
+    expect(것들.some((x) => x.preview === '추진 배경'), '절 제목이 남아야 한다').toBe(true);
+  });
+
+  it('**글 없는 도형도 막는다** — 뒤에 `in_shape` 가 안 딸려 뼈대로는 알 길이 없다', async () => {
+    const { 방, doc_id, 타원, 뼈대 } = await 도형둘든문서();
+    const 전 = await 뼈대();
+    const i = 전.findIndex((x) => x.id === 타원);
+    expect(i, '타원을 붙든 문단이 뼈대에 있어야 한다').toBeGreaterThanOrEqual(0);
+    expect(전[i + 1]?.in_shape, '글 없는 도형엔 in_shape 가 안 딸린다 — 그래서 막이가 있어야 한다')
+      .toBeUndefined();
+
+    for (const force of [false, true]) {
+      const r = await 도구부르기('edit', {
+        doc_id, edits: [{ op: 'delete_paragraph', id: 타원, force }],
+      }, 방);
+      expect(r.isError, `force=${force} 인데 타원을 붙든 문단이 지워졌다`).toBe(true);
+      expect(r.content[0]?.text).toContain('hp:ellipse');
+    }
+    expect((await 뼈대()).length, '막혔으면 뼈대가 그대로여야 한다').toBe(전.length);
+  });
+
+  it('**도형 없는 빈 문단은 여전히 지워진다** — 막이가 너무 넓으면 지우는 길이 막힌다', async () => {
+    const { 방, doc_id, 뼈대 } = await 도형둘든문서();
+    const 본문 = (await 뼈대()).find((x) => x.preview === '본문 둘')!;
+    const 비움 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_text', id: 본문.id, text: '' }],
+    }, 방);
+    expect(비움.isError, 비움.content[0]?.text).toBeUndefined();
+    const 전 = (await 뼈대()).length;
+
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 본문.id }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect((await 뼈대()).length).toBe(전 - 1);
+  });
+
+  it('**링크가 걸린 문단은 force 로 지워진다** — `hp:ctrl` 은 도형이 아니라 글과 같이 간다', async () => {
+    // 막이를 「런 밑에 글 말고 다른 것이 있으면」으로 넓혔다. 링크·메모·각주의
+    // 자리표(hp:ctrl)까지 막으면 글 든 문단 대부분이 영영 안 지워진다.
+    const { 방, doc_id, 뼈대 } = await 도형둘든문서();
+    const 본문 = (await 뼈대()).find((x) => x.preview === '본문 하나')!;
+    const 링크 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'set_link', id: 본문.id, find: '본문', url: 'https://example.com' }],
+    }, 방);
+    expect(링크.isError, 링크.content[0]?.text).toBeUndefined();
+
+    const 다시 = (await 뼈대()).find((x) => x.preview === '본문 하나')!;
+    const 전 = (await 뼈대()).length;
+    const r = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 다시.id, force: true }],
+    }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect((await 뼈대()).length).toBe(전 - 1);
+  });
 });
 
 /**

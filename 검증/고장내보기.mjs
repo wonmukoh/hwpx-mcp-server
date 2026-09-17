@@ -380,6 +380,28 @@ const 고장들 = [
     'packages/doc',
   ],
   [
+    // Draftsmith 가 재다가 찾은 구멍 (2026-09-17). 이 줄이 없던 동안 이랬다.
+    '런 밑 도형을 안 본다 (글상자를 붙든 빈 문단이 지워져 절 제목이 같이 날아간다)',
+    'packages/doc/src/문서.ts',
+    "        .filter((c): c is ElementNode => c.kind === 'element' && !런의글갈래.has(c.name))",
+    '        .filter((c): c is ElementNode => false)',
+    'packages/server',
+  ],
+  [
+    '도형을 글로 친다 (글상자·타원을 붙든 문단이 force 로 지워진다)',
+    'packages/doc/src/문서.ts',
+    "const 런의글갈래 = new Set(['hp:t', 'hp:ctrl', 'hp:secPr', 'hp:compose', 'hp:dutmal']);",
+    "const 런의글갈래 = new Set(['hp:t', 'hp:ctrl', 'hp:secPr', 'hp:compose', 'hp:dutmal', 'hp:rect', 'hp:ellipse']);",
+    'packages/server',
+  ],
+  [
+    '링크 자리표까지 막는다 (링크 걸린 문단이 force 로도 영영 안 지워진다)',
+    'packages/doc/src/문서.ts',
+    "const 런의글갈래 = new Set(['hp:t', 'hp:ctrl', 'hp:secPr', 'hp:compose', 'hp:dutmal']);",
+    "const 런의글갈래 = new Set(['hp:t', 'hp:secPr', 'hp:compose', 'hp:dutmal']);",
+    'packages/server',
+  ],
+  [
     '구역·칸의 마지막 문단도 지운다 (문단 없는 칸은 한글이 표를 못 그린다)',
     'packages/doc/src/문서.ts',
     "    if (childrenNamed(부모, 'hp:p').length <= 1) {",

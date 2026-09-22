@@ -2563,3 +2563,69 @@ describe('이미 같은 값은 0 이지 실패가 아니다', () => {
     expect(결과[1]!.changed, '뒤엣것은 들어가야 한다').toBe(1);
   });
 });
+
+/**
+ * **바깥이 기대는 이름.**
+ *
+ * Draftsmith 는 도구 이름과 `edit` 의 op 은 제 쪽 검사(check-tools · check-edit-ops)로
+ * 매번 견준다. 그런데 **응답 필드 이름과 거절 글은 검사가 없다**고 알려 왔다
+ * (2026-09-23). 여기서 이름을 바꾸면 그쪽 검토·여러 건·글상자 시험이 깨지고서야 안다.
+ *
+ * 그래서 여기서 먼저 빨개지게 한다. **이 시험이 빨개지면 이름을 되돌리거나,
+ * Draftsmith 에 먼저 알리고 나서 여기를 고친다.** 조용히 고쳐 초록으로 만들지 않는다.
+ */
+describe('바깥이 기대는 이름 — 바꾸기 전에 Draftsmith 에 알린다', () => {
+  const 모으기 = (s: unknown, 담: Set<string>): Set<string> => {
+    const o = s as { properties?: Record<string, unknown>; items?: unknown } | undefined;
+    if (!o || typeof o !== 'object') return 담;
+    for (const [k, v] of Object.entries(o.properties ?? {})) { 담.add(k); 모으기(v, 담); }
+    if (o.items) 모으기(o.items, 담);
+    return 담;
+  };
+
+  const 기대: Record<string, { 입?: string[]; 출?: string[] }> = {
+    save_document: { 출: ['ids_stale'] },
+    get_outline: { 입: ['in_tables'], 출: ['items', 'preview', 'in_shape', 'truncated'] },
+    get_content: { 출: ['cells', 'row', 'col', 'text', 'covered_by', 'page_break', 'repeat_header'] },
+    find: { 출: ['matches', 'preview', 'in_cell', 'truncated'] },
+    render_html: { 출: ['not_rendered'] },
+    edit: { 입: ['page_break', 'repeat_header'], 출: ['done', 'results', 'changed'] },
+  };
+
+  it.each(Object.entries(기대))('**%s** 의 필드 이름이 그대로다', (이름, 쪽) => {
+    const t = 도구들.find((x) => x.name === 이름);
+    expect(t, `${이름} 도구가 없다`).toBeDefined();
+    const 입 = 모으기(t!.inputSchema, new Set());
+    const 출 = 모으기(t!.outputSchema, new Set());
+    for (const n of 쪽.입 ?? []) expect(입.has(n), `${이름} 입력에 ${n} 가 없다 — Draftsmith 가 쓴다`).toBe(true);
+    for (const n of 쪽.출 ?? []) expect(출.has(n), `${이름} 출력에 ${n} 가 없다 — Draftsmith 가 쓴다`).toBe(true);
+  });
+
+  it('**뼈대 미리보기는 60자에서 자르고 … 를 붙인다** — 검토 기능이 이 길이에 기댄다', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '가'.repeat(80) }] }, 방);
+    const 것들 = (await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { preview?: string }[];
+    const 긴것 = 것들.find((x) => (x.preview ?? '').startsWith('가'));
+    expect(긴것?.preview).toBe('가'.repeat(60) + '…');
+  });
+
+  it('**지우기 거절 글이 요소 이름과 개수를 말한다** — 그쪽 시험이 글자를 본다', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    const 짬 = await 도구부르기('compose', {
+      doc_id, blocks: [{ kind: 'body', text: '앞' }, { kind: 'shape', text: '상자', width: 200, height: 30 }],
+    }, 방);
+    const 상자 = (짬.structuredContent!['created'] as { kind: string; ids: string[] }[])
+      .find((x) => x.kind === 'shape')!.ids[0]!;
+    const 도형거절 = await 도구부르기('edit', { doc_id, edits: [{ op: 'delete_paragraph', id: 상자 }] }, 방);
+    expect(도형거절.content[0]?.text).toMatch(/hp:rect [0-9]+개 가 들어 있다/);
+
+    const 첫 = (await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string }[];
+    const 쪽거절 = await 도구부르기('edit', {
+      doc_id, edits: [{ op: 'delete_paragraph', id: 첫[0]!.id, force: true }],
+    }, 방);
+    expect(쪽거절.content[0]?.text).toContain('쪽 설정(hp:secPr)');
+  });
+});

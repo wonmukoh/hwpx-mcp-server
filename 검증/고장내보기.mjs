@@ -395,6 +395,21 @@ const 고장들 = [
     'packages/server',
   ],
   [
+    // Draftsmith 가 기대는 응답 필드 이름 (2026-09-23). 그쪽엔 검사가 없다.
+    '뼈대의 in_shape 필드 이름을 바꾼다 (Draftsmith 의 글상자 시험이 조용히 깨진다)',
+    'packages/server/src/도구.ts',
+    "        in_shape: 참거짓('글상자(도형) 안에 든 문단일 때 켜진다'),",
+    "        in_box: 참거짓('글상자(도형) 안에 든 문단일 때 켜진다'),",
+    'packages/server',
+  ],
+  [
+    '미리보기 폭을 바꾼다 (Draftsmith 의 검토가 60자 자름에 기댄다)',
+    'packages/server/src/도구.ts',
+    'function 미리보기(글: string, 폭 = 60): string {',
+    'function 미리보기(글: string, 폭 = 80): string {',
+    'packages/server',
+  ],
+  [
     '링크 자리표까지 막는다 (링크 걸린 문단이 force 로도 영영 안 지워진다)',
     'packages/doc/src/문서.ts',
     "const 런의글갈래 = new Set(['hp:t', 'hp:ctrl', 'hp:secPr', 'hp:compose', 'hp:dutmal']);",

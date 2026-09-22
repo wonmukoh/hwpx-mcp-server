@@ -273,7 +273,12 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
       'insert_note', 'insert_memo', 'insert_equation',
       'set_columns', 'set_outline', 'set_master_page']),
   id: 글자('가리킬 것의 ID. find·get_outline 이 준 값 (p_… tbl_… cell_…)'),
-  text: 글자('set_text 로 넣을 글. `**굵게**` `[[강조]]` 를 섞어 쓸 수 있다'),
+  text: 글자(
+    'set_text 로 넣을 글. **글자 그대로 들어간다** — `**굵게**` `[[강조]]` 표시는 '
+    + '안 풀리고 별표째 찍힌다 (그 표시는 compose 의 블록 글에서만 푼다). '
+    + '칸(cell_…)에 주면 줄바꿈으로 문단을 갈라 넣고, 줄이 문단보다 많으면 거절한다. '
+    + '문단(p_…)에 주면 줄바꿈이 그대로 남는다 — 문단은 이 op 으로 못 늘린다',
+  ),
   find: 글자('replace 로 찾을 글'),
   replace: 글자('replace 로 바꿀 글'),
   limit: 정수('replace 로 몇 개까지 바꿀까. 안 주면 다'),

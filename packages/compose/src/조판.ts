@@ -402,7 +402,7 @@ export class 조판기 {
       const ctrl = 뜨기(조각이름);
       const 글칸 = findAll(ctrl, 'hp:t')[0];
       if (!글칸) return 안됨(`${태그} 조각에 글자 칸이 없다`, '조각을 다시 구워라.');
-      setText(글칸, 글);
+      글자칸쓰기(글칸, 글);   // 머리말·꼬리말 — 탭·줄 나눔을 개체로
 
       // 담을 문단이 없으면 하나 만든다
       let 첫문단 = childrenNamed(s.root, 'hp:p')[0];
@@ -926,7 +926,8 @@ export class 조판기 {
       const 안런 = 안문단 && childrenNamed(안문단, 'hp:run')[0];
       const 글칸 = 안런 && childrenNamed(안런, 'hp:t')[0];
       if (!안문단 || !안런 || !글칸) return 안됨('글자리 조각이 깨졌다', '조각을 다시 구워라.');
-      setText(글칸, b.text);
+      // 도형 글은 꾸밈 표시(**·[[)를 안 푼다 — 도구 설명에 그렇게 적었다. 탭·줄 나눔은 개체로.
+      글자칸쓰기(글칸, b.text);
 
       const 글자 = this.d.머리.charPr확보(this.d.머리.첫id('hh:charProperties') ?? '0',
         this.글꼴채우기({ 크기: pt(b.size ?? 14), 굵게: b.bold ?? false,
@@ -1036,12 +1037,13 @@ export class 조판기 {
       }
       if (런들.length === 0) 런들.push({ 글: '', charPrId: 글자바탕 });
 
-      setText(childrenNamed(첫런, 'hp:t')[0]!, 런들[0]!.글);
+      // 칸 글 — 탭·전각 빈칸을 날 글자로 두지 않는다 (2026-09-27 검토에서 잼)
+      글자칸쓰기(childrenNamed(첫런, 'hp:t')[0]!, 런들[0]!.글);
       setAttr(첫런, 'charPrIDRef', 런들[0]!.charPrId);
       let 앞런 = 첫런;
       for (const 뒤 of 런들.slice(1)) {
         const 새런 = 복제하기(첫런, '');
-        setText(childrenNamed(새런, 'hp:t')[0]!, 뒤.글);
+        글자칸쓰기(childrenNamed(새런, 'hp:t')[0]!, 뒤.글);
         setAttr(새런, 'charPrIDRef', 뒤.charPrId);
         insertAfter(앞런, 새런);
         앞런 = 새런;
@@ -1246,7 +1248,7 @@ export class 조판기 {
       setAttr(cap, 'side', (b.caption_side ?? 'top').toUpperCase());
       const 글칸 = findAll(cap, 'hp:t')[0];
       if (!글칸) return 안됨('표캡션 조각에 글자 칸이 없다', '조각을 다시 구워라.');
-      setText(글칸, b.caption);
+      글자칸쓰기(글칸, b.caption);
       표자식넣기(표el, cap);
     }
     if (b.align) t.가로정렬주기(b.align.toUpperCase() as 'LEFT' | 'CENTER' | 'RIGHT');

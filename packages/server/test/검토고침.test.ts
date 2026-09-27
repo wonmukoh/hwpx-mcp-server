@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { findAll } from '@hwpx/owpml';
 import { 도구부르기, 도구들, 문서방 } from '../src/index.js';
 
 async function 새문서(블록들: unknown[]) {
@@ -187,5 +188,39 @@ describe('compose 가 중간에 멈추면 그 블록은 하나도 안 남긴다'
     const 글 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!['text'] as string;
     expect(글).toContain('운동회 계획');
     expect(글, '실패한 블록의 앞 항목이 남으면 다시 보낼 때 두 번 들어간다').not.toContain('목적');
+  });
+});
+
+describe('칸을 넣어도 있던 칸의 비율이 남는다', () => {
+  it('**좁은 연번 칸은 좁게, 넓은 내용 칸은 넓게 남는다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', rows: [['1', '내용', '비고']], widths: [20, 120, 40] }]);
+    const 표 = ((await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    const d = 방.꺼내기(doc_id)!.d;
+    const 폭 = () => { const t = d.찾기(표); if (!t.ok || t.value.갈래 !== '표') throw 0; return t.value.표.열폭 as number[]; };
+    const 전 = 폭();
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_col', id: 표, at: 3 }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 뒤 = 폭();
+    expect(뒤.length).toBe(4);
+    expect(뒤.reduce((a, b) => a + b, 0), '표 전체 폭은 그대로').toBe(전.reduce((a, b) => a + b, 0));
+    expect(뒤[0]! < 뒤[2]! && 뒤[2]! < 뒤[1]!, `비율이 뒤집혔다: ${전} → ${뒤}`).toBe(true);
+    expect(Math.abs(뒤[1]! / 뒤[0]! - 전[1]! / 전[0]!), '연번:내용 비율').toBeLessThan(0.2);
+  });
+});
+
+describe('compose 의 칸·도형·캡션·머리말 글도 탭·줄 나눔을 개체로 쓴다', () => {
+  it('**날 탭·날 줄바꿈 글자가 글자 칸에 남지 않는다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    const r = await 도구부르기('compose', { doc_id, header_text: '머리\t말', blocks: [
+      { kind: 'table', caption: '표\t1', rows: [['가\t나', '첫\u3000둘']] },
+      { kind: 'shape', text: '상자\t글\n둘째 줄' },
+    ] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const d = 방.꺼내기(doc_id)!.d;
+    const 날것 = d.구역들.flatMap((s) => findAll(s.root, 'hp:t'))
+      .filter((t) => t.children.some((c) => c.kind === 'text' && /[\t\n\u3000\u00a0]/.test(c.raw)));
+    expect(날것.length, '날 글자로 남은 글자 칸').toBe(0);
   });
 });

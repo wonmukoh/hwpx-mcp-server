@@ -714,11 +714,20 @@ export class 표 {
 
     // 폭을 다시 나눈다 — 표 전체 폭은 그대로
     if (총폭 > 0 && 옛폭.every((w) => w !== undefined)) {
-      const 새수 = this.칸수;
-      const 고르게 = Math.floor(총폭 / 새수);
-      const 새폭: number[] = new Array<number>(새수).fill(고르게);
+      // **있던 칸들의 비율은 지킨다.** 전에는 모든 칸을 똑같이 나눠서, 양식의 좁은
+      // 「연번」 칸이 두 배가 되고 넓은 「내용」 칸이 절반이 됐다 (3749·15312 → 7303·7303,
+      // 2026-09-27 검토에서 잼). 새 칸은 평균 폭을 받고, 있던 칸들이 비율대로 조금씩 내준다.
+      const 옛수 = 옛폭.length;
+      const 새칸폭 = Math.round(총폭 / (옛수 + 몇칸));
+      const 남는폭 = 총폭 - 새칸폭 * 몇칸;
+      const 줄인것 = (옛폭 as number[]).map((w) => Math.floor((w * 남는폭) / 총폭));
+      const 새폭 = [
+        ...줄인것.slice(0, 자리),
+        ...new Array<number>(몇칸).fill(새칸폭),
+        ...줄인것.slice(자리),
+      ];
       // 마지막 칸이 나머지를 받는다 — 합이 총폭과 어긋나면 표가 삐져나온다
-      새폭[새수 - 1] = 총폭 - 고르게 * (새수 - 1);
+      새폭[새폭.length - 1] = 총폭 - 새폭.slice(0, -1).reduce((a, b) => a + b, 0);
       const r = this.열폭주기(새폭);
       if (!r.ok) return 안됨(`칸은 넣었는데 폭을 못 맞췄다: ${r.이유}`, r.어떻게);
     }

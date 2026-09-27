@@ -26,7 +26,7 @@ const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'pac
 
 const { 문서 } = await import(B('doc'));
 const { 조판, 꾸밈풀기 } = await import(B('compose'));
-const { parseXml, findAll, childrenNamed, firstChildNamed, getAttr, textOf } = await import(B('owpml'));
+const { parseXml, findAll, childrenNamed, firstChildNamed, getAttr, textOf, 글자칸읽기 } = await import(B('owpml'));
 
 const 원본파일 = path.join(뿌리, '자료', '표본', '공개', '교육부-2026업무계획.hwpx');
 if (!fs.existsSync(원본파일)) {
@@ -70,7 +70,8 @@ function 표시로(p) {
     // **런 두 개에 나뉘어** 있으면 어느 런에도 통짜 `**` 가 없어 그냥 지나간다.
     // 이어 붙이고 나서야 `**` 가 되어 짝이 안 맞는 표시가 만들어진다.
     // 실제로 교육부 문서 각주(`** 국가환경교육센터…`)에서 그 일이 났다.
-    const 날글 = childrenNamed(r, 'hp:t').map(textOf).join('');
+    // p.글 과 같은 읽기로 — 줄 나눔·전각 빈칸을 글자로 읽는다 (실측 35항)
+    const 날글 = childrenNamed(r, 'hp:t').map(글자칸읽기).join('');
     let 글 = '';
     for (const 자 of 날글) 글 += "*[]".includes(자) || 자 === BS ? BS + 자 : 자;
     if (글.length === 0) continue;

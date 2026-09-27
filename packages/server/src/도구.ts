@@ -19,14 +19,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import {
-  문서, 표, 문단, 됨, 안됨, 셀아이디풀기, 곁글인가,
+  문서, 표, 문단, 됨, 안됨, 셀아이디풀기, 곁글인가, 든것보기,
   type 결과, type 글자모양패치, 그림들이기,
 } from '@hwpx/doc';
 import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, 뜨기, 조각, 면풀기 }
   from '@hwpx/compose';
 import { 엮기 } from '@hwpx/render';
 import {
-  childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp,
+  childrenNamed, findAll, getAttr, setAttr, firstChildNamed, parseXml, pt, ptToHwp,
   appendChild, insertAfter, removeNode, closestNamed, textOf, 글자칸읽기, type ElementNode,
 } from '@hwpx/owpml';
 
@@ -1570,6 +1570,10 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
 
       const 뗀것 = t.value.줄떼어내기(e.at);
       if (!뗀것.ok) return 뗀것;
+      // 떼어낸 표는 윗표를 통째로 본뜬 것이라 **캡션과 id 까지 딸려 왔다** — 같은 캡션이
+      // 둘, 같은 hp:tbl/@id 가 둘이 됐다 (2026-09-27 검토에서 잼). 캡션은 윗표에만 둔다.
+      for (const 캡션 of childrenNamed(뗀것.value.새표, 'hp:caption')) removeNode(캡션);
+      setAttr(뗀것.value.새표, 'id', d.새아이디());
 
       const 새문단 = 뜨기(조각.문단);
       const 런 = 뜨기(조각.표런);
@@ -1596,18 +1600,36 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       const 아래 = 표꺼내기(d, e.with_id, 'join_tables');
       if (!아래.ok) return 아래;
 
+      // **문서 차례를 본다.** 아래 표가 위 표보다 앞에 있으면 붙이고 나서 저장이 막혔다
+      // — edit 는 「됐다」고 했는데 물릴 길이 없었다 (2026-09-27 검토에서 잼).
+      const 차례 = d.구역들.flatMap((s) => findAll(s.root, 'hp:tbl'));
+      if (차례.indexOf(아래.value.el) < 차례.indexOf(위.value.el)) {
+        return 안됨(
+          `${e.with_id} 가 ${e.id} 보다 문서에서 앞에 있다`,
+          'id 에 위 표, with_id 에 그 아래 표를 줘라.',
+        );
+      }
+      // **아래 표의 캡션은 붙이면 사라진다.** 말없이 버리지 않는다.
+      if (childrenNamed(아래.value.el, 'hp:caption').length > 0) {
+        return 안됨(
+          `${e.with_id} 에 캡션이 있다 — 붙이면 그 캡션이 사라진다`,
+          '캡션 글을 먼저 옮겨 적거나, 표를 붙이지 말고 두어라.',
+        );
+      }
+
       const 아래문단 = closestNamed(아래.value.el, 'hp:p');
       const 붙임 = 위.value.이어붙이기(아래.value);
       if (!붙임.ok) return 붙임;
 
       // **껍데기가 된 표는 없앤다.** 줄 없는 표는 한글이 안 연다.
-      // 그 표만 들어 있던 문단이면 문단째로 걷어낸다.
+      // 그 표만 들어 있던 문단이면 문단째로 걷어낸다 — 다만 **쪽 설정·조종이 든 문단은
+      // 남긴다.** 전에는 글·표·그림만 보고 걷어서, 구역의 쪽 설정(hp:secPr)을 진
+      // 문단이 사라져 용지 크기가 통째로 없어졌다 (2026-09-27 검토에서 잼).
       removeNode(아래.value.el);
-      if (아래문단
-        && findAll(아래문단, 'hp:t').every((x) => textOf(x) === '')
-        && findAll(아래문단, 'hp:tbl').length === 0
-        && findAll(아래문단, 'hp:pic').length === 0) {
-        removeNode(아래문단);
+      if (아래문단) {
+        const 든것 = 든것보기(아래문단);
+        const 조종 = findAll(아래문단, 'hp:ctrl').length + findAll(아래문단, 'hp:secPr').length;
+        if (든것.글 === '' && 든것.개체.length === 0 && 조종 === 0) removeNode(아래문단);
       }
 
       const 탈 = 표어긋남(위.value, '표를 붙였더니');

@@ -681,6 +681,11 @@ export class 문서 {
    * 「겹침을 막는다」 는 코드가 있으나 없으나 똑같이 통과한다 — 재는 것이
    * 아무것도 안 보게 된다. 바닥 10억은 한글이 쓰는 것과 자리수를 맞춘 것이다.
    */
+  /** 문서 안에서 안 겹치는 새 id 하나 (떼어낸 표 따위) */
+  새아이디(): string {
+    return this.다음아이디들(1)[0]!;
+  }
+
   private 다음아이디들(개수: number): string[] {
     let 다음 = 1_000_000_000;
     for (const v of this.쓰인아이디들()) {
@@ -750,11 +755,16 @@ export class 문서 {
       ...childrenNamed(p.el, 'hp:run').flatMap((r) => r.children)
         .filter((c): c is ElementNode => c.kind === 'element' && !런의글갈래.has(c.name))
         .map((e) => e.name),
-      // 조종 안에 숨은 표·그림 (머리말·각주 칸 따위)
-      ...['hp:tbl', 'hp:pic', 'hp:container', 'hp:equation']
-        .flatMap((n) => childrenNamed(p.el, 'hp:run')
-          .flatMap((r) => childrenNamed(r, 'hp:ctrl'))
-          .flatMap((c) => findAll(c, n)).map((e) => e.name)),
+      // **조종도 거꾸로 센다.** 조종에는 머리말·꼬리말·쪽 감추기·단 설정·새 번호·
+      // 계산식 필드·각주·책갈피가 든다. 전에는 표·그림 넷만 찾아서, 글 없이 이런 조종만
+      // 든 문단이 「빈 문단」으로 force 없이 지워졌다 — 문서의 하나뿐인 머리말이 사라졌다
+      // (표본 11곳, 7편, 2026-09-27 검토에서 잼). 막지 않는 것은 링크의 시작·끝 표시뿐이다.
+      ...childrenNamed(p.el, 'hp:run')
+        .flatMap((r) => childrenNamed(r, 'hp:ctrl'))
+        .flatMap((c) => c.children.filter((x): x is ElementNode => x.kind === 'element'))
+        .filter((x) => !(x.name === 'hp:fieldEnd'
+          || (x.name === 'hp:fieldBegin' && getAttr(x, 'type') === 'HYPERLINK')))
+        .map((x) => x.name),
     ];
     if (안것.length > 0) {
       const 셈 = [...new Set(안것)].map((n) => `${n} ${안것.filter((x) => x === n).length}개`);

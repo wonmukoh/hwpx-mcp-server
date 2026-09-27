@@ -261,3 +261,21 @@ describe('지우면 안 될 때 안 지운다', () => {
     expect(다시.구역들.flatMap((s) => s.표들).length, '저장했다 열면 표가 없어야 한다').toBe(0);
   });
 });
+
+describe('글 없이 조종만 든 문단은 안 지운다', () => {
+  it('**머리말만 든 빈 문단은 force 로도 안 지운다** — 문서의 하나뿐인 머리말이 사라진다', () => {
+    // 2026-09-27 검토: 교육부 기본계획의 머리말 문단이 「빈 문단」으로 force 없이 지워졌다.
+    const 공개 = path.join(path.resolve(__dirname, '../../..'), '자료', '표본', '공개');
+    const d = 문서.열기(fs.readFileSync(path.join(공개, '교육부-2026대학혁신지원사업-기본계획.hwpx')));
+    d.ID매기기();
+    const p = d.구역들.flatMap((s) => s.모든문단들).find((x) =>
+      findAll(x.el, 'hp:header').length > 0 && findAll(x.el, 'hp:secPr').length === 0 && x.글.trim() === '');
+    expect(p, '머리말만 든 문단이 있어야 이 시험이 뭔가를 본다').toBeDefined();
+    const id = d.이름표.아이디(p!.el);
+    for (const 힘 of [false, true]) {
+      const r = d.문단지우기(id, !힘);
+      expect(r.ok, `force=${힘} 인데 머리말 문단이 지워졌다`).toBe(false);
+      if (!r.ok) expect(r.이유).toContain('hp:header');
+    }
+  });
+});

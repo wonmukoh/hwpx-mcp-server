@@ -149,3 +149,37 @@ describe('표 고침이 글·짜임을 안 잃는다', () => {
     expect(new Set(id들).size, `필드 id 가 겹친다: ${id들.join(',')}`).toBe(id들.length);
   });
 });
+
+describe('표 가르기·붙이기가 캡션·쪽 설정·id 를 안 잃는다', () => {
+  async function 표아이디들(방: 문서방, doc_id: string) {
+    return ((await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string; kind: string }[])
+      .filter((x) => x.kind === 'table').map((x) => x.id);
+  }
+
+  it('**가른 표는 캡션을 안 지고 제 id 를 받는다**', async () => {
+    const { 방, doc_id, d } = await 새문서([{ kind: 'table', caption: '< 개요 >', rows: [['1'], ['2'], ['3']] }]);
+    const [표] = await 표아이디들(방, doc_id);
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'split_table', id: 표, at: 2 }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 표들 = d.구역들.flatMap((s) => findAll(s.root, 'hp:tbl'));
+    expect(표들.length).toBe(2);
+    expect(표들.reduce((n, t) => n + childrenNamed(t, 'hp:caption').length, 0), '캡션은 하나여야 한다').toBe(1);
+    expect(getAttr(표들[0]!, 'id')).not.toBe(getAttr(표들[1]!, 'id'));
+  });
+
+  it('**아래 표가 앞에 있으면 거절한다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', rows: [['가']] }, { kind: 'table', rows: [['나']] }]);
+    const [첫, 둘] = await 표아이디들(방, doc_id);
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'join_tables', id: 둘, with_id: 첫 }] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('앞에 있다');
+  });
+
+  it('**캡션 단 아래 표는 붙이지 않는다** — 캡션이 사라진다', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', rows: [['가']] }, { kind: 'table', caption: '< 아래 >', rows: [['나']] }]);
+    const [첫, 둘] = await 표아이디들(방, doc_id);
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'join_tables', id: 첫, with_id: 둘 }] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('캡션');
+  });
+});

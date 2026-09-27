@@ -206,6 +206,8 @@ describe('칸을 넣어도 있던 칸의 비율이 남는다', () => {
     expect(뒤.reduce((a, b) => a + b, 0), '표 전체 폭은 그대로').toBe(전.reduce((a, b) => a + b, 0));
     expect(뒤[0]! < 뒤[2]! && 뒤[2]! < 뒤[1]!, `비율이 뒤집혔다: ${전} → ${뒤}`).toBe(true);
     expect(Math.abs(뒤[1]! / 뒤[0]! - 전[1]! / 전[0]!), '연번:내용 비율').toBeLessThan(0.2);
+    const 합 = 전.reduce((x, y) => x + y, 0);
+    expect(뒤[3]!, '새 칸이 평균 폭쯤은 받아야 한다 — 있던 칸이 자리를 안 내주면 새 칸이 0 이 된다').toBeGreaterThan(합 / 8);
   });
 });
 
@@ -263,5 +265,45 @@ describe('말해야 할 것을 말한다', () => {
     const r = await 도구부르기('get_outline', { doc_id }, 방);
     expect(r.structuredContent!['sections']).toBe(2);
     expect(r.content[0]?.text).toContain('구역이 2개');
+  });
+});
+
+describe('그림만 든 것도 비지 않은 것이다', () => {
+  async function 그림파일() {
+    const { HwpxContainer } = await import('@hwpx/container');
+    const 뿌리 = path.resolve(__dirname, '../../..');
+    const 길 = path.join(os.tmpdir(), 'hwpx-검토-pic.png');
+    fs.writeFileSync(길, HwpxContainer.open(fs.readFileSync(path.join(뿌리, '자료', '기준파일', 'ref-image.hwpx')))
+      .read('BinData/image1.png'));
+    return 길;
+  }
+
+  it('**그림만 든 줄은 force 없이 안 지운다** — 사진 붙인 계획서의 사진이 날아간다', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', rows: [['항목', '사진'], ['', '']] }]);
+    const 표 = ((await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표 }, 방)).structuredContent!['cells'] as { id: string; row: number; col: number }[];
+    const 칸 = 칸들.find((c) => c.row === 1 && c.col === 1)!.id;
+    const 넣음 = await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_image', id: 칸, path: await 그림파일(), width: 30 }] }, 방);
+    expect(넣음.isError, 넣음.content[0]?.text).toBeUndefined();
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'delete_row', id: 표, at: 1 }] }, 방);
+    expect(r.isError, '그림이 든 줄이 force 없이 지워지면 안 된다').toBe(true);
+    expect(r.content[0]?.text).toContain('hp:pic');
+  });
+
+  it('**compose 의 그림 경로는 절대 경로만 받는다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    // **정말 있는 파일**을 상대 경로로 준다 — 없는 파일이면 막이가 없어도 「파일이 없다」로
+    // 실패해서 이 시험이 막이를 못 잰다 (고장 내보기가 그걸 짚었다).
+    const 이름 = 'hwpx-상대경로-시험.png';
+    fs.writeFileSync(path.join(process.cwd(), 이름), fs.readFileSync(await 그림파일()));
+    try {
+      const r = await 도구부르기('compose', { doc_id, blocks: [{ kind: 'image', path: 이름, width: 30 }] }, 방);
+      expect(r.isError, '상대 경로를 받으면 안 된다').toBe(true);
+      expect(r.content[0]?.text).toContain('절대');
+    } finally {
+      fs.rmSync(path.join(process.cwd(), 이름), { force: true });
+    }
   });
 });

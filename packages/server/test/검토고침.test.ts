@@ -224,3 +224,44 @@ describe('compose 의 칸·도형·캡션·머리말 글도 탭·줄 나눔을 �
     expect(날것.length, '날 글자로 남은 글자 칸').toBe(0);
   });
 });
+
+describe('빠진 것의 옛 ID 는 죽는다', () => {
+  it('**붙여서 흡수된 표의 ID 로는 아무것도 못 한다** — 「바뀌었다」고 하지 않는다', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', rows: [['가', '나']] }, { kind: 'table', rows: [['다', '라']] }]);
+    const 표들 = ((await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string; kind: string }[])
+      .filter((x) => x.kind === 'table').map((x) => x.id);
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'join_tables', id: 표들[0], with_id: 표들[1] }] }, 방);
+    expect((await 도구부르기('get_content', { doc_id, id: 표들[1] }, 방)).isError).toBe(true);
+    expect((await 도구부르기('edit', { doc_id, edits: [{ op: 'delete_table', id: 표들[1] }] }, 방)).isError).toBe(true);
+  });
+});
+
+describe('말해야 할 것을 말한다', () => {
+  it('**render_html 이 못 그린 링크·메모를 not_rendered 로 알린다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '누리집을 참고하세요.' }]);
+    const id = await 문단(방, doc_id, '누리집');
+    await 도구부르기('edit', { doc_id, edits: [
+      { op: 'set_link', id, find: '누리집', url: 'https://example.com' },
+      { op: 'insert_memo', id, find: '참고', text: '확인' },
+    ] }, 방);
+    const r = await 도구부르기('render_html', { doc_id }, 방);
+    const 못 = r.structuredContent!['not_rendered'] as string[];
+    expect(못.some((x) => x.startsWith('링크'))).toBe(true);
+    expect(못).toContain('메모');
+  });
+
+  it('**.hwpx 가 아닌 이름으로는 저장하지 않는다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '글' }]);
+    const 자리 = fs.mkdtempSync(path.join(os.tmpdir(), 'hwpx-ext-'));
+    const r = await 도구부르기('save_document', { doc_id, path: path.join(자리, '문서.hwp') }, 방);
+    expect(r.isError).toBe(true);
+    expect(fs.existsSync(path.join(자리, '문서.hwp'))).toBe(false);
+  });
+
+  it('**구역이 여럿이면 get_outline 이 구역 수를 말한다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '가' }, { kind: 'section_break' }, { kind: 'body', text: '나' }]);
+    const r = await 도구부르기('get_outline', { doc_id }, 방);
+    expect(r.structuredContent!['sections']).toBe(2);
+    expect(r.content[0]?.text).toContain('구역이 2개');
+  });
+});

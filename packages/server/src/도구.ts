@@ -491,6 +491,14 @@ export const 도구들: 도구[] = [
       }
       const 절대 = 절대경로검사(낼곳);
       if (!절대.ok) return 못함(절대.이유, 절대.어떻게);
+      // **.hwpx 로만 쓴다.** 전에는 x.hwp 나 확장자 없는 이름에도 HWPX(zip)를 그대로 써서,
+      // 이름만 hwp 인 파일이 생겼다 — 한글은 이름을 보고 HWP 로 열려다 못 연다.
+      if (!/\.hwpx$/i.test(낼곳)) {
+        return 못함(
+          `${낼곳} 은 .hwpx 가 아니다`,
+          '이 도구는 HWPX 로만 쓴다. 이름 끝을 .hwpx 로 줘라 (옛 .hwp 로는 못 쓴다).',
+        );
+      }
 
       if (fs.existsSync(낼곳) && !인자.overwrite) {
         return 못함(
@@ -594,6 +602,7 @@ export const 도구들: 도구[] = [
     outputSchema: 묶음('문서 뼈대', {
       ok: 참거짓('됐나'),
       section: 정수('본 구역 번호'),
+      sections: 정수('문서의 구역 수. 1 보다 크면 다른 구역은 section 을 주고 따로 본다'),
       total: 정수('그 구역의 요소 수'),
       items: 목록('요소들', 묶음('요소 하나', {
         id: 글자('요소 ID'),
@@ -709,10 +718,14 @@ export const 도구들: 도구[] = [
       // `find` 와 같은 흠이 여기에도 있었다 — 잘린 것을 사람 말로만 알려 주면
       // 아무도 안 본다. **답에 담아야 안다.**
       const 잘림 = 것들.length > 자른것.length;
+      // **구역이 여럿이면 말한다.** section 을 안 주면 0번 구역만 보여 주는데, 전에는
+      // 그 말이 없어서 뒤 구역을 통째로 못 본 채 채웠다 (2026-09-27 검토에서 잼).
+      const 구역수 = d.구역들.length;
       return 잘됨(
         `${번호}번 구역에 요소 ${것들.length}개`
-        + (잘림 ? ` — **앞 ${자른것.length}개만 준다. limit 을 키워 다시 불러라.**` : ''),
-        { ok: true, section: 번호, total: 것들.length, items: 자른것, truncated: 잘림 },
+        + (잘림 ? ` — **앞 ${자른것.length}개만 준다. limit 을 키워 다시 불러라.**` : '')
+        + (구역수 > 1 ? ` · 이 문서는 구역이 ${구역수}개다 — 다른 구역은 section 을 주고 따로 불러라` : ''),
+        { ok: true, section: 번호, sections: 구역수, total: 것들.length, items: 자른것, truncated: 잘림 },
       );
     }),
   },

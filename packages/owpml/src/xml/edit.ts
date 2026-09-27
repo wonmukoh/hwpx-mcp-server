@@ -168,6 +168,18 @@ const 글자에서개체: Readonly<Record<string, string>> = Object.fromEntries(
 /** 한글이 새 문서에서 탭을 칠 때 쓰는 값 (기준파일에서 떴다) */
 const 새탭속성 = { width: '2056', leader: '0', type: '1' };
 
+/**
+ * 글자 칸 안에 **개체 넷 말고 다른 요소**가 있나 — 형광펜·차례 표시·하이픈·변경 추적 따위.
+ *
+ * `글자칸쓰기` 는 그것들을 되살리지 못한다. 고치기 전에 이걸로 보고 거절한다.
+ * 표본 46편에는 0개였다 (2026-09-27 검토) — 막아도 멀쩡한 문서를 못 고치게 되는 일은 없다.
+ */
+export function 글자칸의모르는것(t: ElementNode): string[] {
+  return t.children
+    .filter((c): c is ElementNode => c.kind === 'element' && 글자개체[c.name] === undefined)
+    .map((c) => c.name);
+}
+
 /** 글자 칸 하나를 읽는다 — 개체 넷은 글자로 (`\n` `\t` U+3000 U+00A0) */
 export function 글자칸읽기(t: ElementNode): string {
   const out: string[] = [];
@@ -250,7 +262,14 @@ export function insertAfter(ref: Node, child: Node): boolean {
   return true;
 }
 
-/** 노드를 뺀다 */
+/**
+ * 노드를 뺀다.
+ *
+ * **뺀 노드의 `parent` 를 끊는다.** 전에는 남겨 두어서, 뺀 표도 위로 올라가면 문서
+ * 뿌리에 닿았다 — 「아직 문서에 있나」 가 참이 됐다. join_tables 로 흡수된 표의 옛 ID 가
+ * 0줄짜리 표로 살아 있었고, 그걸 delete_table 하면 「1곳이 바뀌었다」 고 했다
+ * (2026-09-27 검토에서 잼).
+ */
 export function removeNode(node: Node): boolean {
   const parent = node.parent;
   if (!parent) return false;
@@ -258,6 +277,7 @@ export function removeNode(node: Node): boolean {
   if (i === -1) return false;
   parent.children.splice(i, 1);
   markDirty(parent);
+  node.parent = undefined;
   return true;
 }
 

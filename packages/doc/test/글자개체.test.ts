@@ -101,3 +101,22 @@ describe('표본의 개체 든 문단 — 글을 바꿔 되써도 개체가 남�
     }
   });
 });
+
+describe('모르는 요소가 든 글자 칸은 고치지 않는다', () => {
+  it('**형광펜이 든 칸을 set_text·replace 가 날리지 않고 거절한다**', () => {
+    const f = 파일들.find((x) => x.endsWith('ref-text-basic.hwpx'))!;
+    const d = 문서.열기(fs.readFileSync(f));
+    d.ID매기기();
+    const p = d.구역들[0]!.모든문단들.find((x) => x.글.trim() !== '')!;
+    const t = childrenNamed(p.런들.at(-1)!, 'hp:t')[0]!;
+    t.children = [];
+    for (const c of [createElement('hp:markpenBegin', { color: '#FFFF00' }), createElement('hp:markpenEnd', {})]) {
+      c.parent = t;
+      t.children.push(c);
+    }
+    const 문단글 = p.글;
+    const r1 = p.글바꾸기(문단글 + '고침');
+    expect(r1.ok, '형광펜이 사라지는데 됐다고 하면 안 된다').toBe(false);
+    expect(findAll(t, 'hp:markpenBegin').length).toBe(1);
+  });
+});

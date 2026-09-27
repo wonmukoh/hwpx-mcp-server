@@ -21,7 +21,7 @@
  */
 
 import {
-  getAttr, setAttr, textOf, setText, appendChild, createElement, createText, 글자칸읽기, 글자칸쓰기,
+  getAttr, setAttr, textOf, setText, appendChild, createElement, createText, 글자칸읽기, 글자칸쓰기, 글자칸의모르는것,
   removeNode, insertBefore, insertAfter, childrenNamed, firstChildNamed, findAll,
   복제하기, 못쓰는제어문자,
   type ElementNode,
@@ -232,6 +232,15 @@ export class 문단 {
       걸친 = [i === -1 ? 0 : i];
     }
 
+    // 형광펜·변경 추적 같은 요소가 든 칸은 되살리지 못한다 — 말없이 날리지 않고 거절한다
+    const 모르는것 = [...new Set(걸친.flatMap((i) => 글자칸의모르는것(조각[i]!.t)))];
+    if (모르는것.length > 0) {
+      return 안됨(
+        `고칠 자리에 ${모르는것.join('·')} 가 들어 있다 — 고치면 그것이 사라진다`,
+        '형광펜·차례 표시·변경 추적 따위다. 한글에서 그 표시를 먼저 풀거나, 그 자리를 빼고 고쳐라.',
+      );
+    }
+
     const 첫 = 걸친[0]!;
     const 끝칸 = 걸친[걸친.length - 1]!;
     const 비운것: ElementNode[] = [];
@@ -314,7 +323,16 @@ export class 문단 {
           여기++;
           return 새글;
         });
-        if (여기 > 0) 글자칸쓰기(t, 새것);
+        if (여기 > 0) {
+          const 모르는것 = 글자칸의모르는것(t);
+          if (모르는것.length > 0) {
+            return 안됨(
+              `바꿀 자리에 ${모르는것.join('·')} 가 들어 있다 — 바꾸면 그것이 사라진다`,
+              '형광펜·차례 표시·변경 추적 따위다. 한글에서 그 표시를 먼저 풀어라.',
+            );
+          }
+          글자칸쓰기(t, 새것);
+        }
       }
     }
     if (바뀐수 > 0 && !짜임같나(찾을글, 새글)) 줄정보지우기(this.el);

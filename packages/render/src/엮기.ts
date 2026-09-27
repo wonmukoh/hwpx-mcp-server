@@ -341,6 +341,17 @@ function 칸엮기(tc: ElementNode, c: 엮는이): string {
 function 조종엮기(틀: ElementNode, c: 엮는이): string {
   let 나온것 = '';
   for (const e of childElements(틀)) {
+    // **못 그린 것은 말한다.** 전에는 머리말·꼬리말·쪽 번호·메모·링크를 말없이 건너뛰고
+    // not_rendered 를 비워 두어, 「비어 있으면 다 그려진 것」 이라는 약속이 틀렸다
+    // (2026-09-27 검토에서 잼). 링크는 글은 나오고 누르는 자리만 없다.
+    const 못그린것 =
+      e.name === 'hp:header' ? '머리말'
+        : e.name === 'hp:footer' ? '꼬리말'
+          : e.name === 'hp:pageNum' ? '쪽 번호'
+            : e.name === 'hp:fieldBegin' && getAttr(e, 'type') === 'MEMO' ? '메모'
+              : e.name === 'hp:fieldBegin' && getAttr(e, 'type') === 'HYPERLINK' ? '링크(글로만 옮겼다)'
+                : undefined;
+    if (못그린것) c.못옮긴것.add(못그린것);
     if (e.name !== 'hp:footNote' && e.name !== 'hp:endNote') continue;
     const 갈래 = e.name === 'hp:footNote' ? '각주' : '미주';
     const 번호 = getAttr(e, 'number') ?? String(c.주들.length + 1);

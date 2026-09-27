@@ -696,6 +696,15 @@ describe('탭', () => {
   it('탭이 없으면 안 만든다', () => {
     expect(findAll(탭문서('가나다').구역들[0]!.root, 'hp:tab').length).toBe(0);
   });
+
+  it('**전각 빈칸·묶음 빈칸도 한글이 쓰는 개체로 들어간다** (실측 35항)', () => {
+    // 한글은 이 둘을 글자로 안 쓴다 — 표본에 글자로 박힌 U+3000·U+00A0 은 0 개다.
+    const d = 탭문서('교육\u3000·\u3000연구 1)\u00a0학생');
+    const 뿌리 = d.구역들[0]!.root;
+    expect(findAll(뿌리, 'hp:fwSpace').length).toBe(2);
+    expect(findAll(뿌리, 'hp:nbSpace').length).toBe(1);
+    expect(d.구역들[0]!.모든문단들.map((p) => p.글).join('')).toContain('교육\u3000·\u3000연구');
+  });
 });
 
 describe('머리말·꼬리말', () => {

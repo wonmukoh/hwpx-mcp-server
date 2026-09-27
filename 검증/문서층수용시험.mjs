@@ -27,7 +27,7 @@ const 뿌리 = path.dirname(여기);
 const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
 const { 문서, 표, 곁글인가 } = await import(B('doc'));
-const { parseXml, findAll, findFirst, firstChildNamed, getAttr, childrenNamed, textOf }
+const { parseXml, findAll, findFirst, firstChildNamed, getAttr, childrenNamed, textOf, 글자칸읽기 }
   = await import(B('owpml'));
 const { HwpxContainer, 부품 } = await import(B('hwpx'));
 
@@ -43,6 +43,10 @@ const 표시 = 'DOC3단계표시';
 const 강조할것 = '표시';           // 위 글 안의 조각
 const 왼쪽여백 = 2000;
 const 셀여백 = 1700;
+// **글자 칸 안 개체 넷** (실측 35항) — 줄 나눔·탭·전각 빈칸·묶음 빈칸.
+// 우리는 이 글자들을 hp:lineBreak·hp:tab·hp:fwSpace·hp:nbSpace 로 쓴다. 한글이 받아 지키나.
+const 개체글 = '개체시험\n둘째줄\t탭뒤\u3000전각뒤\u00a0묶음뒤';
+const 개체이름들 = ['hp:lineBreak', 'hp:tab', 'hp:fwSpace', 'hp:nbSpace'];
 
 const 기준파일 = path.join(뿌리, '자료', '기준파일');
 const 목록 = fs.readdirSync(기준파일).filter((f) => f.toLowerCase().endsWith('.hwpx')).sort();
@@ -65,10 +69,17 @@ for (const 이름 of 목록) {
     const 한일 = { 글: false, 글자서식: false, 문단서식: false, 강조: false, 표: false,
       꾸밈: false, 링크: false, 책갈피: false,
       각주: false, 미주: false, 메모: false, 수식: false, 다단: false, 개요: false,
-      바탕쪽: false };
+      바탕쪽: false, 개체: false };
 
     const r1 = d.글바꾸기(pid, 표시);
     한일.글 = r1.ok;
+
+    // 개체 넷은 **둘째** 문단에 넣는다. 첫 문단은 뒤에서 어구를 쪼개 강조하므로
+    // 섞으면 탈이 났을 때 무엇 때문인지 못 가린다.
+    const 둘째 = 문단들[1];
+    if (둘째 && findAll(둘째.el, 'hp:tbl').length === 0) {
+      한일.개체 = d.글바꾸기(d.이름표.아이디(둘째.el), 개체글).ok;
+    }
 
     const r2 = d.글자서식주기(pid, { 크기: 13, 굵게: true });
     한일.글자서식 = r2.ok;
@@ -191,7 +202,7 @@ for (const 줄 of 결과.split(/\r?\n/)) {
 // ── 3. 한글이 뱉은 것에서 우리 값이 살아 있나 ─────────────────────────────
 let 통과 = 0;
 const 실패 = [...준비실패];
-const 확인한것 = { 글: 0, 굵게: 0, 취소선: 0, 첨자: 0, 강조점: 0,
+const 확인한것 = { 개체: 0, 글: 0, 굵게: 0, 취소선: 0, 첨자: 0, 강조점: 0,
   링크: 0, 책갈피: 0, 여백: 0, 정렬: 0, 강조: 0, 셀여백: 0, 머리행: 0,
   각주: 0, 미주: 0, 메모: 0, 수식: 0, 다단: 0, 개요: 0, 바탕쪽: 0 };
 
@@ -402,6 +413,22 @@ for (const 이름 of 목록) {
 
         if (getAttr(t, 'repeatHeader') !== '1') 문제.push('머리행 반복이 꺼졌다');
         else 확인한것.머리행++;
+      }
+    }
+
+    // 글자 칸 안 개체 넷 — 그 문단의 글자 칸에 넷 다 살아 있나
+    if (낸것.한일.개체) {
+      const 그문단 = findAll(구역.root, 'hp:p').find((p) =>
+        childrenNamed(p, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'))
+          .map((t) => 글자칸읽기(t)).join('').startsWith('개체시험'));
+      if (!그문단) 문제.push('개체 넣은 글이 한글을 넘으며 사라졌다');
+      else {
+        const 칸들 = childrenNamed(그문단, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'));
+        const 빠진것 = 개체이름들.filter((n) => !칸들.some((t) => findAll(t, n).length > 0));
+        const 글 = 칸들.map((t) => 글자칸읽기(t)).join('');
+        if (빠진것.length) 문제.push(`글자 칸 안 ${빠진것.join('·')} 이 한글을 넘으며 사라졌다`);
+        else if (글 !== 개체글) 문제.push(`개체 든 글이 달라졌다: ${JSON.stringify(글)}`);
+        else 확인한것.개체++;
       }
     }
 

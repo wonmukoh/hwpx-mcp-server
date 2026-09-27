@@ -24,7 +24,7 @@ import {
   getAttr, setAttr, setText, appendChild, removeNode, removeAttr, insertAfter, 복제하기,
   이름바꾸기,
   pt, ptToHwp, hwp,
-  type ElementNode, textOf, createElement, insertBefore, 못쓰는제어문자,
+  type ElementNode, textOf, createElement, insertBefore, 못쓰는제어문자, 글자칸읽기, 글자칸쓰기,
 } from '@hwpx/owpml';
 import {
   문서, 문단, 구역, 표, 셀, 그림들이기,
@@ -292,6 +292,16 @@ export class 조판기 {
         setText(childrenNamed(글런, 'hp:t')[0]!, 조각글);
         insertAfter(뒤에, 글런);
         뒤에 = 글런;
+      }
+    }
+
+    // 줄 나눔·전각 빈칸·묶음 빈칸. 한글은 이것들을 글자로 안 쓴다 — 표본에 `hp:t` 안
+    // 날 LF 는 0개, `hp:lineBreak` 는 53개다(실측 35항). `\n` 을 글에 그대로 두면
+    // 미리보기에서 두 줄이 한 줄로 붙는다. 탭은 위에서 이미 갈랐다.
+    for (const 런 of childrenNamed(el, 'hp:run')) {
+      for (const 글칸 of childrenNamed(런, 'hp:t')) {
+        const 글 = 글자칸읽기(글칸);
+        if (/[\n\u3000\u00a0]/.test(글)) 글자칸쓰기(글칸, 글);
       }
     }
 

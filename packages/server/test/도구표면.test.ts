@@ -1104,16 +1104,32 @@ describe('한 칸에 문단이 여럿일 때', () => {
     expect(뒤[1]!.text, '옛 글이 남으면 "한 줄만아랫줄" 이 된다').toBe('');
   });
 
-  it('**문단보다 줄이 많으면 거절한다** (말없이 합치지 않는다)', async () => {
+  it('**문단보다 줄이 많아도 받는다 — 넘친 줄은 줄 나눔이 되어 다 남는다**', async () => {
     const { 방, doc_id, 칸id } = await 문단둘인칸();
     const 문단수 = ((await 도구부르기('get_content', { doc_id, id: 칸id }, 방))
       .structuredContent!['paragraphs'] as unknown[]).length;
-    const 너무많이 = Array.from({ length: 문단수 + 2 }, (_, i) => `${i}줄`).join('\n');
+    const 많이 = Array.from({ length: 문단수 + 2 }, (_, i) => `${i}줄`).join('\n');
     const r = await 도구부르기('edit', {
-      doc_id, edits: [{ op: 'set_text', id: 칸id, text: 너무많이 }],
+      doc_id, edits: [{ op: 'set_text', id: 칸id, text: 많이 }],
     }, 방);
-    expect(r.isError, '넘치는데 받으면 줄이 사라진 줄도 모른다').toBe(true);
-    expect(r.content[0]?.text).toContain('문단');
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 뒤 = (await 도구부르기('get_content', { doc_id, id: 칸id }, 방)).structuredContent!;
+    expect(뒤['text'], '읽으면 넣은 그대로다').toBe(많이);
+    expect((뒤['paragraphs'] as unknown[]).length, '문단 수는 그대로다').toBe(문단수);
+  });
+
+  it('**문단에 준 줄바꿈은 줄 나눔이 된다** — 날 LF 로 남지 않는다', async () => {
+    // 전에는 `hp:t` 안에 날 LF 로 남아 미리보기·PDF 에서 두 줄이 한 줄로 붙었다
+    // (Draftsmith 가 Chromium 으로 그려 줄 상자 1개를 쟀다).
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    const 짬 = await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '처음' }] }, 방);
+    const id = (짬.structuredContent!['created'] as { ids: string[] }[])[0]!.ids[0]!;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '첫째 줄\n둘째 줄' }] }, 방);
+    const 읽은것 = (await 도구부르기('get_content', { doc_id, id }, 방)).structuredContent!['text'];
+    expect(읽은것).toBe('첫째 줄\n둘째 줄');
+    const html = (await 도구부르기('render_html', { doc_id }, 방)).structuredContent!['html'] as string;
+    expect(html).toContain('첫째 줄<br>둘째 줄');
   });
 });
 
@@ -2627,5 +2643,52 @@ describe('바깥이 기대는 이름 — 바꾸기 전에 Draftsmith 에 알린�
       doc_id, edits: [{ op: 'delete_paragraph', id: 첫[0]!.id, force: true }],
     }, 방);
     expect(쪽거절.content[0]?.text).toContain('쪽 설정(hp:secPr)');
+  });
+});
+
+/**
+ * **글자 칸 안 개체와 도구 표면** (실측 35항).
+ *
+ * 한글 문서는 전각 빈칸·줄 나눔을 섞어 쓰는데 모델은 보통 빈칸으로 친다. 그리고 칸
+ * 미리보기(`셀글`)는 전에 글자 칸의 **첫 자식 하나의 날 글**만 읽어서, 줄 나눔 뒤 글이
+ * 통째로 빠지고 `&` 가 `&amp;` 로 나왔다.
+ */
+describe('글자 칸 안 개체 — 찾기와 칸 미리보기', () => {
+  async function 문서하나(blocks: unknown[]) {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', { doc_id, blocks }, 방);
+    return { 방, doc_id };
+  }
+
+  it('**find 는 빈칸 종류를 가리지 않는다** — 전각 빈칸을 보통 빈칸으로 쳐도 찾는다', async () => {
+    const { 방, doc_id } = await 문서하나([{ kind: 'body', text: '교육　·　연구 프로그램' }]);
+    const r = await 도구부르기('find', { doc_id, text: '교육 · 연구' }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect((r.structuredContent!['matches'] as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it('**줄 나눔을 줄바꿈으로 쳐도, 빈칸으로 쳐도 찾는다**', async () => {
+    // compose 의 본문 블록은 `\n` 을 문단 가름으로 나눈다. 줄 나눔은 set_text 로 만든다.
+    const { 방, doc_id } = await 문서하나([{ kind: 'body', text: '처음' }]);
+    const id = ((await 도구부르기('find', { doc_id, text: '처음' }, 방))
+      .structuredContent!['matches'] as { id: string }[])[0]!.id;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '담당자\n2. 교육부' }] }, 방);
+    for (const 찾을것 of ['담당자\n2.', '담당자 2.']) {
+      const r = await 도구부르기('find', { doc_id, text: 찾을것 }, 방);
+      expect(r.isError, `${JSON.stringify(찾을것)} 을 못 찾았다`).toBeUndefined();
+    }
+  });
+
+  it('**칸 미리보기가 줄 나눔 뒤 글과 & 를 제대로 읽는다**', async () => {
+    const { 방, doc_id } = await 문서하나([{ kind: 'table', headers: ['구분', '내용'], rows: [['A&B', '앞']] }]);
+    const 칸 = ((await 도구부르기('find', { doc_id, text: '앞', kind: 'cell' }, 방))
+      .structuredContent!['matches'] as { id: string }[])[0]!.id;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id: 칸, text: '앞\n뒤' }] }, 방);
+    const 표 = ((await 도구부르기('get_outline', { doc_id }, 방))
+      .structuredContent!['items'] as { kind: string; preview: string }[]).find((x) => x.kind === 'table')!;
+    expect(표.preview).toContain('A&B');
+    expect(표.preview).not.toContain('&amp;');
+    expect(표.preview).toContain('뒤');
   });
 });

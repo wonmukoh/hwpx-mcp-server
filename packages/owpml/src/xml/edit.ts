@@ -142,6 +142,76 @@ export function textOf(el: ElementNode): string {
   return out.join('');
 }
 
+/**
+ * **글자 칸(`hp:t`) 안에서 글자 하나로 치는 개체.**
+ *
+ * 한글은 Shift+Enter 줄 나눔·탭·전각 빈칸·묶음 빈칸을 글자로 안 쓰고 `hp:t` 안의
+ * **빈 요소**로 쓴다. `textOf` 는 빈 요소를 건너뛰므로, 그걸로 읽으면
+ * `담당자<hp:lineBreak/>2. 교육부` 가 「담당자2. 교육부」로 **붙는다.** 그리고
+ * `setText` 로 되쓰면 **넷 다 지워진다.** 표본 46편에 lineBreak 53 · tab 53 ·
+ * fwSpace 220 · nbSpace 90 개가 있었다 (실측 35항).
+ *
+ * 그래서 글자 칸은 이 둘로만 읽고 쓴다. 표본에 U+3000·U+00A0 이 글자로 박힌 곳은
+ * 0 이라 글자 ↔ 요소를 맞바꿔도 한글이 쓰는 꼴과 어긋나지 않는다.
+ */
+export const 글자개체: Readonly<Record<string, string>> = {
+  'hp:lineBreak': '\n',
+  'hp:tab': '\t',
+  'hp:fwSpace': '\u3000',
+  'hp:nbSpace': '\u00a0',
+};
+
+const 글자에서개체: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(글자개체).map(([이름, 글자]) => [글자, 이름]),
+);
+
+/** 한글이 새 문서에서 탭을 칠 때 쓰는 값 (기준파일에서 떴다) */
+const 새탭속성 = { width: '2056', leader: '0', type: '1' };
+
+/** 글자 칸 하나를 읽는다 — 개체 넷은 글자로 (`\n` `\t` U+3000 U+00A0) */
+export function 글자칸읽기(t: ElementNode): string {
+  const out: string[] = [];
+  for (const c of t.children) {
+    if (c.kind === 'text') out.push(unescapeXml(c.raw));
+    else if (c.kind === 'cdata') out.push(c.raw.slice(9, -3));
+    else if (c.kind === 'element') out.push(글자개체[c.name] ?? textOf(c));
+  }
+  return out.join('');
+}
+
+/**
+ * 글자 칸 하나를 다시 쓴다 — `글자칸읽기` 의 짝.
+ *
+ * `\n` `\t` U+3000 U+00A0 은 개체로 되돌린다. **있던 개체는 차례대로 다시 쓴다** —
+ * 탭은 `width`·`leader`(채움 점선)를 지고 있어서, 새로 만들면 목차의 점선이 사라진다.
+ * 모자라면 새로 만든다. `\r\n`·`\r` 은 `\n` 으로 친다.
+ */
+export function 글자칸쓰기(t: ElementNode, 글: string): void {
+  const 있던것 = new Map<string, ElementNode[]>();
+  for (const c of t.children) {
+    if (c.kind === 'element' && 글자개체[c.name] !== undefined) {
+      const 줄 = 있던것.get(c.name) ?? [];
+      줄.push(c);
+      있던것.set(c.name, 줄);
+    }
+  }
+  const 새자식: Node[] = [];
+  for (const 쪽 of 글.replace(/\r\n?/g, '\n').split(/([\n\t\u3000\u00a0])/)) {
+    if (쪽 === '') continue;
+    const 이름 = 글자에서개체[쪽];
+    if (이름 === undefined) {
+      새자식.push(createText(쪽));
+      continue;
+    }
+    새자식.push(있던것.get(이름)?.shift() ?? createElement(이름, 이름 === 'hp:tab' ? 새탭속성 : {}));
+  }
+  if (새자식.length === 0) 새자식.push(createText(''));
+  for (const c of 새자식) c.parent = t;
+  t.children = 새자식;
+  t.selfClosing = false;
+  markDirty(t);
+}
+
 /** 자식을 맨 뒤에 붙인다 */
 export function appendChild(parent: ElementNode, child: Node): void {
   child.parent = parent;

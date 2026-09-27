@@ -19,7 +19,7 @@
 
 import { HwpxContainer, 부품 } from '@hwpx/container';
 import {
-  parseXml, serializeXml, serializeNode, findAll, getAttr, textOf,
+  parseXml, serializeXml, serializeNode, findAll, getAttr, textOf, 글자칸읽기,
   createElement, appendChild,
   type ElementNode, type XmlDocument, childrenNamed, removeNode, setText, 못쓰는제어문자,
 } from '@hwpx/owpml';
@@ -217,26 +217,43 @@ export class 문서 {
   }
 
   /**
-   * **칸 글을 통째로 간다.** 줄바꿈으로 문단을 가른다.
+   * **칸 글을 통째로 간다.** 줄바꿈으로 줄을 가른다.
    *
-   * 남는 문단은 **비운다** — 안 비우면 옛 글이 뒤에 남는다.
-   * 줄이 문단보다 많으면 **거절한다.** 말없이 합치면 줄이 사라진 줄도 모른다.
+   * 칸 안 줄은 두 가지다 — 문단 가름(Enter)과 **줄 나눔(Shift+Enter, `hp:lineBreak`)**.
+   * 읽을 때는 둘 다 `\n` 으로 나온다(실측 35항: 줄 나눔 53개 가운데 37개가 칸 안이다).
+   * 그래서 쓸 때는 **칸의 지금 모양**에 맞춰 나눈다 —
+   *
+   *   - 문단이 하나면 → 통째로 그 문단에. `\n` 은 줄 나눔이 된다.
+   *   - 줄 수가 지금과 같으면 → 지금 모양대로(문단마다 몇 줄인지) 나눠 넣는다.
+   *     그래야 읽은 글을 고쳐 되쓸 때 줄 나눔이 문단 가름으로 바뀌지 않는다.
+   *   - 줄이 문단보다 적으면 → 문단마다 한 줄, **남는 문단은 비운다.**
+   *   - 줄이 문단보다 많으면 → 앞 문단마다 한 줄, **넘치는 줄은 마지막 문단 안의
+   *     줄 나눔**으로. 예전에는 거절했다 — 문단을 늘릴 길이 없어 긴 글을 아예 못 넣었다.
+   *     줄 나눔이 생긴 지금은 줄이 사라지지 않는다.
    */
   칸글바꾸기(id: string, 새글: string): 결과<{ 바뀐수: number; 잃은서식: number }> {
     const 것들 = this.칸문단들(id);
     if (!것들.ok) return this.남기기('칸글바꾸기', id, 것들);
-    const 줄들 = 새글.split('\n');
-    if (줄들.length > 것들.value.length) {
-      return this.남기기('칸글바꾸기', id, 안됨(
-        `${id} 에는 문단이 ${것들.value.length}개인데 ${줄들.length}줄을 줬다`,
-        '줄을 줄이거나, 문단마다 따로 set_text 를 불러라. '
-        + `get_content(id: "${id}") 로 문단 ID 를 볼 수 있다.`,
-      ));
+    const 문단들 = 것들.value;
+    const 줄들 = 새글.replace(/\r\n?/g, '\n').split('\n');
+    const 지금모양 = 문단들.map((p) => p.글.split('\n').length);
+    const 지금줄수 = 지금모양.reduce((a, b) => a + b, 0);
+    let 나눔: string[];
+    if (문단들.length === 1) {
+      나눔 = [줄들.join('\n')];
+    } else if (줄들.length === 지금줄수) {
+      let k = 0;
+      나눔 = 지금모양.map((n) => { const 몫 = 줄들.slice(k, k + n).join('\n'); k += n; return 몫; });
+    } else if (줄들.length <= 문단들.length) {
+      나눔 = 문단들.map((_, i) => 줄들[i] ?? '');
+    } else {
+      const 앞 = 줄들.slice(0, 문단들.length - 1);
+      나눔 = [...앞, 줄들.slice(문단들.length - 1).join('\n')];
     }
     let 바뀐수 = 0;
     let 잃은서식 = 0;
-    for (const [i, p] of 것들.value.entries()) {
-      const 넣을것 = 줄들[i] ?? '';
+    for (const [i, p] of 문단들.entries()) {
+      const 넣을것 = 나눔[i] ?? '';
       if (p.글 === 넣을것) continue;   // 이미 같으면 안 건드린다
       const r = p.글바꾸기(넣을것);
       if (!r.ok) return this.남기기('칸글바꾸기', id, r);
@@ -646,7 +663,7 @@ export class 문서 {
   get 바탕쪽들(): string[] {
     return this.통.바탕쪽이름들().map((n) => {
       const doc = parseXml(this.통.readText(n));
-      return findAll(doc.root, 'hp:t').map((t) => textOf(t)).join('').trim();
+      return findAll(doc.root, 'hp:t').map((t) => 글자칸읽기(t)).join('').trim();
     });
   }
 

@@ -25,7 +25,7 @@
  */
 
 import {
-  childElements, childrenNamed, findAll, firstChildNamed, getAttr, textOf, parseXml,
+  childElements, childrenNamed, findAll, firstChildNamed, getAttr, textOf, 글자칸읽기, parseXml,
   hwp, hwpToMm, hwpToPt, readHwp,
   type ElementNode, type HwpUnit,
 } from '@hwpx/owpml';
@@ -192,10 +192,14 @@ function 줄간격값(모양: 문단모양): string | undefined {
 function 런속엮기(것: ElementNode, 글모양: 글자모양 | undefined, c: 엮는이): string {
   switch (것.name) {
     case 'hp:t': {
-      const 글 = textOf(것);
-      c.글자수 += 글.length;
+      // **줄 나눔·탭은 `hp:t` 안에 산다.** 아래 `case 'hp:lineBreak'` 는 런 바로 밑일
+      // 때만 걸리는데, 한글은 53개 전부를 `hp:t` 안에 넣었다(실측 35항). 전에는
+      // `textOf` 로 글만 꺼내 「담당자2. 교육부」처럼 두 줄을 붙여 그렸다.
+      const 글 = 글자칸읽기(것);
+      c.글자수 += 글.replace(/[\n\t]/g, '').length;
       if (글 === '') return '';
-      return `<span${글자스타일(글모양)}>${감싸기(글)}</span>`;
+      const 안 = 감싸기(글).replace(/\n/g, '<br>').replace(/\t/g, '<span class="tab"></span>');
+      return `<span${글자스타일(글모양)}>${안}</span>`;
     }
     case 'hp:tbl':
       return 표엮기(것, c);
@@ -342,7 +346,7 @@ function 조종엮기(틀: ElementNode, c: 엮는이): string {
     const 번호 = getAttr(e, 'number') ?? String(c.주들.length + 1);
     // 안에 든 `hp:autoNum` 은 번호 자리라 글로 옮기면 겹친다 — 글만 걷는다.
     const 글 = childrenNamed(firstChildNamed(e, 'hp:subList') ?? e, 'hp:p')
-      .map((p) => findAll(p, 'hp:t').map((t) => textOf(t)).join(''))
+      .map((p) => findAll(p, 'hp:t').map((t) => 글자칸읽기(t)).join(''))
       .join(' ').trim();
     c.주들.push({ 갈래, 번호, 글 });
     나온것 += `<sup class="주표시">${감싸기(번호)}</sup>`;

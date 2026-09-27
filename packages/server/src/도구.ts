@@ -27,7 +27,7 @@ import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, �
 import { 엮기 } from '@hwpx/render';
 import {
   childrenNamed, findAll, getAttr, firstChildNamed, parseXml, pt, ptToHwp,
-  appendChild, insertAfter, removeNode, closestNamed, textOf, type ElementNode,
+  appendChild, insertAfter, removeNode, closestNamed, textOf, 글자칸읽기, type ElementNode,
 } from '@hwpx/owpml';
 
 import {
@@ -276,8 +276,12 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   text: 글자(
     'set_text 로 넣을 글. **글자 그대로 들어간다** — `**굵게**` `[[강조]]` 표시는 '
     + '안 풀리고 별표째 찍힌다 (그 표시는 compose 의 블록 글에서만 푼다). '
-    + '칸(cell_…)에 주면 줄바꿈으로 문단을 갈라 넣고, 줄이 문단보다 많으면 거절한다. '
-    + '문단(p_…)에 주면 줄바꿈이 그대로 남는다 — 문단은 이 op 으로 못 늘린다',
+    + '`\\n` 은 줄 나눔(한글의 Shift+Enter), `\\t` 는 탭, U+3000 은 전각 빈칸, U+00A0 은 '
+    + '묶음 빈칸으로 들어간다 — get_content 가 돌려주는 꼴과 같으니 읽은 글을 고쳐 그대로 '
+    + '되쓰면 된다. 문단(p_…)에 주면 줄이 늘어도 문단은 하나로 남는다. 칸(cell_…)에 주면 '
+    + '칸의 지금 모양대로 나눠 넣는다: 문단이 하나면 통째로, 줄 수가 지금과 같으면 문단마다 '
+    + '제 줄 수대로, 줄이 모자라면 문단마다 한 줄씩 넣고 남는 문단은 비우고, 넘치면 넘친 줄을 '
+    + '마지막 문단 안 줄 나눔으로 넣는다 — 줄은 하나도 안 사라진다',
   ),
   find: 글자('replace 로 찾을 글'),
   replace: 글자('replace 로 바꿀 글'),
@@ -872,7 +876,9 @@ export const 도구들: 도구[] = [
       + '**빈 자리를 찾을 때는 이 길을 쓴다** — kind:"paragraph" 로 훑어 preview 가 빈 것이 '
       + '채울 자리다. 빈 문단은 글이 없으니 text 로는 못 찾는다 (인사말 자리가 그런 꼴이다). '
       + '**잘렸으면 truncated 가 true 다 — 그러면 limit 을 키워 다시 불러라.** '
-      + '잘린 채로 채우면 뒷절을 통째로 빼먹는다.',
+      + '잘린 채로 채우면 뒷절을 통째로 빼먹는다. '
+      + '빈칸 종류(보통·전각·묶음 빈칸·탭·줄 나눔)는 가리지 않고 견준다 — 양식이 전각 빈칸을 '
+      + '써도 보통 빈칸으로 쳐서 찾는다. 글자는 그대로 같아야 한다.',
     inputSchema: 찾기스키마,
     outputSchema: 묶음('찾은 것', {
       ok: 참거짓('됐나'),
@@ -933,7 +939,7 @@ export const 도구들: 도구[] = [
             }
           }
           for (const p of s.모든문단들) {
-            if (인자.text !== undefined && !p.글.includes(인자.text)) continue;
+            if (인자.text !== undefined && !들었나(p.글, 인자.text)) continue;
             const 칸 = 칸속.get(p.el);
             나온것.push({
               id: d.이름표.아이디(p.el), kind: 'paragraph', preview: 미리보기(p.글),
@@ -948,7 +954,7 @@ export const 도구들: 도구[] = [
             const 표아이디 = d.이름표.아이디(t);
             if (인자.kind !== 'cell') {
               const 온글 = tt.셀들.map((c) => 셀글(c.el)).join(' ');
-              if (인자.text === undefined || 온글.includes(인자.text)) {
+              if (인자.text === undefined || 들었나(온글, 인자.text)) {
                 나온것.push({
                   id: 표아이디, kind: 'table', preview: 미리보기(온글),
                   rows: tt.줄수, cols: tt.칸수, empty: 온글.trim() === '',
@@ -963,7 +969,7 @@ export const 도구들: 도구[] = [
                   const 시작 = tt.시작셀(y, x);
                   if (!시작) continue;
                   const 글 = 셀글(시작.el);
-                  if (인자.text !== undefined && !글.includes(인자.text)) continue;
+                  if (인자.text !== undefined && !들었나(글, 인자.text)) continue;
                   나온것.push({ id: d.셀아이디(표아이디, y, x), kind: 'cell', preview: 미리보기(글) });
                 }
               }
@@ -976,7 +982,7 @@ export const 도구들: 도구[] = [
       if (나온것.length === 0) {
         return 못함(
           인자.text !== undefined ? `'${인자.text}' 가 든 것을 못 찾았다` : `${인자.kind} 를 못 찾았다`,
-          'get_outline 으로 문서에 무엇이 있는지 먼저 보라. 띄어쓰기까지 똑같아야 찾는다.',
+          'get_outline 으로 문서에 무엇이 있는지 먼저 보라. 빈칸 종류(보통·전각·탭·줄 나눔)는 가리지 않고 찾는다 — 글자가 다른지 보라.',
         );
       }
       const 잘림 = 나온것.length > 자른것.length;
@@ -1916,11 +1922,31 @@ function 미리보기(글: string, 폭 = 60): string {
   return 한줄.length > 폭 ? `${한줄.slice(0, 폭)}…` : 한줄;
 }
 
+/**
+ * 칸(또는 문단) 안 글을 이어 붙인다.
+ *
+ * 전에는 글자 칸의 **첫 자식 하나의 날 글**만 읽었다. 그래서 줄 나눔이 든 칸은
+ * 「담당자<hp:lineBreak/>2. 교육부」가 「담당자」에서 끊겼고, `&` 는 `&amp;` 로 나왔다.
+ * 글자 칸은 `글자칸읽기` 로만 읽는다 (실측 35항).
+ */
 function 셀글(el: unknown): string {
   if (!el) return '';
-  return findAll(el as never, 'hp:t')
-    .map((t) => (t.children[0] as { raw?: string } | undefined)?.raw ?? '')
-    .join('');
+  return findAll(el as never, 'hp:t').map((t) => 글자칸읽기(t)).join('');
+}
+
+/**
+ * `find` 가 견줄 때 쓰는 꼴 — **빈칸 종류를 가리지 않는다.**
+ *
+ * 한글 문서는 전각 빈칸·묶음 빈칸·탭·줄 나눔을 섞어 쓴다(표본 46편에 400개 남짓).
+ * 모델은 보통 빈칸으로 친다. 「교육 · 연구」를 쳤는데 문서가 전각 빈칸이라 못 찾으면
+ * 「띄어쓰기까지 똑같아야 한다」는 말만 듣고 헤맨다.
+ */
+function 견줄꼴(글: string): string {
+  return 글.replace(/\s+/g, ' ');
+}
+
+function 들었나(글: string, 찾을것: string): boolean {
+  return 견줄꼴(글).includes(견줄꼴(찾을것));
 }
 
 /**

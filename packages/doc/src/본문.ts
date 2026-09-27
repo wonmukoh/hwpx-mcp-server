@@ -21,7 +21,7 @@
  */
 
 import {
-  getAttr, setAttr, textOf, setText, appendChild, createElement, createText,
+  getAttr, setAttr, textOf, setText, appendChild, createElement, createText, 글자칸읽기, 글자칸쓰기,
   removeNode, insertBefore, insertAfter, childrenNamed, firstChildNamed, findAll,
   복제하기, 못쓰는제어문자,
   type ElementNode,
@@ -101,7 +101,7 @@ export class 문단 {
   get 글(): string {
     return this.런들
       .flatMap((r) => childrenNamed(r, 'hp:t'))
-      .map((t) => textOf(t))
+      .map((t) => 글자칸읽기(t))
       .join('');
   }
 
@@ -181,7 +181,9 @@ export class 문단 {
         );
       }
       // 정말 빈 문단이면 글칸을 만들어 넣는다
-      const 런 = createElement('hp:run', { charPrIDRef: '0' }, [createElement('hp:t', {}, [createText(새글)])]);
+      const 새칸 = createElement('hp:t', {});
+      글자칸쓰기(새칸, 새글);
+      const 런 = createElement('hp:run', { charPrIDRef: '0' }, [새칸]);
       const 배치 = firstChildNamed(this.el, 'hp:linesegarray');
       if (배치) insertBefore(배치, 런);
       else appendChild(this.el, 런);
@@ -197,7 +199,7 @@ export class 문단 {
     const 잃은서식 = 서식가짓수 > 1 ? 서식가짓수 - 1 : 0;
 
     // 첫 글칸에 새 글을 넣고, 나머지 **글칸만** 지운다
-    setText(글칸들[0]!, 새글);
+    글자칸쓰기(글칸들[0]!, 새글);
     for (const t of 글칸들.slice(1)) removeNode(t);
 
     // 글만 들어 있다가 텅 빈 런을 치운다. 표·그림이 남은 런은 그대로 둔다.
@@ -243,9 +245,9 @@ export class 문단 {
     for (const r of this.런들) {
       for (const t of childrenNamed(r, 'hp:t')) {
         if (바뀐수 >= 한도) break;
-        const 지금 = textOf(t);
+        const 지금 = 글자칸읽기(t);
         if (!지금.includes(찾을글)) continue;
-        setText(t, 지금.split(찾을글).join(새글));
+        글자칸쓰기(t, 지금.split(찾을글).join(새글));
         바뀐수++;
       }
     }
@@ -294,7 +296,7 @@ export class 문단 {
       // 실측: 글과 표가 같은 런에 든 것이 1134개 있다.
       const 아이들 = 런.children.filter((c) => c.kind === 'element');
       if (아이들.length !== 1) continue;
-      const 글 = textOf(글들[0]!);
+      const 글 = 글자칸읽기(글들[0]!);
       const i = 글.indexOf(찾을글);
       if (i === -1) continue;
 
@@ -305,17 +307,17 @@ export class 문단 {
       // 찾은 것을 담을 런
       const 가운데 = 복제하기(런, this.source);
       setAttr(가운데, 'charPrIDRef', charPrId);
-      setText(childrenNamed(가운데, 'hp:t')[0]!, 찾을글);
+      글자칸쓰기(childrenNamed(가운데, 'hp:t')[0]!, 찾을글);
       insertAfter(런, 가운데);
 
       if (뒤.length > 0) {
         const 뒷런 = 복제하기(런, this.source);
         setAttr(뒷런, 'charPrIDRef', 본서식);
-        setText(childrenNamed(뒷런, 'hp:t')[0]!, 뒤);
+        글자칸쓰기(childrenNamed(뒷런, 'hp:t')[0]!, 뒤);
         insertAfter(가운데, 뒷런);
       }
 
-      if (앞.length > 0) setText(글들[0]!, 앞);
+      if (앞.length > 0) 글자칸쓰기(글들[0]!, 앞);
       else removeNode(런);
 
       바뀐수++;
@@ -327,7 +329,7 @@ export class 문단 {
       const 건너뛴것 = this.런들.filter((r) => {
         const 아이들 = r.children.filter((c) => c.kind === 'element');
         return childrenNamed(r, 'hp:t').length === 1 && 아이들.length > 1
-          && textOf(childrenNamed(r, 'hp:t')[0]!).includes(찾을글);
+          && 글자칸읽기(childrenNamed(r, 'hp:t')[0]!).includes(찾을글);
       });
       if (건너뛴것.length) {
         const 든것 = [...new Set(건너뛴것.flatMap((r) =>
@@ -374,7 +376,7 @@ export class 문단 {
       if (글들.length !== 1) continue;
       const 아이들 = 런.children.filter((c) => c.kind === 'element');
       if (아이들.length !== 1) continue;   // 표·그림이 같이 든 런은 안 건드린다
-      const 글 = textOf(글들[0]!);
+      const 글 = 글자칸읽기(글들[0]!);
       const i = 글.indexOf(찾을글);
       if (i === -1) continue;
 
@@ -387,7 +389,7 @@ export class 문단 {
       const 밭id = 아이디들(1);
 
       const 가운데 = 복제하기(런, this.source);
-      setText(childrenNamed(가운데, 'hp:t')[0]!, 찾을글);
+      글자칸쓰기(childrenNamed(가운데, 'hp:t')[0]!, 찾을글);
       insertAfter(런, 가운데);
 
       const 끝런 = createElement('hp:run', { charPrIDRef: 본서식 });
@@ -400,7 +402,7 @@ export class 문단 {
       if (뒤.length > 0) {
         const 뒷런 = 복제하기(런, this.source);
         setAttr(뒷런, 'charPrIDRef', 본서식);
-        setText(childrenNamed(뒷런, 'hp:t')[0]!, 뒤);
+        글자칸쓰기(childrenNamed(뒷런, 'hp:t')[0]!, 뒤);
         insertAfter(끝런, 뒷런);
       }
 
@@ -429,7 +431,7 @@ export class 문단 {
       appendChild(시작런, 시작틀);
       insertBefore(가운데, 시작런);
 
-      if (앞.length > 0) setText(글들[0]!, 앞);
+      if (앞.length > 0) 글자칸쓰기(글들[0]!, 앞);
       else removeNode(런);
 
       바뀐수++;
@@ -539,14 +541,14 @@ export class 문단 {
     let 뒤글 = '';
     바깥: for (const 런 of this.런들) {
       for (const t of childrenNamed(런, 'hp:t')) {
-        const 글 = textOf(t);
+        const 글 = 글자칸읽기(t);
         if (설정.찾을글 === undefined) { 붙일곳 = t; continue; }
         const i = 글.indexOf(설정.찾을글);
         if (i === -1) continue;
         const 끝 = i + 설정.찾을글.length;
         붙일곳 = t;
         뒤글 = 글.slice(끝);
-        setText(t, 글.slice(0, 끝));
+        글자칸쓰기(t, 글.slice(0, 끝));
         break 바깥;
       }
     }
@@ -584,7 +586,7 @@ export class 문단 {
     appendChild(안런, 번호틀);
 
     const 글칸 = createElement('hp:t', {});
-    setText(글칸, ` ${설정.내용}`);
+    글자칸쓰기(글칸, ` ${설정.내용}`);
     appendChild(안런, 글칸);
 
     appendChild(안문단, 안런);
@@ -596,7 +598,7 @@ export class 문단 {
     // 어구 뒤에 남은 글은 **주 뒤로** 옮긴다. 안 옮기면 주가 문장 끝으로 밀린다.
     if (뒤글.length > 0) {
       const 남은 = createElement('hp:t', {});
-      setText(남은, 뒤글);
+      글자칸쓰기(남은, 뒤글);
       insertAfter(틀, 남은);
     }
     return 됨({ 갈래: 설정.갈래, 번호: 설정.번호 });
@@ -607,7 +609,7 @@ export class 문단 {
     const 것: { 갈래: '각주' | '미주'; 번호: string; 글: string }[] = [];
     for (const [태그, 갈래] of [['hp:footNote', '각주'], ['hp:endNote', '미주']] as const) {
       for (const e of findAll(this.el, 태그)) {
-        것.push({ 갈래, 번호: getAttr(e, 'number') ?? '', 글: textOf(e).trim() });
+        것.push({ 갈래, 번호: getAttr(e, 'number') ?? '', 글: 곁글읽기(e).trim() });
       }
     }
     return 것;
@@ -644,7 +646,7 @@ export class 문단 {
     // (링크는 런을 복제하므로 거기서는 막는다 — 짜임이 달라 규칙도 다르다.)
     const 후보 = this.런들.flatMap((런) => childrenNamed(런, 'hp:t').map((t) => ({ 런, t })));
     for (const { t: 글칸 } of 후보) {
-      const 글 = textOf(글칸);
+      const 글 = 글자칸읽기(글칸);
       const i = 글.indexOf(설정.찾을글);
       if (i === -1) continue;
 
@@ -682,7 +684,7 @@ export class 문단 {
       });
       const 안런 = createElement('hp:run', { charPrIDRef: 설정.글자모양 ?? '0' });
       const 몸통 = createElement('hp:t', {});
-      setText(몸통, 설정.내용);
+      글자칸쓰기(몸통, 설정.내용);
       appendChild(안런, 몸통);
       appendChild(안문단, 안런);
       appendChild(목록, 안문단);
@@ -695,14 +697,14 @@ export class 문단 {
       }));
 
       // 앞글 → 시작 → 메모 걸린 글 → 끝 → 뒷글. **다 한 런 안이다.**
-      setText(글칸, 앞);
+      글자칸쓰기(글칸, 앞);
       insertAfter(글칸, 시작틀);
       const 가운데 = createElement('hp:t', {});
-      setText(가운데, 설정.찾을글);
+      글자칸쓰기(가운데, 설정.찾을글);
       insertAfter(시작틀, 가운데);
       insertAfter(가운데, 끝틀);
       const 뒷글칸 = createElement('hp:t', {});
-      setText(뒷글칸, 뒤);
+      글자칸쓰기(뒷글칸, 뒤);
       insertAfter(끝틀, 뒷글칸);
 
       return 됨({ 바뀐수: 1 });
@@ -724,7 +726,7 @@ export class 문단 {
           : childrenNamed(값들, 'hp:stringParam').find((x) => getAttr(x, 'name') === 'Author');
         const 목록 = firstChildNamed(e, 'hp:subList');
         return {
-          글: 목록 === undefined ? '' : textOf(목록),
+          글: 목록 === undefined ? '' : 곁글읽기(목록),
           지은이: 지은이 === undefined ? '' : textOf(지은이),
         };
       });
@@ -762,16 +764,16 @@ export class 문단 {
     for (const 런 of this.런들) {
       for (const t of childrenNamed(런, 'hp:t')) {
         if (설정.찾을글 === undefined) { 붙일곳 = t; continue; }
-        const 글 = textOf(t);
+        const 글 = 글자칸읽기(t);
         const i = 글.indexOf(설정.찾을글);
         if (i === -1) continue;
         const 끝 = i + 설정.찾을글.length;
         const 뒤 = 글.slice(끝);
-        setText(t, 글.slice(0, 끝));
+        글자칸쓰기(t, 글.slice(0, 끝));
         붙일곳 = t;
         if (뒤.length > 0) {
           const 남은 = createElement('hp:t', {});
-          setText(남은, 뒤);
+          글자칸쓰기(남은, 뒤);
           insertAfter(t, 남은);
         }
         break;
@@ -1194,6 +1196,18 @@ function 폭갈래(c: string): 'W' | 'S' | 'N' {
  *
  * 다르면 지운다. 틀린 줄 정보를 믿고 한글이 글자를 겹쳐 그리기 때문이다.
  */
+/**
+ * 주·메모 칸의 글 — 그 안 문단들을 줄바꿈으로 잇는다.
+ *
+ * 전에는 `textOf` 로 통째로 이어서 문단 둘이 한 줄로 붙고, 줄 나눔도 빠졌다.
+ */
+function 곁글읽기(el: ElementNode): string {
+  return findAll(el, 'hp:p')
+    .map((p) => childrenNamed(p, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'))
+      .map((t) => 글자칸읽기(t)).join(''))
+    .join('\n');
+}
+
 function 짜임같나(옛: string, 새: string): boolean {
   const a = [...옛];
   const b = [...새];

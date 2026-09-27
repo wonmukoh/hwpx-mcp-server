@@ -605,7 +605,7 @@ export class 문단 {
     바깥: for (const 런 of this.런들) {
       for (const t of childrenNamed(런, 'hp:t')) {
         const 글 = 글자칸읽기(t);
-        if (설정.찾을글 === undefined) { 붙일곳 = t; continue; }
+        if (설정.찾을글 === undefined) { 붙일곳 = this.끝자리(); continue; }
         const i = 글.indexOf(설정.찾을글);
         if (i === -1) continue;
         const 끝 = i + 설정.찾을글.length;
@@ -668,10 +668,39 @@ export class 문단 {
   }
 
   /** 이 문단에 달린 주들 */
+  /**
+   * **이 문단에 달린 것인가** — 위로 올라가 처음 만나는 문단이 이 문단이면 제것이다.
+   *
+   * 깊이 훑으면 표를 품은 문단이 **칸 안 문단의 주·메모까지** 제것으로 셌다. 칸 안
+   * 문단도 따로 훑으니 같은 주가 두 번 나왔다 (각주 2개가 get_content 에 3개,
+   * 2026-09-27 검토에서 잼).
+   */
+  /**
+   * **문단 끝 자리** — 마지막 글자 칸이나 조종 가운데 맨 뒤의 것.
+   *
+   * 전에는 「마지막 글자 칸」 뒤에 붙였다. 그러면 문단 끝에 주가 이미 달려 있을 때 새 주가
+   * **앞 주보다 앞에** 들어갔다 — 문서 차례로 번호를 세게 하자 드러났다 (2026-09-27).
+   */
+  끝자리(): ElementNode | undefined {
+    let 끝: ElementNode | undefined;
+    for (const 런 of this.런들) {
+      for (const c of 런.children) {
+        if (c.kind === 'element' && (c.name === 'hp:t' || c.name === 'hp:ctrl')) 끝 = c;
+      }
+    }
+    return 끝;
+  }
+
+  private 제것인가(e: ElementNode): boolean {
+    let 위 = e.parent as ElementNode | undefined;
+    while (위 && 위.name !== 'hp:p') 위 = 위.parent as ElementNode | undefined;
+    return 위 === this.el;
+  }
+
   get 주들(): { 갈래: '각주' | '미주'; 번호: string; 글: string }[] {
     const 것: { 갈래: '각주' | '미주'; 번호: string; 글: string }[] = [];
     for (const [태그, 갈래] of [['hp:footNote', '각주'], ['hp:endNote', '미주']] as const) {
-      for (const e of findAll(this.el, 태그)) {
+      for (const e of findAll(this.el, 태그).filter((x) => this.제것인가(x))) {
         것.push({ 갈래, 번호: getAttr(e, 'number') ?? '', 글: 곁글읽기(e).trim() });
       }
     }
@@ -782,7 +811,7 @@ export class 문단 {
   /** 이 문단에 달린 메모들 */
   get 메모들(): { 글: string; 지은이: string }[] {
     return findAll(this.el, 'hp:fieldBegin')
-      .filter((e) => getAttr(e, 'type') === 'MEMO')
+      .filter((e) => getAttr(e, 'type') === 'MEMO' && this.제것인가(e))
       .map((e) => {
         const 값들 = firstChildNamed(e, 'hp:parameters');
         const 지은이 = 값들 === undefined ? undefined
@@ -826,7 +855,7 @@ export class 문단 {
     let 붙일곳: ElementNode | undefined;
     for (const 런 of this.런들) {
       for (const t of childrenNamed(런, 'hp:t')) {
-        if (설정.찾을글 === undefined) { 붙일곳 = t; continue; }
+        if (설정.찾을글 === undefined) { 붙일곳 = this.끝자리(); continue; }
         const 글 = 글자칸읽기(t);
         const i = 글.indexOf(설정.찾을글);
         if (i === -1) continue;

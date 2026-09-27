@@ -19,7 +19,7 @@
 
 import { HwpxContainer, 부품 } from '@hwpx/container';
 import {
-  parseXml, serializeXml, serializeNode, findAll, getAttr, textOf, 글자칸읽기,
+  parseXml, serializeXml, serializeNode, findAll, getAttr, setAttr, textOf, 글자칸읽기,
   createElement, appendChild,
   type ElementNode, type XmlDocument, childrenNamed, removeNode, setText, 못쓰는제어문자,
 } from '@hwpx/owpml';
@@ -450,12 +450,29 @@ export class 문서 {
     const 태그 = 갈래 === '각주' ? 'hp:footNote' : 'hp:endNote';
     const 이미 = this.구역들.reduce((n, s) => n + findAll(s.root, 태그).length, 0);
     const 서식 = this.머리.스타일찾기(갈래, 갈래 === '각주' ? 'Footnote' : 'Endnote');
-    return this.남기기('주달기', id, p.value.주달기({
+    const instId = this.다음아이디들(1)[0]!;
+    const r = p.value.주달기({
       갈래, 내용, 번호: 이미 + 1,
-      instId: this.다음아이디들(1)[0]!,
+      instId,
       ...(찾을글 !== undefined ? { 찾을글 } : {}),
       ...서식,
-    }));
+    });
+    if (!r.ok) return this.남기기('주달기', id, r);
+    // **번호는 문서 차례로 다시 센다.** 「있는 수 + 1」 로만 매기면 앞쪽에 나중에 단 주가
+    // 더 큰 번호를 받아, 우리 get_content·render 가 뒤집힌 번호를 말했다 (한글은 열 때
+    // 제가 다시 매긴다). 틀린 번호만 고친다 — 맞는 것은 건드리지 않는다.
+    let 새번호 = 0;
+    let 이것번호 = r.value.번호;
+    for (const s of this.구역들) {
+      for (const e of findAll(s.root, 태그)) {
+        새번호++;
+        if (getAttr(e, 'number') !== String(새번호)) setAttr(e, 'number', String(새번호));
+        const 자동 = findAll(e, 'hp:autoNum')[0];
+        if (자동 && getAttr(자동, 'num') !== String(새번호)) setAttr(자동, 'num', String(새번호));
+        if (getAttr(e, 'instId') === instId) 이것번호 = 새번호;
+      }
+    }
+    return this.남기기('주달기', id, 됨({ 갈래, 번호: 이것번호 }));
   }
 
   /** 문서 전체의 주들 */

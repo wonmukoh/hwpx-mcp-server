@@ -133,3 +133,42 @@ describe('render_html 은 있는 파일을 묻지 않고 덮어쓰지 않는다'
     expect(t.annotations?.readOnlyHint).not.toBe(true);
   });
 });
+
+describe('주·메모는 한 번씩, 문서 차례대로', () => {
+  it('**표 칸 안의 각주·메모가 get_content 에 두 번 안 나온다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '앞 본문' }, { kind: 'table', rows: [['칸 글']] }]);
+    const 칸문단 = await 문단(방, doc_id, '칸 글');
+    await 도구부르기('edit', { doc_id, edits: [
+      { op: 'insert_note', id: 칸문단, text: '칸 안 각주' },
+      { op: 'insert_memo', id: 칸문단, find: '칸 글', text: '칸 안 메모' },
+    ] }, 방);
+    const 전체 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!;
+    expect((전체['notes'] as unknown[]).length).toBe(1);
+    expect((전체['memos'] as unknown[]).length).toBe(1);
+  });
+
+  it('**나중에 앞쪽에 단 각주가 1번이 된다** — 넣은 차례가 아니라 문서 차례', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '첫 문단' }, { kind: 'body', text: '둘째 문단' }]);
+    const 첫 = await 문단(방, doc_id, '첫 문단');
+    const 둘 = await 문단(방, doc_id, '둘째 문단');
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_note', id: 둘, text: '뒤쪽 주' }] }, 방);
+    const 첫문단 = await 문단(방, doc_id, '첫 문단');
+    void 첫;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_note', id: 첫문단, text: '앞쪽 주' }] }, 방);
+    const 주들 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!['notes'] as { number: string; text: string }[];
+    const 번호 = Object.fromEntries(주들.map((x) => [x.text, x.number]));
+    expect(번호['앞쪽 주']).toBe('1');
+    expect(번호['뒤쪽 주']).toBe('2');
+  });
+
+  it('**문단 끝에 둘째 주를 달면 첫째 주 뒤로 간다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '한 문단' }]);
+    const id = await 문단(방, doc_id, '한 문단');
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_note', id, text: '첫째' }] }, 방);
+    const id2 = await 문단(방, doc_id, '한 문단');
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_note', id: id2, text: '둘째' }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 주들 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!['notes'] as { number: string; text: string }[];
+    expect(주들.map((x) => `${x.number}:${x.text}`)).toEqual(['1:첫째', '2:둘째']);
+  });
+});

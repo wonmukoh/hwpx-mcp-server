@@ -112,7 +112,8 @@ describe('블록을 쓴다', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.이유).toContain('2번째');
-    expect(r.어떻게).toContain('2개는 이미 들어갔다');
+    expect(r.어떻게).toContain('2개 블록은 이미 들어갔고');
+    expect(r.어떻게, '실패한 블록은 반쯤 남지 않는다').toContain('하나도 안 들어갔다');
   });
 });
 

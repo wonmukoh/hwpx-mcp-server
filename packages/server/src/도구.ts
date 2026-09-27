@@ -1160,6 +1160,7 @@ export const 도구들: 도구[] = [
       ok: 참거짓('됐나'),
       blocks: 정수('쓴 블록 수'),
       elements: 정수('만든 요소 수'),
+      done: 정수('실패했을 때 — 앞에서 이미 들어간 블록 수. 그 다음 블록부터 다시 보낸다'),
       created: 목록('만든 것들', 묶음('블록 하나', {
         kind: 글자('블록 종류'),
         ids: 목록('만든 요소 ID 들', 글자('ID')),
@@ -1214,7 +1215,12 @@ export const 도구들: 도구[] = [
       // 달라진다 — 옛 ID 가 딴 표를 가리킨 것을 검토에서 쟀다. 중간에 실패해도 앞 블록은
       // 이미 들어갔으니 성패와 상관없이 켠다.
       것.it.구조바꿈 = true;
-      if (!r.ok) return 못함(r.이유, r.어떻게);
+      if (!r.ok) {
+        // 앞 블록들은 들어갔다 — 몇 개인지와 그 ID 를 싣는다 (edit 의 done 과 같은 자리)
+        const 앞것 = ((r as { 만든것?: { kind: string; ids: string[] }[] }).만든것 ?? [])
+          .map((m) => ({ kind: m.kind, ids: m.ids }));
+        return 못함(r.이유, r.어떻게, { done: 앞것.length, created: 앞것 });
+      }
 
       const 만든것 = r.value.만든것.map((m) => ({ kind: m.kind, ids: m.ids }));
       return 잘됨(

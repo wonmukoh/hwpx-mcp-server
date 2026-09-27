@@ -164,12 +164,19 @@ export class 조판기 {
         this.만든것들.push({ 블록: i, kind: 'section_break', ids: [] });
         continue;
       }
+      // **실패한 블록은 반쯤 남기지 않는다.** 개조식 항목 셋 가운데 셋째에서 멈추면
+      // 앞 둘이 남았고, 안내대로 그 블록부터 다시 보내면 앞 둘이 두 번 들어갔다
+      // (2026-09-27 검토에서 잼). 블록 하나는 다 들어가거나 하나도 안 들어간다.
+      const 전 = new Set(s.root.children);
       const r = this.블록쓰기(s, b, i);
       if (!r.ok) {
-        return 안됨(
+        for (const c of [...s.root.children]) if (!전.has(c)) removeNode(c);
+        const 실패 = 안됨<{ 만든것: 만든것[]; 문단수: number }>(
           `${i}번째 블록(${b.kind})에서 멈췄다: ${r.이유}`,
-          `${i}번째 앞의 ${i}개는 이미 들어갔다. ${r.어떻게}`,
+          `앞의 ${i}개 블록은 이미 들어갔고, ${i}번째 블록은 하나도 안 들어갔다. `
+          + `${i}번째부터 다시 보내라. ${r.어떻게}`,
         );
+        return Object.assign(실패, { 만든것: this.만든것들 });
       }
       문단수 += r.value.ids.length;
       this.만든것들.push(r.value);

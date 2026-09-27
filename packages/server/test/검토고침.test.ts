@@ -172,3 +172,20 @@ describe('주·메모는 한 번씩, 문서 차례대로', () => {
     expect(주들.map((x) => `${x.number}:${x.text}`)).toEqual(['1:첫째', '2:둘째']);
   });
 });
+
+describe('compose 가 중간에 멈추면 그 블록은 하나도 안 남긴다', () => {
+  it('**개조식 셋째 항목에서 멈추면 앞 두 항목도 안 남고, done 과 앞 블록 ID 를 준다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    const r = await 도구부르기('compose', { doc_id, blocks: [
+      { kind: 'title', text: '운동회 계획' },
+      { kind: 'outline', items: [{ level: 1, text: '목적' }, { level: 2, text: '협동심' }, { level: 2, text: '**닫지 않은 굵게' }] },
+    ] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.structuredContent!['done']).toBe(1);
+    expect((r.structuredContent!['created'] as unknown[]).length).toBe(1);
+    const 글 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!['text'] as string;
+    expect(글).toContain('운동회 계획');
+    expect(글, '실패한 블록의 앞 항목이 남으면 다시 보낼 때 두 번 들어간다').not.toContain('목적');
+  });
+});

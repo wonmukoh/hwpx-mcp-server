@@ -1896,14 +1896,28 @@ describe('저장할 때 ID 가 죽는다고 알린다', () => {
       doc_id,
       blocks: [{ kind: 'table', headers: ['구분', '값'], rows: [['가', '1']] }],
     }, 방);
-    const 뼈대 = (await 도구부르기('get_outline', { doc_id }, 방))
+    // compose 도 짜임을 바꾸므로 ids_stale 을 켠다. 「글만 고친 문서」를 재려면
+    // 한 번 저장했다 **다시 연** 문서에서 시작한다.
+    const 첫자리 = 낼곳();
+    await 도구부르기('save_document', { doc_id, path: 첫자리 }, 방);
+    const 다시 = (await 도구부르기('open_document', { path: 첫자리 }, 방))
+      .structuredContent!['doc_id'] as string;
+    const 뼈대 = (await 도구부르기('get_outline', { doc_id: 다시 }, 방))
       .structuredContent!['items'] as { id: string; kind: string }[];
-    return { 방, doc_id, 표아이디: 뼈대.find((x) => x.kind === 'table')!.id };
+    return { 방, doc_id: 다시, 표아이디: 뼈대.find((x) => x.kind === 'table')!.id };
   }
 
   function 낼곳() {
     return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hwpx-id-')), '낸것.hwpx');
   }
+
+  it('**compose 로 쓰고 저장해도 ids_stale 이 켜진다** — 다시 열면 ID 가 달라진다', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'table', rows: [['가']] }] }, 방);
+    const r = await 도구부르기('save_document', { doc_id, path: 낼곳() }, 방);
+    expect(r.structuredContent!['ids_stale']).toBe(true);
+  });
 
   it('**줄을 넣고 저장하면 ids_stale 이 켜진다**', async () => {
     const { 방, doc_id, 표아이디 } = await 표든문서();

@@ -27,7 +27,7 @@ import { 됨, 안됨, type 결과 } from './결과.js';
 import { 이름표, 셀아이디, 셀아이디풀기 } from './식별자.js';
 import { 머리글, type 글자모양패치, type 문단모양패치 } from './머리글.js';
 import { 구역, 문단 } from './본문.js';
-import { 표, 셀 } from './표.js';
+import { 표, 셀, 든것보기, 든것말 } from './표.js';
 
 export interface 연산기록 {
   무엇: string;
@@ -188,7 +188,7 @@ export class 문서 {
     if (!r.ok) return r;
     if (r.value.갈래 === '문단') return 됨(r.value.문단);
     if (r.value.갈래 === '셀') {
-      const 첫문단 = findAll(r.value.셀.subList, 'hp:p')[0];
+      const 첫문단 = childrenNamed(r.value.셀.subList, 'hp:p')[0];
       if (첫문단) return 됨(new 문단(첫문단, r.value.구역.source));
       return 안됨(`${id} 셀 안에 문단이 없다`, '깨진 셀이다.');
     }
@@ -210,7 +210,10 @@ export class 문서 {
     if (r.value.갈래 !== '셀') {
       return 안됨(`${id} 는 칸이 아니다 (${r.value.갈래})`, 'cell_… 꼴의 ID 를 줘라.');
     }
-    const 것들 = findAll(r.value.셀.subList, 'hp:p')
+    // **칸의 제 문단만.** 깊이 훑으면 칸 안에 든 안쪽 표·글상자의 문단까지 딸려 와서,
+    // 「남는 문단은 비운다」가 **안쪽 표의 글을 비웠다** (표본 60곳, 8편 — 가정통신문
+    // 회신서가 이 꼴이다). 안쪽 표는 get_outline(in_tables) 에서 따로 나온다.
+    const 것들 = childrenNamed(r.value.셀.subList, 'hp:p')
       .map((p) => new 문단(p, r.value.구역.source));
     if (!것들.length) return 안됨(`${id} 칸 안에 문단이 없다`, '깨진 셀이다.');
     return 됨(것들);
@@ -812,13 +815,16 @@ export class 문서 {
       // **글 뽑기를 손으로 하지 않는다.** `hp:t` 의 자식은 `{text}` 가 아니라
       // `{kind,start,end,raw}` 라, 직접 훑으면 늘 빈 글이 나온다 — 그러면
       // 글이 든 표도 「비었다」 로 보고 그냥 지운다. 있는 길(`textOf`)을 쓴다.
-      const 든글 = t.셀들
-        .flatMap((c) => findAll(c.el, 'hp:t').map((x) => textOf(x)))
-        .join('').trim();
-      if (든글 !== '') {
+      // 그림만 든 표도 비었다고 보면 안 된다 — 그림이 같이 날아간다.
+      const 든것들 = t.셀들.map((c) => 든것보기(c.el));
+      const 든것 = {
+        글: 든것들.map((x) => x.글).join(''),
+        개체: [...new Set(든것들.flatMap((x) => x.개체))],
+      };
+      if (든것.글 !== '' || 든것.개체.length > 0) {
         return this.남기기('표지우기', id, 안됨(
-          `${id} 에 글이 있다 («${든글.slice(0, 20)}»)`,
-          '정말 지우려면 force 를 켜라.',
+          `${id} 에 ${든것말(든것)}`,
+          '정말 지우려면 force: true 를 줘라.',
         ));
       }
     }
@@ -909,7 +915,8 @@ export class 문서 {
     // 열어 보기 전에는 모르니 저장 길목에서 잡는다.
     for (const s of this.구역들) {
       for (const t of findAll(s.root, 'hp:t')) {
-        const 글 = (t.children[0] as { raw?: string } | undefined)?.raw ?? '';
+        // 첫 자식만 보면 줄 나눔 뒤에 든 글자는 그물을 빠져나간다.
+        const 글 = t.children.map((x) => (x.kind === 'text' ? x.raw : '')).join('');
         const 나쁜것 = 못쓰는제어문자(글);
         if (나쁜것) {
           탈.push(`${s.이름}: 글에 XML 이 못 쓰는 제어문자 ${나쁜것.글자} 가 있다 (한글이 못 연다)`);

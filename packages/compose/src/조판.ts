@@ -575,13 +575,15 @@ export class 조판기 {
 
   private 상자(
     s: 구역,
-    b: { text?: string; title?: string; items?: string[]; background?: string },
+    b: { text?: string; title?: string; items?: (string | { text?: string })[]; background?: string },
     번호: number,
   ): 결과<만든것> {
     const 줄들 = [
       ...(b.title ? [{ 글: b.title, 머리인가: true }] : []),
       ...(b.text ? b.text.split('\n').map((t) => ({ 글: t, 머리인가: false })) : []),
-      ...(b.items ?? []).map((t) => ({ 글: `· ${t}`, 머리인가: false })),
+      // 도구 스키마는 항목을 `{ text }` 로 받는다(outline 과 같은 꼴). 글자로 봐서
+      // `· [object Object]` 가 찍히던 것을 검토에서 잼 — 둘 다 받는다.
+      ...(b.items ?? []).map((t) => ({ 글: `· ${typeof t === 'string' ? t : t.text ?? ''}`, 머리인가: false })),
     ];
     if (줄들.length === 0) {
       return 안됨('상자에 넣을 글이 없다', 'text · title · items 가운데 하나는 있어야 한다.');

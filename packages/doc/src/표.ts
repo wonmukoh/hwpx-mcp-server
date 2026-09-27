@@ -30,10 +30,35 @@
 
 import {
   getAttr, setAttr, appendChild, createElement, removeNode,
-  childrenNamed, firstChildNamed, findAll, setText, insertAfter, insertBefore, 복제하기,
+  childrenNamed, firstChildNamed, findAll, setText, insertAfter, insertBefore, 복제하기, 글자칸읽기,
   type ElementNode, type HwpUnit,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
+
+/** 글이 아니라도 「비었다」고 못 보는 것 — 그림·표·도형·수식 따위 */
+const 든개체이름 = [
+  'hp:pic', 'hp:tbl', 'hp:container', 'hp:equation', 'hp:rect', 'hp:ellipse', 'hp:polygon',
+  'hp:line', 'hp:arc', 'hp:curve', 'hp:connectLine', 'hp:ole', 'hp:textart', 'hp:video', 'hp:chart',
+];
+
+/**
+ * **지우기 전에 비었는지 본다** — 줄·칸·표 어디든.
+ *
+ * 전에는 글자 칸의 **첫 자식 날 글**만 읽었다. 칸 글이 탭이나 줄 나눔으로 시작하면
+ * 첫 자식이 개체라 빈 글로 보였고, force 없이 **글 든 줄이 지워졌다.** 그림만 든 줄도
+ * 글이 없으니 비었다고 봤다 (2026-09-27 검토에서 둘 다 잼). 이제 글은 `글자칸읽기` 로,
+ * 개체는 이름으로 따로 센다.
+ */
+export function 든것보기(el: ElementNode): { 글: string; 개체: string[] } {
+  const 글 = findAll(el, 'hp:t').map((t) => 글자칸읽기(t)).join('').trim();
+  const 개체 = 든개체이름.filter((n) => findAll(el, n).length > 0);
+  return { 글, 개체 };
+}
+
+/** 든것보기 결과를 사람 말로 */
+export function 든것말(것: { 글: string; 개체: string[] }): string {
+  return 것.글 !== '' ? `글이 있다 («${것.글.slice(0, 30)}»)` : `${것.개체.join('·')} 가 들어 있다`;
+}
 
 /** `hp:tbl` 자식 순서. 여기 없는 것은 맨 뒤로 */
 export const 표자식순서 = [
@@ -474,14 +499,11 @@ export class 표 {
       for (let r = 자리; r < 끝; r++) {
         const tr = 줄들[r];
         if (!tr) continue;
-        const 글 = findAll(tr, 'hp:t')
-          .map((t) => (t.children[0] as { raw?: string } | undefined)?.raw ?? '')
-          .join('').trim();
-        if (글) {
+        const 든것 = 든것보기(tr);
+        if (든것.글 !== '' || 든것.개체.length > 0) {
           return 안됨(
-            `${r}번 줄에 글이 있다: «${글.slice(0, 30)}»`,
-            '빈 줄만 지운다. 정말 지우려면 비어야만 을 false 로 줘라 — '
-            + '지운 글은 되돌릴 수 없다.',
+            `${r}번 줄에 ${든것말(든것)}`,
+            '빈 줄만 지운다. 정말 지우려면 force: true 를 줘라 — 지운 것은 되돌릴 수 없다.',
           );
         }
       }
@@ -704,13 +726,11 @@ export class 표 {
       for (const c of this.셀들) {
         const a = c.자리;
         if (a.col < 자리 || a.col >= 끝) continue;
-        const 글 = findAll(c.el, 'hp:t')
-          .map((t) => t.children.map((x) => (x.kind === 'text' ? x.raw : '')).join(''))
-          .join('').trim();
-        if (글 !== '') {
+        const 든것 = 든것보기(c.el);
+        if (든것.글 !== '' || 든것.개체.length > 0) {
           return 안됨(
-            `(${a.row},${a.col}) 칸에 글이 있다 — «${글.slice(0, 20)}»`,
-            '지운 글은 못 되돌린다. 정말 지우려면 force 를 켜라.',
+            `(${a.row},${a.col}) 칸에 ${든것말(든것)}`,
+            '지운 것은 못 되돌린다. 정말 지우려면 force: true 를 줘라.',
           );
         }
       }

@@ -138,7 +138,11 @@ const 엮기스키마 = 묶음('문서를 HTML 한 장으로 엮는다', {
   doc_id,
   // **큰 문서는 글자로 돌려주면 안 된다.** 그림을 박으면 3MB 가 넘는 것이 있다.
   // 그런 것을 답에 실으면 부르는 쪽 컨텍스트가 통째로 먹힌다.
-  path: 절대경로('HTML 을 저장할 곳. 주면 파일로 쓰고 경로만 돌려준다'),
+  path: 절대경로(
+    'HTML 을 저장할 곳 (.html). 주면 파일로 쓰고 경로만 돌려준다. 폴더가 없으면 만든다. '
+    + '**이미 있는 파일은 overwrite: true 없이 안 덮어쓴다**',
+  ),
+  overwrite: 참거짓('path 에 이미 파일이 있으면 덮어쓸까 (기본 false)'),
   images: 참거짓('그림을 파일 안에 박을까 (기본 true). false 면 자리만 잡아 가볍게 만든다'),
   title: 글자('<title>. 안 주면 첫 글줄을 쓴다'),
 }, ['doc_id']);
@@ -1060,8 +1064,12 @@ export const 도구들: 도구[] = [
       chars: 정수('글자 수'),
       not_rendered: 목록('못 옮긴 것들. 비어 있으면 다 옮겼다', 글자('무엇')),
     }, ['ok']),
-    annotations: { title: 'HTML 로 엮기', readOnlyHint: true, idempotentHint: true },
-    처리: 검사하고<{ doc_id: string; path?: string; images?: boolean; title?: string }>(
+    // **읽기만 하는 도구가 아니다.** `path` 를 주면 파일을 쓴다. 전에는 readOnlyHint 를
+    // 달고 있었고, 있는 파일을 묻지 않고 덮어써서 **원본 .hwpx 를 HTML 로 덮어 버릴 수
+    // 있었다** (2026-09-27 검토에서 실제로 그랬다). 호스트가 읽기 도구라 믿고 안 물으면
+    // 사람이 막을 틈도 없다.
+    annotations: { title: 'HTML 로 엮기', readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    처리: 검사하고<{ doc_id: string; path?: string; images?: boolean; title?: string; overwrite?: boolean }>(
       엮기스키마, (인자, 방) => {
         const 것 = 문서꺼내기(방, 인자.doc_id);
         if (!것.ok) return 것.결과;
@@ -1069,6 +1077,18 @@ export const 도구들: 도구[] = [
         if (인자.path !== undefined) {
           const 검 = 절대경로검사(인자.path);
           if (!검.ok) return 못함(검.이유, 검.어떻게);
+          if (!/\.html?$/i.test(인자.path)) {
+            return 못함(
+              `${인자.path} 는 .html 이 아니다`,
+              'HTML 은 .html 로 끝나는 자리에 쓴다 — 원본 문서를 덮어쓰는 일을 막으려는 것이다.',
+            );
+          }
+          if (fs.existsSync(인자.path) && 인자.overwrite !== true) {
+            return 못함(
+              `${인자.path} 가 이미 있다`,
+              '덮어쓰려면 overwrite: true 를 줘라. 아니면 딴 이름을 써라.',
+            );
+          }
         }
 
         const r = 엮기(것.it.d, {
@@ -1190,6 +1210,10 @@ export const 도구들: 도구[] = [
         ...(인자.footer_text !== undefined ? { footer_text: 인자.footer_text } : {}),
         ...(인자.page_number !== undefined ? { page_number: 인자.page_number } : {}),
       });
+      // **compose 도 짜임을 바꾼다.** 문단·표를 새로 넣으니 저장했다 다시 열면 ID 가
+      // 달라진다 — 옛 ID 가 딴 표를 가리킨 것을 검토에서 쟀다. 중간에 실패해도 앞 블록은
+      // 이미 들어갔으니 성패와 상관없이 켠다.
+      것.it.구조바꿈 = true;
       if (!r.ok) return 못함(r.이유, r.어떻게);
 
       const 만든것 = r.value.만든것.map((m) => ({ kind: m.kind, ids: m.ids }));
@@ -1894,7 +1918,7 @@ function 그림담을곳(d: 문서, id: string): 결과<ElementNode> {
   if (!r.ok) return r;
   if (r.value.갈래 === '문단') return 됨(r.value.문단.el);
   if (r.value.갈래 === '셀') {
-    const p = findAll(r.value.셀.subList, 'hp:p')[0];
+    const p = childrenNamed(r.value.셀.subList, 'hp:p')[0];
     if (!p) return 안됨(`${id} 셀 안에 문단이 없다`, '깨진 셀이다.');
     return 됨(p);
   }
@@ -1958,7 +1982,12 @@ function 들었나(글: string, 찾을것: string): boolean {
  */
 function 칸줄글(el: unknown): string {
   if (!el) return '';
-  return findAll(el as never, 'hp:p')
-    .map((p) => 셀글(p))
+  // **칸의 제 문단만** — get_content(칸) 과 같은 꼴이어야 읽은 글을 그대로 되쓸 수 있다.
+  // 깊이 훑으면 안쪽 표의 글이 줄로 섞여, 되쓸 때 줄 수가 안 맞는다.
+  const 목록 = firstChildNamed(el as ElementNode, 'hp:subList');
+  if (!목록) return '';
+  return childrenNamed(목록, 'hp:p')
+    .map((p) => childrenNamed(p, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'))
+      .map((t) => 글자칸읽기(t)).join(''))
     .join('\n');
 }

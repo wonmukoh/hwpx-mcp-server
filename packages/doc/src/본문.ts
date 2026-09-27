@@ -193,23 +193,79 @@ export class 문단 {
     const 옛글 = this.글;
     if (옛글 === 새글) return 됨({ 바뀐수: 0, 잃은서식: 0 });
 
-    // 글이 든 런들의 서식이 여러 가지였으면 그만큼 잃는다
-    const 글든런들 = 런들.filter((r) => childrenNamed(r, 'hp:t').length > 0);
-    const 서식가짓수 = new Set(글든런들.map((r) => getAttr(r, 'charPrIDRef') ?? '0')).size;
-    const 잃은서식 = 서식가짓수 > 1 ? 서식가짓수 - 1 : 0;
+    // **바뀐 곳만 간다.**
+    //
+    // 전에는 첫 글자 칸에 새 글을 통째로 넣고 나머지 글자 칸을 지웠다. 그러면
+    //   - 문장 가운데 굵은 낱말의 서식이 사라지고 (표본 문단 1191개, 13편이 이 꼴)
+    //   - 링크·메모의 시작·끝 표시 사이 글이 첫 칸으로 빠져나가 **빈 링크**가 되고
+    //   - 각주 표시가 어구 뒤에서 문장 끝으로 밀렸다.
+    // 도구 설명은 「서식은 그대로 남는다」고 했다 (2026-09-27 검토 셋이 모두 잼).
+    //
+    // 옛 글과 새 글의 **같은 앞·같은 뒤**를 떼고, 가운데 다른 곳이 걸친 글자 칸만 고친다.
+    // 양식을 채울 때 고침은 대개 한 곳이라, 링크·주·서식이 그 자리에 그대로 남는다.
+    // 통째로 딴 글을 주면 예전처럼 첫 칸에 몰린다 — 그때는 잃은 서식을 센다.
+    const 조각 = 글칸들.map((t) => ({ t, 글: 글자칸읽기(t) }));
+    let 앞 = 0;
+    const 짧은쪽 = Math.min(옛글.length, 새글.length);
+    while (앞 < 짧은쪽 && 옛글[앞] === 새글[앞]) 앞++;
+    let 뒤 = 0;
+    while (뒤 < 짧은쪽 - 앞 && 옛글[옛글.length - 1 - 뒤] === 새글[새글.length - 1 - 뒤]) 뒤++;
+    // 대리쌍(이모지 따위)을 가운데서 자르지 않는다
+    const 높은대리 = (c: number) => c >= 0xd800 && c <= 0xdbff;
+    if (앞 > 0 && 높은대리(옛글.charCodeAt(앞 - 1))) 앞--;
+    if (뒤 > 0 && 높은대리(옛글.charCodeAt(옛글.length - 뒤 - 1))) 뒤--;
+    const 옛끝 = 옛글.length - 뒤;
+    const 넣을것 = 새글.slice(앞, 새글.length - 뒤);
 
-    // 첫 글칸에 새 글을 넣고, 나머지 **글칸만** 지운다
-    글자칸쓰기(글칸들[0]!, 새글);
-    for (const t of 글칸들.slice(1)) removeNode(t);
+    // 글자 칸마다 옛 글 안에서의 자리
+    const 자리들: { 시작: number; 끝: number }[] = [];
+    let 셈 = 0;
+    for (const c of 조각) { 자리들.push({ 시작: 셈, 끝: 셈 + c.글.length }); 셈 += c.글.length; }
 
-    // 글만 들어 있다가 텅 빈 런을 치운다. 표·그림이 남은 런은 그대로 둔다.
-    for (const r of 글든런들) {
-      const 남은것 = r.children.filter((c) => c.kind === 'element');
-      if (남은것.length === 0) removeNode(r);
+    let 걸친: number[];
+    if (앞 < 옛끝) {
+      걸친 = 조각.map((_, i) => i).filter((i) => 자리들[i]!.끝 > 앞 && 자리들[i]!.시작 < 옛끝);
+    } else {
+      // 끼워 넣기만 한다 — 그 자리를 품은 칸. 경계면 **앞 칸**에 붙인다 (글쇠로 칠 때처럼
+      // 바로 앞 글자의 서식을 잇는다). 맨 앞이면 첫 칸.
+      const i = 조각.findIndex((_, k) => 자리들[k]!.시작 < 앞 && 앞 <= 자리들[k]!.끝);
+      걸친 = [i === -1 ? 0 : i];
+    }
+
+    const 첫 = 걸친[0]!;
+    const 끝칸 = 걸친[걸친.length - 1]!;
+    const 비운것: ElementNode[] = [];
+    for (const i of 걸친) {
+      const { t, 글 } = 조각[i]!;
+      const { 시작 } = 자리들[i]!;
+      let 새것: string;
+      if (i === 첫) {
+        새것 = 글.slice(0, Math.max(0, 앞 - 시작)) + 넣을것
+          + (i === 끝칸 ? 글.slice(Math.max(0, 옛끝 - 시작)) : '');
+      } else if (i === 끝칸) {
+        새것 = 글.slice(옛끝 - 시작);
+      } else {
+        새것 = '';
+      }
+      if (새것 === 글) continue;
+      글자칸쓰기(t, 새것);
+      if (새것 === '' && i !== 첫) 비운것.push(t);
+    }
+
+    // 다 비게 된 글자 칸은 치운다. 그 칸의 서식이 첫 칸과 달랐으면 **잃은 것**으로 센다.
+    const 첫서식 = getAttr(조각[첫]!.t.parent as ElementNode, 'charPrIDRef') ?? '0';
+    const 잃은것 = new Set<string>();
+    for (const t of 비운것) {
+      const 런 = t.parent as ElementNode | undefined;
+      const 서식 = 런 ? (getAttr(런, 'charPrIDRef') ?? '0') : 첫서식;
+      if (서식 !== 첫서식) 잃은것.add(서식);
+      removeNode(t);
+      // 글만 들어 있다가 텅 빈 런을 치운다. 표·그림·조종이 남은 런은 그대로 둔다.
+      if (런 && 런.children.every((c) => c.kind !== 'element')) removeNode(런);
     }
 
     if (!짜임같나(옛글, 새글)) 줄정보지우기(this.el);
-    return 됨({ 바뀐수: 1, 잃은서식 });
+    return 됨({ 바뀐수: 1, 잃은서식: 잃은것.size });
   }
 
   /**

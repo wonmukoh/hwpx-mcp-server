@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 
 import { 도구들, type 도구 } from './도구.js';
 import { 문서방 } from './문서방.js';
-import { 못함 } from './결과내기.js';
+import { 못함, type 도구결과 } from './결과내기.js';
 
 export const 서버이름 = 'hwpx-mcp';
 
@@ -130,14 +130,42 @@ export async function 도구부르기(
     );
   }
   try {
-    return await t.처리(인자 ?? {}, 방);
+    return 실패도약속지키기(await t.처리(인자 ?? {}, 방), t);
   } catch (e) {
     const 말 = e instanceof Error ? e.message : String(e);
-    return 못함(
+    return 실패도약속지키기(못함(
       `${이름} 이 터졌다: ${말.split('\n')[0]}`,
       '인자를 줄여 다시 해 보라. 그래도 터지면 이 MCP 의 버그다.',
-    );
+    ), t);
   }
+}
+
+/**
+ * **실패 결과도 outputSchema 의 required 를 지킨다.**
+ *
+ * 공식 SDK 의 `Client.callTool` 은 `isError` 인 결과라도 `structuredContent` 가 있으면
+ * outputSchema 로 검증하고, 안 맞으면 **예외를 던진다.** 그러면 우리가 적어 둔 거절
+ * 까닭(`reason`)과 다음 할 일(`how`)이 통째로 사라진다. 실패는 `{ ok, reason, how }` 만
+ * 내고 있었으니 `find` 의 `count` 같은 필수 필드가 늘 빠졌다 (2026-09-27 검토에서 잼).
+ *
+ * `structuredContent` 를 아예 빼면 검증은 피하지만 Draftsmith 가 `reason` 을 읽는다.
+ * 그래서 빠진 필수 필드를 **빈 값**으로 채운다 — `ok: false` 가 함께 가니 뜻을 헷갈릴 일은 없다.
+ */
+function 실패도약속지키기(r: 도구결과, t: 도구): 도구결과 {
+  if (!r.isError || r.structuredContent === undefined) return r;
+  const 틀 = t.outputSchema as { required?: string[]; properties?: Record<string, { type?: string }> } | undefined;
+  if (!틀?.required) return r;
+  const 값: Record<string, unknown> = { ...r.structuredContent };
+  for (const k of 틀.required) {
+    if (k in 값) continue;
+    const 갈래 = 틀.properties?.[k]?.type;
+    값[k] = 갈래 === 'integer' || 갈래 === 'number' ? 0
+      : 갈래 === 'boolean' ? false
+        : 갈래 === 'array' ? []
+          : 갈래 === 'object' ? {}
+            : '';
+  }
+  return { ...r, structuredContent: 값 };
 }
 
 /** 서버를 조립한다 (아직 붙이지는 않는다) */

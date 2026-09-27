@@ -63,7 +63,8 @@ export interface 상자블록 {
   text?: string;
   /** `< 핵심 추진과제 >` 같은 머리. 있으면 굵게 가운데 */
   title?: string;
-  items?: string[];
+  /** 항목들 — 글자나 `{ text }` (도구 스키마는 `{ text }` 로 준다) */
+  items?: (string | { text?: string })[];
   /** 배경색 */
   background?: string;
 }

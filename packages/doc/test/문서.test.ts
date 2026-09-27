@@ -248,13 +248,14 @@ describe('서식 주기 — 스타일은 복제·지문 대조를 거친다', ()
     expect(값('hp:case')).toBe('1000');
   });
 
-  it('이미 그 서식이면 "했다" 고 하지 않는다', () => {
+  it('이미 그 서식이면 **0 곳이 바뀌었다**고 한다 — 실패로 묶음을 멈추지 않는다', () => {
     const { d } = 열기();
     d.ID매기기();
     const id = d.이름표.아이디(d.구역들[0]!.문단들[0]!.el);
     d.문단서식주기(id, { 정렬: 'CENTER' });
     const r = d.문단서식주기(id, { 정렬: 'CENTER' });
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.바뀐수, '했다고 하면 안 된다').toBe(0);
   });
 });
 

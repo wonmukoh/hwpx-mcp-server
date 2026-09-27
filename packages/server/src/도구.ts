@@ -1375,13 +1375,13 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
           return 안됨(
             `'${e.find}' 가 ${칸을넘는것}곳에 있지만 **글자 칸 경계를 넘는다** `
             + '(가운데 낱말만 굵은 줄 같은 것)',
-            'set_text 로 그 문단·셀을 통째로 다시 써라. '
-            + '여기서 바꾸면 런이 합쳐져 굵기·색이 날아간다.',
+            'get_content 로 그 문단을 읽어 그 어구만 고친 글을 set_text 로 되써라 — '
+            + 'set_text 는 바뀐 곳만 가서 굵기·색·링크가 남는다.',
           );
         }
         return 안됨(
           `'${e.find}' 를 찾지 못했다`,
-          'find 도구로 먼저 있는지 보라. 띄어쓰기까지 똑같아야 한다.',
+          'find 도구로 먼저 있는지 보라. 빈칸 종류는 가리지 않지만 글자는 같아야 한다.',
         );
       }
       return 됨(바꾼수);
@@ -1390,6 +1390,12 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
     case 'set_style': {
       if (!e.id) return 안됨('set_style 에 id 가 없다', 'find 나 get_outline 이 준 ID 를 줘라.');
       let 바꾼수 = 0;
+      let 줬나 = false;
+      // **값을 먼저 본다.** 전에는 size:-3 이 height="-300" 으로, emphasis:'WHATEVER' 가 그대로
+      // 들어갔고, color:'red' 는 한가운데서 터져 몇 개가 들어갔는지(done)도 잃었다
+      // (2026-09-27 검토에서 잼).
+      const 값탈 = 서식값검사(e);
+      if (값탈) return 값탈;
       const 글자패치 = {
         ...(e.bold !== undefined ? { 굵게: e.bold } : {}),
         ...(e.italic !== undefined ? { 기울임: e.italic } : {}),
@@ -1405,6 +1411,7 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         const r = d.글자서식주기(e.id, 글자패치);
         if (!r.ok) return r;
         바꾼수 += r.value.바뀐수;
+        줬나 = true;
       }
       // 문단 테두리·배경 — `hh:paraPr > hh:border/@borderFillIDRef` 다.
       // 없어서 box 블록으로 흉내 내고 있었다.
@@ -1418,7 +1425,8 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
           },
         });
         if (!r.ok) return r;
-        바꾼수++;
+        바꾼수 += r.value.바뀐수;
+        줬나 = true;
       }
       if (e.align !== undefined) {
         const 맞춘것 = 정렬맞추기(e.align);
@@ -1427,10 +1435,15 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         }
         const r = d.문단서식주기(e.id, { 정렬: 맞춘것 });
         if (!r.ok) return r;
-        바꾼수++;
+        바꾼수 += r.value.바뀐수;
+        줬나 = true;
       }
-      if (바꾼수 === 0) {
-        return 안됨('바꿀 서식을 하나도 안 줬다', 'bold · size · color · align 가운데 하나는 줘라.');
+      if (!줬나) {
+        return 안됨(
+          '바꿀 서식을 하나도 안 줬다',
+          'bold · italic · underline · strike · script · emphasis · size · color · font · '
+          + 'align · border · background 가운데 하나는 줘라.',
+        );
       }
       return 됨(바꾼수);
     }
@@ -1676,6 +1689,9 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         return 안됨('set_page 에 border 도 background 도 없다',
           'border 나 background 가운데 적어도 하나를 줘라.');
       }
+      // 「1 mm red」 가 검정 테두리로, 「abc」 가 0.12mm 실선으로 조용히 들어갔다
+      const 값탈 = 서식값검사({ ...(e.border !== undefined ? { border: e.border } : {}) });
+      if (값탈) return 값탈;
       const 구역들 = d.구역들;
       const 첫구역 = 구역들[0];
       if (첫구역 === undefined) return 안됨('구역이 하나도 없다', '빈 문서라도 구역 하나는 있어야 한다.');
@@ -1696,7 +1712,7 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
         const r = s2.쪽테두리주기(bf.value.id);
         if (r.ok) 바뀐수 += r.value.바뀐수;
       }
-      if (바뀐수 === 0) return 안됨('이미 그 쪽 테두리라 바뀐 것이 없다', '다른 값을 줘라.');
+      // 이미 그랬으면 0 — 실패가 아니다
       return 됨(바뀐수);
     }
 
@@ -1921,6 +1937,31 @@ function 칸자리(id: string | undefined, op: string):
  *
  * 격자가 무너진 표를 저장하면 한글이 못 연다. 여기서 잡아 되돌리게 한다.
  */
+/** 강조점 종류 (OWPML symMark). 모르는 이름은 한글이 어떻게 읽을지 몰라 거절한다 */
+const 강조점들 = ['NONE', 'DOT_ABOVE', 'RING_ABOVE', 'TILDE', 'CARON', 'SIDE', 'COLON',
+  'GRAVE_ACCENT', 'ACUTE_ACCENT', 'CIRCUMFLEX', 'MACRON', 'HOOK_ABOVE', 'DOT_BELOW'];
+
+/** 테두리 글 — `none` 이거나 `0.4 mm #2A5DA8` 꼴 (색은 빼도 된다) */
+export function 테두리글맞나(v: string): boolean {
+  return /^\s*(none|\d+(\.\d+)?\s*mm(\s+#?[0-9a-fA-F]{6})?)\s*$/i.test(v);
+}
+
+function 서식값검사(e: { size?: number; color?: string; emphasis?: string; border?: string }): 결과<number> | undefined {
+  if (e.size !== undefined && !(e.size > 0 && e.size <= 4096)) {
+    return 안됨(`글자 크기는 0 보다 크고 4096 pt 이하여야 한다: ${e.size}`, '보통 본문은 10~15 pt 다.');
+  }
+  if (e.color !== undefined && !/^#[0-9a-fA-F]{6}$/.test(e.color)) {
+    return 안됨(`색은 #RRGGBB 꼴이어야 한다: ${e.color}`, '예: 빨강은 #FF0000.');
+  }
+  if (e.emphasis !== undefined && !강조점들.includes(e.emphasis.toUpperCase())) {
+    return 안됨(`모르는 강조점: ${e.emphasis}`, `${강조점들.join(' · ')} 가운데 하나다.`);
+  }
+  if (e.border !== undefined && !테두리글맞나(e.border)) {
+    return 안됨(`테두리 꼴이 틀렸다: ${e.border}`, '"0.4 mm #2A5DA8" 처럼 굵기(mm)와 색(#RRGGBB)을 준다. 지우려면 "none".');
+  }
+  return undefined;
+}
+
 function 표어긋남(t: 표, 무엇: string): 결과<number> | undefined {
   if (t.탈만.length === 0) return undefined;
   return 안됨(

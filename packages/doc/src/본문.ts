@@ -297,19 +297,29 @@ export class 문단 {
         '이 글자가 든 파일은 한글이 못 연다. 빼고 다시 줘라 (줄바꿈·탭은 써도 된다).',
       );
     }
+    // **빈칸 종류를 가리지 않고 찾는다** — find 와 같은 잣대. 전에는 find 는 「있다」 하고
+    // replace 는 「못 찾았다, find 로 보라」 해서 막다른 길이었다 (양식의 전각 빈칸,
+    // 2026-09-27 검토 둘이 잼). 그리고 **어구 하나를 하나로 센다.** 전에는 글자 칸 하나에
+    // 세 번 든 어구를 한 번에 다 바꾸고 1 로 셌다 — limit: 1 을 줘도 셋이 바뀌었다.
+    const 틀 = 빈칸무관틀(찾을글);
     let 바뀐수 = 0;
     for (const r of this.런들) {
       for (const t of childrenNamed(r, 'hp:t')) {
         if (바뀐수 >= 한도) break;
         const 지금 = 글자칸읽기(t);
-        if (!지금.includes(찾을글)) continue;
-        글자칸쓰기(t, 지금.split(찾을글).join(새글));
-        바뀐수++;
+        let 여기 = 0;
+        const 새것 = 지금.replace(new RegExp(틀, 'g'), (m) => {
+          if (바뀐수 >= 한도) return m;
+          바뀐수++;
+          여기++;
+          return 새글;
+        });
+        if (여기 > 0) 글자칸쓰기(t, 새것);
       }
     }
     if (바뀐수 > 0 && !짜임같나(찾을글, 새글)) 줄정보지우기(this.el);
     // 칸 안에서는 못 찾았는데 문단 전체로 보면 있다 → 칸 경계를 넘는 어구다
-    return 됨({ 바뀐수, 못찾음: 바뀐수 === 0 && this.글.includes(찾을글) });
+    return 됨({ 바뀐수, 못찾음: 바뀐수 === 0 && new RegExp(틀).test(this.글) });
   }
 
   /**
@@ -324,12 +334,9 @@ export class 문단 {
       setAttr(r, 'charPrIDRef', charPrId);
       바뀐수++;
     }
-    if (바뀐수 === 0) {
-      return 안됨(
-        '이미 그 글자모양이라 바뀐 것이 없다',
-        '다른 모양을 주거나, 지금 모양을 먼저 확인하라.',
-      );
-    }
+    // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
+    // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
+    // 주면 그랬다, 2026-09-27 검토 둘이 잼).
     return 됨({ 바뀐수 });
   }
 
@@ -967,9 +974,9 @@ export class 구역 {
       setAttr(m, k, 값);
       바뀐수++;
     }
-    if (바뀐수 === 0) {
-      return 안됨('이미 그 여백이라 바뀐 것이 없다', '다른 값을 주거나 지금 값을 먼저 읽어 보라.');
-    }
+    // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
+    // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
+    // 주면 그랬다, 2026-09-27 검토 둘이 잼).
     return 됨({ 바뀐수 });
   }
 
@@ -1016,9 +1023,9 @@ export class 구역 {
       setAttr(e, 'borderFillIDRef', 번호);
       바뀐수++;
     }
-    if (바뀐수 === 0) {
-      return 안됨('이미 그 테두리라 바뀐 것이 없다', '다른 번호를 주거나 지금 값을 먼저 읽어 보라.');
-    }
+    // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
+    // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
+    // 주면 그랬다, 2026-09-27 검토 둘이 잼).
     return 됨({ 바뀐수 });
   }
 
@@ -1092,7 +1099,7 @@ export class 구역 {
    *
    * `sameGap` 기본 2268 HWPUNIT = 8mm 다 (실측: `ref-column.hwpx`).
    */
-  단주기(단수: number, 간격?: number): 결과<{ 단수: number; 간격: number }> {
+  단주기(단수: number, 간격?: number): 결과<{ 단수: number; 간격: number; 바뀜?: boolean }> {
     if (!Number.isInteger(단수) || 단수 < 1 || 단수 > 12) {
       return 안됨(`단 수가 이상하다: ${단수}`, '1부터 12 사이의 정수를 줘라. 1이면 안 나눈다.');
     }
@@ -1115,8 +1122,11 @@ export class 구역 {
       appendChild(런, 틀);
     }
 
+    // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
+    // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
+    // 주면 그랬다, 2026-09-27 검토 둘이 잼).
     if (getAttr(c, 'colCount') === String(단수) && getAttr(c, 'sameGap') === String(새간격)) {
-      return 안됨('이미 그 단이라 바뀐 것이 없다', '다른 값을 주거나 지금 값을 먼저 읽어 보라.');
+      return 됨({ 단수, 간격: 새간격, 바뀜: false });
     }
     setAttr(c, 'colCount', String(단수));
     setAttr(c, 'sameSz', '1');
@@ -1262,6 +1272,15 @@ function 곁글읽기(el: ElementNode): string {
     .map((p) => childrenNamed(p, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'))
       .map((t) => 글자칸읽기(t)).join(''))
     .join('\n');
+}
+
+/**
+ * 어구를 찾는 틀 — **빈칸 종류를 가리지 않는다.** 보통 빈칸·전각 빈칸·묶음 빈칸·탭·
+ * 줄 나눔이 서로 같은 것으로 걸린다. 도구의 `find` 와 같은 잣대다.
+ */
+export function 빈칸무관틀(찾을글: string): string {
+  const 막기 = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return 찾을글.split(/\s+/).map(막기).join('\\s+');
 }
 
 function 짜임같나(옛: string, 새: string): boolean {

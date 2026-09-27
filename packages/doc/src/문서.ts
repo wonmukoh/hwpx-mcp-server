@@ -306,20 +306,20 @@ export class 문서 {
   }
 
   /** 문단 서식 (정렬·여백·줄간격) */
-  문단서식주기(id: string, 패치: 문단모양패치): 결과<{ paraPrId: string }> {
+  문단서식주기(id: string, 패치: 문단모양패치): 결과<{ paraPrId: string; 바뀐수: number }> {
     const p = this.문단찾기(id);
     if (!p.ok) return this.남기기('문단서식주기', id, p);
 
     const 확보 = this.머리.paraPr확보(p.value.문단모양, 패치);
     if (!확보.ok) return this.남기기('문단서식주기', id, 확보);
+    // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
+    // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
+    // 주면 그랬다, 2026-09-27 검토 둘이 잼).
     if (확보.value.id === p.value.문단모양) {
-      return this.남기기('문단서식주기', id, 안됨(
-        '이미 그 서식이라 바뀐 것이 없다',
-        '다른 값을 주거나, 지금 서식을 먼저 확인하라.',
-      ));
+      return this.남기기('문단서식주기', id, 됨({ paraPrId: 확보.value.id, 바뀐수: 0 }));
     }
     p.value.문단모양주기(확보.value.id);
-    return this.남기기('문단서식주기', id, 됨({ paraPrId: 확보.value.id }));
+    return this.남기기('문단서식주기', id, 됨({ paraPrId: 확보.value.id, 바뀐수: 1 }));
   }
 
   /** 문단 안 어구만 강조 */
@@ -550,13 +550,15 @@ export class 문서 {
       ));
     }
     let 됐수 = 0;
-    let 마지막: 결과<{ 단수: number; 간격: number }> | undefined;
+    let 마지막: 결과<{ 단수: number; 간격: number; 바뀜?: boolean }> | undefined;
+    let 이미 = 0;
     for (const s of 것들) {
       const r = s.단주기(단수, 간격);
       마지막 = r;
-      if (r.ok) 됐수++;
+      if (r.ok && r.value.바뀜 === false) 이미++;
+      else if (r.ok) 됐수++;
     }
-    if (됐수 === 0) {
+    if (됐수 === 0 && 이미 === 0) {
       return this.남기기('단주기', 구역이름 ?? '', 마지막 !== undefined && !마지막.ok
         ? 마지막
         : 안됨('단을 못 나눴다', '구역을 다시 보라.'));

@@ -90,18 +90,15 @@ describe('칸에 쓸 때 칸 안의 안쪽 표를 안 건드린다', () => {
     // 바깥 칸 안에 표를 하나 더 넣는다 — 회신서가 이 꼴이다
     const 칸 = ((await 도구부르기('find', { doc_id, text: '바깥 글', kind: 'cell' }, 방))
       .structuredContent!['matches'] as { id: string }[])[0]!.id;
-    const 넣음 = d.칸에표넣기?.(칸, [['안쪽 가', '안쪽 나']]);
-    if (넣음 === undefined) {
-      // 문서층에 칸에 표를 넣는 길이 없으면 조판 결과를 손으로 옮긴다
-      const 짬 = await 새문서([{ kind: 'table', rows: [['안쪽 가', '안쪽 나']] }]);
-      const 안표 = findAll(짬.d.구역들[0]!.root, 'hp:tbl')[0]!;
-      const 셀 = d.찾기(칸);
-      if (!셀.ok || 셀.value.갈래 !== '셀') throw new Error('칸이 없다');
-      const 첫문단 = childrenNamed(셀.value.셀.subList, 'hp:p')[0]!;
-      const 런 = childrenNamed(첫문단, 'hp:run')[0]!;
-      런.children.push(안표);
-      안표.parent = 런;
-    }
+    // 칸에 표를 넣는 op 은 없다 — 다른 문서에서 짠 표를 그 칸 첫 런에 옮겨 단다
+    const 짬 = await 새문서([{ kind: 'table', rows: [['안쪽 가', '안쪽 나']] }]);
+    const 안표 = findAll(짬.d.구역들[0]!.root, 'hp:tbl')[0]!;
+    const 셀 = d.찾기(칸);
+    if (!셀.ok || 셀.value.갈래 !== '셀') throw new Error('칸이 없다');
+    const 첫문단 = childrenNamed(셀.value.셀.subList, 'hp:p')[0]!;
+    const 런 = childrenNamed(첫문단, 'hp:run')[0]!;
+    런.children.push(안표);
+    안표.parent = 런;
     const 안글 = () => findAll(d.구역들[0]!.root, 'hp:tbl').slice(1)
       .flatMap((t) => findAll(t, 'hp:t')).map((t) => 글자칸읽기(t)).join('|');
     const 전 = 안글();
@@ -109,5 +106,46 @@ describe('칸에 쓸 때 칸 안의 안쪽 표를 안 건드린다', () => {
     const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id: 칸, text: '새 내용' }] }, 방);
     expect(r.isError, r.content[0]?.text).toBeUndefined();
     expect(안글(), '안쪽 표 글이 비면 안 된다').toBe(전);
+  });
+});
+
+describe('표 고침이 글·짜임을 안 잃는다', () => {
+  it('**세로 합침 바로 아래·표 맨 뒤에 줄을 넣어도 표가 안 깨진다**', async () => {
+    // 예산표 「운영비(세 줄 합침)」 아래에 항목을 더하는 흔한 일이다. 전에는 본뜬 줄에
+    // 합침에 덮인 칸이 없어 새 줄도 칸이 모자랐고, 거절하면서 깨진 줄을 남겼다.
+    const { 방, doc_id, d } = await 새문서([{
+      kind: 'table', rows: [['운영비', '가', '1'], ['', '나', '2'], ['', '다', '3']],
+      merges: [{ row: 0, col: 0, rowspan: 3 }],
+    }]);
+    const 표 = ((await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_row', id: 표 }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    expect(d.검사(), '표가 깨지면 안 된다').toEqual([]);
+    const 칸들 = (await 도구부르기('get_content', { doc_id, id: 표 }, 방)).structuredContent!['cells'] as { row: number }[];
+    expect(칸들.filter((c) => c.row === 3).length, '새 줄에 칸이 다 있어야 한다').toBe(3);
+  });
+
+  it('**칸을 합치면 덮이는 칸의 글이 합친 칸으로 옮겨 온다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', rows: [['보도시점', '2025.12.12.(금)']] }]);
+    const 칸 = ((await 도구부르기('find', { doc_id, text: '보도시점', kind: 'cell' }, 방))
+      .structuredContent!['matches'] as { id: string }[])[0]!.id;
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'merge_cells', id: 칸, colspan: 2 }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 글 = (await 도구부르기('get_content', { doc_id, id: 칸 }, 방)).structuredContent!['text'] as string;
+    expect(글).toContain('보도시점');
+    expect(글, '덮인 칸의 날짜가 사라지면 안 된다').toContain('2025.12.12.(금)');
+  });
+
+  it('**줄을 넣어도 칸 안 필드가 같은 id 로 복제되지 않는다**', async () => {
+    const { 방, doc_id, d } = await 새문서([{ kind: 'table', rows: [['누리집 주소', '값']] }]);
+    const 문단 = ((await 도구부르기('find', { doc_id, text: '누리집', kind: 'paragraph' }, 방))
+      .structuredContent!['matches'] as { id: string }[])[0]!.id;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'set_link', id: 문단, find: '누리집', url: 'https://example.com' }] }, 방);
+    const 표 = ((await 도구부르기('get_outline', { doc_id }, 방)).structuredContent!['items'] as { id: string; kind: string }[])
+      .find((x) => x.kind === 'table')!.id;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_row', id: 표, count: 2 }] }, 방);
+    const id들 = d.구역들.flatMap((s) => findAll(s.root, 'hp:fieldBegin')).map((f) => getAttr(f, 'id'));
+    expect(new Set(id들).size, `필드 id 가 겹친다: ${id들.join(',')}`).toBe(id들.length);
   });
 });

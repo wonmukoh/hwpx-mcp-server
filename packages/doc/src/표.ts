@@ -259,7 +259,7 @@ export class 표 {
    * 이미 합쳐진 칸이 끼어 있으면 **거절한다.** 겹쳐 합치면 기하가 무너지는데,
    * 그건 우리 검사에 걸리기 전에 한글이 파일을 이상하게 그린다.
    */
-  합치기(row: number, col: number, rowSpan: number, colSpan: number): 결과<{ 지운수: number }> {
+  합치기(row: number, col: number, rowSpan: number, colSpan: number): 결과<{ 지운수: number; 옮긴문단: number }> {
     if (rowSpan < 1 || colSpan < 1 || (rowSpan === 1 && colSpan === 1)) {
       return 안됨(
         `합칠 것이 없다 (${rowSpan}줄 × ${colSpan}칸)`,
@@ -299,23 +299,43 @@ export class 표 {
     }
 
     const 폭들 = this.열폭;
-    for (const it of 덮일것) removeNode(it.el);
+    const 높이들 = this.줄높이;
+
+    // **덮이는 칸의 글은 합친 칸으로 옮긴다** — 한글이 칸을 합칠 때 하는 대로.
+    // 전에는 그냥 지웠다. 「보도시점 | 2025.12.12.(금)」 을 합치면 날짜가 사라졌고,
+    // 결과는 「1곳이 바뀌었다」 였다 (2026-09-27 검토 둘이 잼). 합침을 풀어도 안 돌아왔다.
+    let 옮긴문단 = 0;
+    for (const it of 덮일것) {
+      for (const p of childrenNamed(it.subList, 'hp:p')) {
+        const 든것 = 든것보기(p);
+        if (든것.글 === '' && 든것.개체.length === 0) continue;
+        removeNode(p);
+        appendChild(시작.subList, p);
+        옮긴문단++;
+      }
+      removeNode(it.el);
+    }
 
     const span = firstChildNamed(시작.el, 'hp:cellSpan')!;
     setAttr(span, 'rowSpan', String(rowSpan));
     setAttr(span, 'colSpan', String(colSpan));
 
-    // 너비는 덮는 열 폭의 합이어야 한다 (실측 규칙)
-    let 합 = 0;
-    let 다있나 = true;
-    for (let c = col; c < col + colSpan; c++) {
-      const w = 폭들[c];
-      if (w === undefined) { 다있나 = false; break; }
-      합 += w;
-    }
-    if (다있나) 시작.크기주기(합, undefined);
+    // 너비는 덮는 열 폭의 합, 높이는 덮는 줄 높이의 합이어야 한다 (실측 규칙 —
+    // 세로 합침 401곳 가운데 372곳이 줄 높이의 합이었다)
+    const 합치기수 = (값들: (number | undefined)[], 시작: number, 수: number): number | undefined => {
+      let 합 = 0;
+      for (let i = 시작; i < 시작 + 수; i++) {
+        const v = 값들[i];
+        if (v === undefined) return undefined;
+        합 += v;
+      }
+      return 합;
+    };
+    const 너비합 = 합치기수(폭들, col, colSpan);
+    const 높이합 = rowSpan > 1 ? 합치기수(높이들, row, rowSpan) : undefined;
+    if (너비합 !== undefined || 높이합 !== undefined) 시작.크기주기(너비합, 높이합);
 
-    return 됨({ 지운수: 덮일것.length });
+    return 됨({ 지운수: 덮일것.length, 옮긴문단 });
   }
 
   /**
@@ -395,39 +415,46 @@ export class 표 {
 
     // 본뜰 줄 — 바로 위, 없으면 바로 아래
     const 줄들 = this.줄들;
-    const 본 = 줄들[자리 > 0 ? 자리 - 1 : 0];
+    const 본번호 = 자리 > 0 ? 자리 - 1 : 0;
+    const 본 = 줄들[본번호];
     if (!본) return 안됨('본뜰 줄이 없다 (빈 표다)', '줄이 하나는 있어야 한다.');
+
+    // **칸마다 그 자리를 덮는 셀을 본뜬다.**
+    //
+    // 전에는 본뜰 줄을 통째로 복제했다. 그런데 위에서 세로로 합친 셀이 그 줄을 덮고
+    // 있으면 그 줄에는 그 칸의 `hp:tc` 가 **없다.** 복제본도 칸이 모자라 표가 깨졌고,
+    // 「표가 어긋났다」고 거절하면서 **어긋난 줄은 남겨 뒀다** (2026-09-27 검토에서 잼 —
+    // 예산표 「운영비(세 줄 합침)」 바로 아래나 표 맨 뒤에 줄을 넣는 흔한 일이었다).
+    const 본높이 = this.줄높이[본번호];
+    const 새칸들: { 본: 셀; 칸: number; 몇칸: number; 너비: number }[] = [];
+    for (let c = 0; c < this.칸수;) {
+      const 덮는것 = this.시작셀(본번호, c) ?? this.셀(본번호, c);
+      if (!덮는것) {
+        return 안됨(`${본번호}번 줄 ${c}번 칸을 덮는 셀이 없다`, '표가 이미 깨져 있다. 한글에서 열어 확인하라.');
+      }
+      const a = 덮는것.자리;
+      // 가로로 합친 셀이 이 칸보다 앞에서 시작했으면 그 셀의 끝 다음으로 건넌다
+      const 너비칸 = a.col + a.colSpan - c;
+      let 너비 = 0;
+      for (let k = c; k < c + 너비칸; k++) 너비 += this.열폭[k] ?? 0;
+      새칸들.push({ 본: 덮는것, 칸: c, 몇칸: 너비칸, 너비: 너비 || 덮는것.너비 });
+      c += 너비칸;
+    }
 
     let 앞 = 본;
     let 넣은수 = 0;
     for (let k = 0; k < 몇줄; k++) {
       const 새줄 = 복제하기(본, this.source ?? '');
-
-      // **안쪽 표·그림은 통째로 뺀다.**
-      //
-      // 본뜬 줄에 표가 또 들어 있으면 그것까지 복제된다. 학교 가정통신문이 그 꼴이다 —
-      // 바깥 표 2x3 의 한 칸에 안쪽 표 3x7 이 들어 있다.
-      // 복제하면 안쪽 표가 하나 더 생기고, 아래에서 `hp:cellSpan` 을 훑을 때
-      // **안쪽 표의 합침까지 풀어 버려** 기하가 무너진다.
-      // 실제로 그랬다 — 저장 길목이 "(1,6) 칸을 덮는 셀이 없다" 로 잡았다.
-      for (const 안것 of childrenNamed(새줄, 'hp:tc')) {
-        for (const p of findAll(안것, 'hp:p')) {
-          for (const r of childrenNamed(p, 'hp:run')) {
-            const 개체 = r.children.some((c) => c.kind === 'element'
-              && !['hp:t', 'hp:ctrl', 'hp:linesegarray'].includes((c as ElementNode).name));
-            if (개체) removeNode(r);
-          }
-        }
-      }
-
-      // 글을 비운다 — 본뜬 줄의 글이 딸려 오면 안 된다
-      for (const t of findAll(새줄, 'hp:t')) setText(t, '');
-
-      // 합쳐진 셀이 딸려 오면 새 줄이 어긋난다. 하나씩 서게 만든다.
-      // **이 줄의 셀만** 본다 — findAll 로 훑으면 안쪽 표의 합침까지 푼다.
-      for (const tc of childrenNamed(새줄, 'hp:tc')) {
-        const span = firstChildNamed(tc, 'hp:cellSpan');
-        if (span) setAttr(span, 'rowSpan', '1');
+      for (const tc of childrenNamed(새줄, 'hp:tc')) removeNode(tc);
+      for (const { 본: 본셀, 칸, 몇칸, 너비 } of 새칸들) {
+        const 새칸 = this.빈셀본뜨기(본셀.el);
+        const 자리셀 = new 셀(새칸);
+        const span = firstChildNamed(새칸, 'hp:cellSpan');
+        if (span) setAttr(span, 'colSpan', String(몇칸));
+        const addr = firstChildNamed(새칸, 'hp:cellAddr');
+        if (addr) setAttr(addr, 'colAddr', String(칸));
+        자리셀.크기주기(너비, 본높이);
+        appendChild(새줄, 새칸);
       }
       if (자리 > 0) { insertAfter(앞, 새줄); 앞 = 새줄; }
       else { insertBefore(본, 새줄); }
@@ -616,12 +643,25 @@ export class 표 {
   /** 셀 하나를 본떠 **빈 1×1 셀**로 만든다 */
   private 빈셀본뜨기(본: ElementNode): ElementNode {
     const 새칸 = 복제하기(본, this.source ?? '');
-    // 본뜬 셀에 든 개체(안쪽 표·그림)는 통째로 뺀다 — 딸려 오면 격자가 무너진다
+    const 목록 = firstChildNamed(새칸, 'hp:subList');
+    // **빈 칸은 문단 하나면 된다.** 본뜬 칸의 문단이 여럿이면 빈 줄이 여럿 딸려 온다.
+    if (목록) for (const p of childrenNamed(목록, 'hp:p').slice(1)) removeNode(p);
     for (const p of findAll(새칸, 'hp:p')) {
       for (const run of childrenNamed(p, 'hp:run')) {
+        // 개체(안쪽 표·그림)가 든 런은 통째로 뺀다 — 딸려 오면 격자가 무너진다
         const 개체 = run.children.some((x) => x.kind === 'element'
           && !['hp:t', 'hp:ctrl', 'hp:linesegarray'].includes((x as ElementNode).name));
-        if (개체) removeNode(run);
+        if (개체) { removeNode(run); continue; }
+        // **조종도 뺀다** — 필드(계산식·링크)·책갈피·주가 id 째 복제돼 한 문서에 같은
+        // id 가 여럿 생겼다 (양식의 합계 칸 FORMULA 가 셋이 됨, 2026-09-27 검토에서 잼).
+        // 빈 칸에 필드를 남길 까닭이 없다.
+        for (const c of run.children.filter((x): x is ElementNode => x.kind === 'element' && x.name === 'hp:ctrl')) {
+          removeNode(c);
+        }
+      }
+      // 런이 하나도 안 남았으면 빈 글자 칸 하나를 세운다 — 빈 문단도 런은 있어야 한다
+      if (childrenNamed(p, 'hp:run').length === 0) {
+        appendChild(p, createElement('hp:run', { charPrIDRef: '0' }, [createElement('hp:t', {})]));
       }
     }
     for (const t of findAll(새칸, 'hp:t')) setText(t, '');
@@ -791,11 +831,14 @@ export class 표 {
 
     const 폭들 = this.열폭;
     const 줄들 = this.줄들;
+    // 풀린 칸은 **제 줄의 높이**를 받는다. 전에는 합친 높이를 칸마다 그대로 줘서
+    // 두 줄짜리 합침을 풀면 칸마다 두 줄 높이가 됐다 (2026-09-27 검토에서 잼).
+    const 높이들 = this.줄높이;
     const span = firstChildNamed(시작.el, 'hp:cellSpan')!;
     setAttr(span, 'rowSpan', '1');
     setAttr(span, 'colSpan', '1');
     const 제폭 = 폭들[a.col];
-    if (제폭 !== undefined) 시작.크기주기(제폭, undefined);
+    시작.크기주기(제폭, a.rowSpan > 1 ? 높이들[a.row] : undefined);
 
     let 세운수 = 0;
     for (let r = a.row; r < a.row + a.rowSpan; r++) {
@@ -805,7 +848,7 @@ export class 표 {
         if (r === a.row && c === a.col) continue;
         const 새칸 = this.빈셀본뜨기(시작.el);
         const w = 폭들[c];
-        if (w !== undefined) new 셀(새칸).크기주기(w, undefined);
+        new 셀(새칸).크기주기(w, a.rowSpan > 1 ? 높이들[r] : undefined);
         const 뒤 = this.줄에서칸(tr, c);
         if (뒤) insertBefore(뒤, 새칸);
         else appendChild(tr, 새칸);

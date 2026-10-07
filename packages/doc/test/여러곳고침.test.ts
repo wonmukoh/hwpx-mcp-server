@@ -138,3 +138,33 @@ describe('칸 글을 고쳐도 문단 짜임이 안 무너진다', () => {
     expect(뒤[뒤.length - 1]).toBe(`${찾음!.글들[찾음!.글들.length - 1]}\n추가줄`);
   });
 });
+
+describe('줄을 다 갈아도 칸의 지금 모양대로 나눈다', () => {
+  it('**줄 수가 같으면 문단마다 제 줄 수대로** — 통째로 딴 글이라도 짜임은 그대로', () => {
+    const d = 문서.열기(fs.readFileSync(path.join(뿌리, '자료', '표본', '공개', '교육부-2026대학혁신지원사업-기본계획.hwpx')));
+    d.ID매기기();
+    for (const s of d.구역들) {
+      for (const t of s.표들) {
+        const 표id = d.이름표.아이디(t);
+        const tt = new 표(t);
+        for (let y = 0; y < tt.줄수; y++) {
+          for (let x = 0; x < tt.칸수; x++) {
+            const 칸id = d.셀아이디(표id, y, x);
+            const r = d.칸문단들(칸id);
+            if (!r.ok || r.value.length < 2) continue;
+            const 모양 = r.value.map((p) => p.글.split('\n').length);
+            if (!모양.slice(0, -1).some((n) => n > 1)) continue;
+            // 줄마다 전혀 다른 글로 — 고친 곳이 문단 가름을 걸친다
+            let k = 0;
+            const 새줄들 = 모양.flatMap((n) => Array.from({ length: n }, () => `새줄${k++}`));
+            expect(d.칸글바꾸기(칸id, 새줄들.join('\n')).ok).toBe(true);
+            const 뒤 = (d.칸문단들(칸id) as { value: { 글: string }[] }).value.map((p) => p.글.split('\n').length);
+            expect(뒤).toEqual(모양);
+            return;
+          }
+        }
+      }
+    }
+    throw new Error('줄 나눔 든 여러 문단 칸이 표본에 없다');
+  });
+});

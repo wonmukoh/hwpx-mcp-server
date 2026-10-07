@@ -996,14 +996,23 @@ export class 문서 {
         '→ 마지막에 한 고침을 되짚어 보라. 그것만 물리고 저장하면 된다.',
       ].join('\n'));
     }
+    // **쓸 XML 을 통째로 마지막에 한 번 더 본다.** 글자 칸만 보는 그물은 속성(글꼴 이름·링크
+    // 주소·책갈피 이름·메모 지은이)으로 들어간 제어문자를 놓쳐, 깨진 XML 을 저장하고 「저장했다」고
+    // 했다 (2026-10-07 검토). 입구에서 막지만, 길이 늘면 입구를 또 놓친다 — 마지막 그물은 쓰는 글 전체다.
+    const 쓸것: [string, string][] = [];
+    if (this.머리.dirty) 쓸것.push([부품.header, this.머리.toXml()]);
+    for (const [이름, doc] of this.구역doc) if (doc.root.dirty) 쓸것.push([이름, serializeXml(doc)]);
+    for (const [이름, xml] of 쓸것) {
+      const 나쁜것 = 못쓰는제어문자(xml);
+      if (나쁜것) {
+        throw new Error(`${이름} 에 XML 이 못 쓰는 제어문자 ${나쁜것.글자} 가 들어갔다 — 이대로 쓰면 한글이 못 연다.\n`
+          + '→ 마지막에 넣은 글꼴·링크·책갈피·메모 지은이 같은 값에 그 글자가 없나 보라.');
+      }
+    }
     // 고쳤으면 미리보기를 갈아 끼운다 — 안 그러면 옛 글이 파일 미리보기에 남는다
     if (this.dirty) this.통.미리보기갈기(this.미리보기글());
     this.통.mimetype바로잡기();
-    if (this.머리.dirty) this.통.writeText(부품.header, this.머리.toXml());
-    for (const [이름, doc] of this.구역doc) {
-      if (!doc.root.dirty) continue;
-      this.통.writeText(이름, serializeXml(doc));
-    }
+    for (const [이름, xml] of 쓸것) this.통.writeText(이름, xml);
     return this.통.save();
   }
 

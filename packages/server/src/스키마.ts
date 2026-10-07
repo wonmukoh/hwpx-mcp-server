@@ -143,6 +143,13 @@ export const 글자 = (설명: string): 스키마 => ({ type: 'string', descript
 export const 숫자 = (설명: string): 스키마 => ({ type: 'number', description: 설명 });
 export const 정수 = (설명: string): 스키마 => ({ type: 'integer', description: 설명 });
 export const 참거짓 = (설명: string): 스키마 => ({ type: 'boolean', description: 설명 });
+/**
+ * 숫자에 **쓸 수 있는 범위**를 붙인다. 스키마에 실려 모델도 보고, 인자 검사가 막는다.
+ * 전에는 그림 너비 -100 이 -10000 으로, 0×0 그림이 NaN 으로, 단 간격 1e12 가 그대로 들어갔다
+ * (2026-10-07 견딤성 검토). 한글이 못 그리는 값을 저장 검사도 못 잡는다.
+ */
+export const 범위 = (s: 스키마, 작은: number, 큰?: number): 스키마 =>
+  ({ ...s, minimum: 작은, ...(큰 !== undefined ? { maximum: 큰 } : {}) });
 export const 목록 = (설명: string, 낱개: 스키마): 스키마 =>
   ({ type: 'array', description: 설명, items: 낱개 });
 export const 고름 = (설명: string, 값들: string[]): 스키마 =>

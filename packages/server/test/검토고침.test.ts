@@ -79,7 +79,11 @@ describe('틀린 서식 값은 문서에 들어가기 전에 거절한다', () =
         { op: 'set_style', id, ...값 },
       ] }, 방);
       expect(r.isError).toBe(true);
-      expect(r.structuredContent!['done'], '몇 개가 들어갔는지 알려야 다시 부를 자리를 안다').toBe(1);
+      // 범위가 스키마에 실린 값(크기)은 **입구에서** 막혀 아무것도 안 들어간다 — done 0 이 맞다.
+      // 나머지는 묶음 가운데서 막혀 앞의 하나가 들어간다. 어느 쪽이든 done 이 사실과 맞아야 한다.
+      const 글 = (await 도구부르기('get_content', { doc_id, id }, 방)).structuredContent!['text'];
+      expect(r.structuredContent!['done'], '몇 개가 들어갔는지 알려야 다시 부를 자리를 안다')
+        .toBe(글 === '글 고침' ? 1 : 0);
     });
   }
 });

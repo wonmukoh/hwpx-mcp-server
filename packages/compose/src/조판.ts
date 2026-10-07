@@ -156,7 +156,7 @@ export class 조판기 {
       if (b.kind === 'section_break') {
         const 새구역 = this.d.구역더하기();
         if (!새구역.ok) {
-          return 안됨(`${i}번째 블록(section_break)에서 멈췄다: ${새구역.이유}`, 새구역.어떻게);
+          return 안됨(`${i + 1}번째 블록(section_break, blocks[${i}])에서 멈췄다: ${새구역.이유}`, 새구역.어떻게);
         }
         s = this.d.구역(새구역.value.이름);
         const 새쪽 = this.쪽잡기(s);
@@ -168,13 +168,22 @@ export class 조판기 {
       // 앞 둘이 남았고, 안내대로 그 블록부터 다시 보내면 앞 둘이 두 번 들어갔다
       // (2026-09-27 검토에서 잼). 블록 하나는 다 들어가거나 하나도 안 들어간다.
       const 전 = new Set(s.root.children);
-      const r = this.블록쓰기(s, b, i);
+      // **던져도 여기서 받는다.** 색 이름 「red」 따위가 블록 한가운데서 던지면 바깥 그물까지
+      // 가서 done·created 없이 「터졌다」가 됐고, 앞 블록이 이미 들어간 줄 몰라 두 번 넣었다
+      // (2026-10-07 검토 둘이 잼).
+      let r: 결과<만든것>;
+      try {
+        r = this.블록쓰기(s, b, i);
+      } catch (e) {
+        r = 안됨((e as Error).message ?? String(e), '그 값을 고쳐라.');
+      }
       if (!r.ok) {
         for (const c of [...s.root.children]) if (!전.has(c)) removeNode(c);
+        // 사람이 읽는 말은 1부터 센다 (blocks 의 자리값은 0부터 — created 의 블록 번호와 같다)
         const 실패 = 안됨<{ 만든것: 만든것[]; 문단수: number }>(
-          `${i}번째 블록(${b.kind})에서 멈췄다: ${r.이유}`,
-          `앞의 ${i}개 블록은 이미 들어갔고, ${i}번째 블록은 하나도 안 들어갔다. `
-          + `${i}번째부터 다시 보내라. ${r.어떻게}`,
+          `${i + 1}번째 블록(${b.kind}, blocks[${i}])에서 멈췄다: ${r.이유}`,
+          (i === 0 ? '아무 블록도 안 들어갔다. ' : `앞의 ${i}개 블록은 이미 들어갔고, 이 블록은 하나도 안 들어갔다. `
+            + `blocks[${i}] 부터 다시 보내라. `) + r.어떻게,
         );
         return Object.assign(실패, { 만든것: this.만든것들 });
       }

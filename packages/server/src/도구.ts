@@ -31,7 +31,7 @@ import {
 } from '@hwpx/owpml';
 
 import {
-  글자, 숫자, 정수, 참거짓, 목록, 고름, 묶음, doc_id, 절대경로,
+  글자, 숫자, 정수, 참거짓, 범위, 목록, 고름, 묶음, doc_id, 절대경로,
   type 스키마,
 } from './스키마.js';
 import { 인자검사, 탈말, 절대경로검사 } from './인자검사.js';
@@ -166,7 +166,7 @@ const 목록스키마 = 묶음('열려 있는 문서들', {});
 const 뼈대스키마 = 묶음('문서 뼈대를 본다', {
   doc_id,
   section: 정수('구역 번호. 기본 0'),
-  limit: 정수('몇 개까지 볼까. 기본 200. 잘리면 답의 truncated 가 true 다'),
+  limit: 범위(정수('몇 개까지 볼까. 기본 200. 잘리면 답의 truncated 가 true 다'), 1),
   // 양식은 글이 거의 다 표 안에 있다. 맨 위만 보면 아무것도 안 보인다 —
   // 학교 가정통신문은 문서 전체가 **문단 하나에 든 표 둘**이라 뼈대가 1개로 나왔다.
   in_tables: 참거짓('표 **안**의 셀까지 볼까. 양식을 채울 때 켠다'),
@@ -186,7 +186,7 @@ const 찾기스키마 = 묶음('글이나 종류로 요소를 찾는다', {
   // 훑을 때(text 없이 kind 만)와 찾을 때의 기본이 다르다.
   // **훑기는 본디 전수다** — 50 으로 자르면 뒷절이 통째로 안 보인다.
   // 실제로 계획서 84문단 가운데 「4. 예산사용계획」이 51번째 뒤에 있었다.
-  limit: 정수('몇 개까지. 훑을 때(kind 만) 기본 500, 글로 찾을 때 기본 50'),
+  limit: 범위(정수('몇 개까지. 훑을 때(kind 만) 기본 500, 글로 찾을 때 기본 50'), 1),
 }, ['doc_id']);
 
 const 서식스키마 = 묶음('문서에 정의된 서식을 본다', { doc_id }, ['doc_id']);
@@ -230,8 +230,8 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   // (rows[][].text), 정부 문서 표는 실제로 칸이 아니라 열마다 정렬이 다르다.
   col_align: 목록('table 의 열마다 정렬. 열 수만큼 준다',
     고름('정렬', ['left', 'center', 'right'])),
-  cell_size: 숫자('table 안 글자 크기 pt. 기본 10'),
-  cell_padding: 숫자('셀 안쪽 여백 pt'),
+  cell_size: 범위(숫자('table 안 글자 크기 pt. 기본 10'), 1, 4096),
+  cell_padding: 범위(숫자('셀 안쪽 여백 pt'), 0, 200),
   header_background: 글자('table 머리 줄 배경색 #RRGGBB. 기본 #E8EEF7'),
   border_width: 글자(
     "table 테두리 굵기 (예: '0.12 mm', '0.4 mm'). "
@@ -254,7 +254,7 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
       valign: 고름('세로 정렬', ['top', 'center', 'bottom']),
       bold: 참거짓('굵게'),
       color: 글자('글자색 #RRGGBB'),
-      size: 숫자('글자 크기 pt'),
+      size: 범위(숫자('글자 크기 pt'), 1, 4096),
     }),
   ),
   // 실측: 문서 161편 가운데 122편(76%)이 셀을 합친다. 이게 없으면 정부 문서 표를 못 만든다.
@@ -265,7 +265,7 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
     rowspan: 정수('몇 줄을 덮을까. 기본 1'),
     colspan: 정수('몇 칸을 덮을까. 기본 1'),
   })),
-  size: 숫자('글자 크기 pt'),
+  size: 범위(숫자('글자 크기 pt'), 1, 4096),
   // 줄 높이가 글꼴마다 다르다 — 같은 180% 라도 휴먼명조 24pt, 함초롬바탕 27pt.
   // 안 맞추면 쪽에 들어가는 줄 수가 달라져 세로로 넘친다.
   font: 글자("이 블록의 글꼴 이름 (예: '휴먼명조'). 안 주면 body_font 를 따른다"),
@@ -275,14 +275,16 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   italic: 참거짓('기울임'),
   underline: 참거짓('밑줄'),
   shade: 글자('글자 배경(음영) 색 #RRGGBB'),
-  width_ratio: 숫자('장평 — 글자 너비 %. 100 이 보통'),
+  width_ratio: 범위(숫자('장평 — 글자 너비 %. 100 이 보통'), 50, 200),
   strike: 참거짓('취소선'),
   script: 고름('첨자. super 위, sub 아래, none 없앰', ['super', 'sub', 'none']),
-  emphasis: 글자('강조점 종류 (예: DOT_ABOVE). NONE 이면 없앤다'),
-  outer_margin: 숫자('table 바깥 여백 pt'),
+  // edit 의 set_style 처럼 모르는 이름은 받지 않는다 — 전에는 symMark="WHATEVER" 가 그대로 들어갔다
+  emphasis: 고름('강조점 종류. NONE 이면 없앤다', ['NONE', 'DOT_ABOVE', 'RING_ABOVE', 'TILDE', 'CARON', 'SIDE',
+    'COLON', 'GRAVE_ACCENT', 'ACUTE_ACCENT', 'CIRCUMFLEX', 'MACRON', 'HOOK_ABOVE', 'DOT_BELOW']),
+  outer_margin: 범위(숫자('table 바깥 여백 pt'), 0, 500),
   // shape 블록. 실측: 도형 쓰는 34편 가운데 33편이 hp:rect 다 (254개).
   border_color: 글자('shape 테두리 색 · table 테두리 색 #RRGGBB'),
-  line_width: 숫자('shape 테두리 굵기 pt'),
+  line_width: 범위(숫자('shape 테두리 굵기 pt'), 0, 50),
   shape: 고름(
     'shape 의 모양. 안 주면 rect. **셋은 뼈대가 같고 가운데 기하만 다르다**',
     ['rect', 'ellipse', 'polygon']),
@@ -291,8 +293,8 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
     + '안 주면 이등변 삼각형. 셋보다 적으면 거절한다',
     목록('한 점 [x, y]', 숫자('좌표 pt'))),
   indent: 참거짓('body 의 첫 줄 들여쓰기. 기본 true'),
-  line_spacing: 숫자('줄 간격 %. 기본 160'),
-  letter_spacing: 숫자('자간 %. 음수면 좁아진다'),
+  line_spacing: 범위(숫자('줄 간격 %. 기본 160'), 1, 1000),
+  letter_spacing: 범위(숫자('자간 %. 음수면 좁아진다'), -50, 50),
   emphasize: 목록('outline 에서 굵게 할 어구들', 글자('어구')),
 
   // image 블록. 이 넷이 없어서 **모델이 그림을 아예 못 넣었다** —
@@ -300,16 +302,16 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   // 조판 층에 있는 것과 도구 표면에 뚫린 것이 어긋나면, 있는 기능이 없는 것이 된다.
   // 그래서 `블록표면.test.ts` 가 그 어긋남을 지킨다.
   path: 글자('image 블록의 그림 파일 **절대 경로** (png·jpg·gif·bmp)'),
-  width: 숫자('image 의 너비 pt. 높이만 주면 비율대로 맞춘다'),
-  height: 숫자('image 의 높이 pt. 너비만 주면 비율대로 맞춘다'),
+  width: 범위(숫자('image 의 너비 pt. 높이만 주면 비율대로 맞춘다'), 1, 2000),
+  height: 범위(숫자('image 의 높이 pt. 너비만 주면 비율대로 맞춘다'), 1, 2000),
   caption: 글자('image 아래에 붙일 설명 (예: 〈그림 1〉 …)'),
 
   // 문단 사이 간격과 개조식 내어쓰기.
   // 정부 문서의 `○ (참여 대상) …` 같은 줄은 내어쓰기로 둘째 줄을 글머리 아래 넣는다.
   // 이게 없으면 둘째 줄이 왼쪽 끝까지 나가 모양이 통째로 달라진다.
-  space_before: 숫자('문단 위 여백 pt'),
-  space_after: 숫자('문단 아래 여백 pt'),
-  indent_left: 숫자('왼쪽 여백 pt. 개조식 단계마다 들여쓰는 그것'),
+  space_before: 범위(숫자('문단 위 여백 pt'), 0, 500),
+  space_after: 범위(숫자('문단 아래 여백 pt'), 0, 500),
+  indent_left: 범위(숫자('왼쪽 여백 pt. 개조식 단계마다 들여쓰는 그것'), -500, 500),
   hanging: 숫자('첫 줄 내어쓰기 pt. **음수면 둘째 줄부터 들여간다**'),
 }, ['kind']);
 
@@ -353,7 +355,7 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
     + 'insert_note·insert_equation 이 붙을 어구(안 주면 문단 끝)',
   ),
   replace: 글자('replace 로 바꿀 글'),
-  limit: 정수('replace 로 어구를 몇 개까지 바꿀까 (나온 어구 하나가 하나). 안 주면 다'),
+  limit: 범위(정수('replace 로 어구를 몇 개까지 바꿀까 (나온 어구 하나가 하나). 안 주면 다'), 1),
   bold: 참거짓('set_style — 굵게'),
   italic: 참거짓('set_style — 기울임'),
   underline: 참거짓('set_style — 밑줄'),
@@ -380,8 +382,8 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
     'set_outline — 개요 수준 1~10. **0 이면 개요를 끈다.** '
     + '번호 모양은 한글이 만든 문서에 이미 다 들어 있어 가리키기만 한다',
   ),
-  gap: 숫자('set_columns — 단 사이 간격 HWPUNIT. 안 주면 2268 (8mm)'),
-  size: 숫자('set_style — 글자 크기 pt'),
+  gap: 범위(숫자('set_columns — 단 사이 간격 HWPUNIT. 안 주면 2268 (8mm)'), 0, 56693),
+  size: 범위(숫자('set_style — 글자 크기 pt'), 1, 4096),
   color: 글자('set_style — 글자색 #RRGGBB'),
   font: 글자('set_style — 글꼴 이름'),
   align: 고름('set_style — 정렬', ['left', 'center', 'right', 'justify']),
@@ -411,8 +413,8 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   path: 글자('insert_image — 그림 파일 **절대 경로** (png·jpg·gif·bmp)'),
   // **하나만 주는 것이 낫다.** 하나만 주면 비율을 지켜 나머지를 잡는다.
   // 둘 다 주면 그대로 늘려서 찌그러진다 — 그럴 뜻이 있을 때만 둘을 줘라.
-  width: 숫자('insert_image — 너비 pt. **보통 이것만 준다** (높이는 비율대로 잡힌다)'),
-  height: 숫자('insert_image — 높이 pt. width 와 같이 주면 비율을 안 지켜 찌그러진다'),
+  width: 범위(숫자('insert_image — 너비 pt. **보통 이것만 준다** (높이는 비율대로 잡힌다)'), 1, 2000),
+  height: 범위(숫자('insert_image — 높이 pt. width 와 같이 주면 비율을 안 지켜 찌그러진다'), 1, 2000),
 }, ['op']);
 
 const 고치기스키마 = 묶음('열어 놓은 문서를 고친다', {
@@ -430,16 +432,16 @@ const 조판스키마 = 묶음('블록 목록으로 문서를 쓴다', {
   body_font: 글자('본문 글꼴 이름 (예: 함초롬바탕)'),
   title_font: 글자('제목 글꼴 이름'),
   highlight_color: 글자('`[[…]]` 에 쓸 색 #RRGGBB. 기본 #0000FF'),
-  line_spacing: 숫자('본문 줄 간격 %. 기본 160'),
-  letter_spacing: 숫자('본문 자간 %. 음수면 좁아진다'),
-  margin_left: 숫자('쪽 왼쪽 여백 pt (20mm = 56.7pt)'),
-  margin_right: 숫자('쪽 오른쪽 여백 pt'),
-  margin_top: 숫자('쪽 위 여백 pt'),
-  margin_bottom: 숫자('쪽 아래 여백 pt'),
+  line_spacing: 범위(숫자('본문 줄 간격 %. 기본 160'), 1, 1000),
+  letter_spacing: 범위(숫자('본문 자간 %. 음수면 좁아진다'), -50, 50),
+  margin_left: 범위(숫자('쪽 왼쪽 여백 pt (20mm = 56.7pt)'), 0, 500),
+  margin_right: 범위(숫자('쪽 오른쪽 여백 pt'), 0, 500),
+  margin_top: 범위(숫자('쪽 위 여백 pt'), 0, 500),
+  margin_bottom: 범위(숫자('쪽 아래 여백 pt'), 0, 500),
   // 머리말·꼬리말 자리의 높이. 이게 다르면 **쪽에 들어가는 줄 수가 달라진다** —
   // 본문 높이가 `쪽높이 - 위 - 아래 - 머리말 - 꼬리말` 이기 때문이다.
-  margin_header: 숫자('머리말 자리 높이 pt. 정부 문서는 보통 10mm(28.35pt)'),
-  margin_footer: 숫자('꼬리말 자리 높이 pt. 정부 문서는 보통 10mm(28.35pt)'),
+  margin_header: 범위(숫자('머리말 자리 높이 pt. 정부 문서는 보통 10mm(28.35pt)'), 0, 500),
+  margin_footer: 범위(숫자('꼬리말 자리 높이 pt. 정부 문서는 보통 10mm(28.35pt)'), 0, 500),
   // 실측: 문서 161편 가운데 12편(7%)이 머리말·꼬리말에 글을 넣는다.
   header_text: 글자('머리말에 넣을 글'),
   footer_text: 글자('꼬리말에 넣을 글'),
@@ -1086,6 +1088,10 @@ export const 도구들: 도구[] = [
           'text(찾을 글) 나 kind(paragraph · table · cell) 가운데 하나는 줘야 한다.',
         );
       }
+      // 빈 글은 모든 것에 걸린다 — 전에는 말없이 다 훑어 한도에서 잘라 줬다 (2026-10-07 검토)
+      if (인자.text === '') {
+        return 못함('찾을 글이 비었다', '찾을 글을 적거나, 전부 훑으려면 text 를 빼고 kind 만 줘라.');
+      }
       const d = 것.it.d;
       // 훑기(kind 만)는 본디 전수다. 50 으로 자르면 뒷절이 통째로 안 보인다 —
       // 계획서 84문단 가운데 「4. 예산사용계획」이 51번째 뒤에 있었다.
@@ -1373,7 +1379,7 @@ export const 도구들: 도구[] = [
         const 그림 = b as { kind?: string; path?: string };
         if (그림.kind !== 'image' || 그림.path === undefined) continue;
         const 검 = 절대경로검사(그림.path);
-        if (!검.ok) return 못함(`${i}번째 블록(image): ${검.이유}`, 검.어떻게);
+        if (!검.ok) return 못함(`${i + 1}번째 블록(image, blocks[${i}]): ${검.이유}`, 검.어떻게);
       }
 
       const 여백 = {

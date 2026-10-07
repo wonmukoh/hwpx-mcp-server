@@ -107,3 +107,70 @@ describe('잃은 서식을 버리지 않고 말한다', () => {
     expect(결과.note).toContain('합쳐졌다');
   });
 });
+
+describe('입구에서 막는다 — 어느 인자든', () => {
+  it('**글꼴 이름·링크 주소에 든 제어문자를 거절한다** — 깨진 XML 을 저장하지 않는다', async () => {
+    const { 방, doc_id, id } = await 한문단('글');
+    for (const 고침 of [
+      { op: 'set_style', id, font: 'a\u0001b' },
+      { op: 'set_link', id, find: '글', url: 'https://a\u0000b' },
+      { op: 'set_bookmark', id, name: 'a\u0001b' },
+    ]) {
+      const r = await 도구부르기('edit', { doc_id, edits: [고침] }, 방);
+      expect(r.isError, JSON.stringify(고침)).toBe(true);
+      expect(r.content[0]?.text).toContain('U+000');
+    }
+    const c = await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '가' }], body_font: 'x\u0002' }, 방);
+    expect(c.isError).toBe(true);
+  });
+
+  it('짝 없는 대리 글자를 거절한다 (말없이 U+FFFD 로 바뀌던 것)', async () => {
+    const { 방, doc_id, id } = await 한문단('글');
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '가\uD800나' }] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('짝 없는');
+  });
+
+  it('**인자 이름이 __proto__·constructor 여도 터지지 않고 모르는 인자라 한다**', async () => {
+    const { 방, doc_id } = await 한문단('글');
+    const 인자 = JSON.parse(`{"doc_id":"${doc_id}","constructor":1,"__proto__":{"x":1}}`) as Record<string, unknown>;
+    const r = await 도구부르기('get_outline', 인자, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('모르는 인자');
+  });
+
+  it('범위 밖 수를 거절한다 — limit 0, 그림 너비 음수, 단 간격, 끝없는 수', async () => {
+    const { 방, doc_id, id } = await 한문단('굵게 굵게');
+    for (const [도구, 인자] of [
+      ['edit', { doc_id, edits: [{ op: 'replace', id, find: '굵게', replace: '가', limit: 0 }] }],
+      ['get_outline', { doc_id, limit: -1 }],
+      ['edit', { doc_id, edits: [{ op: 'set_columns', id, count: 2, gap: 1e12 }] }],
+      ['edit', { doc_id, edits: [{ op: 'set_style', id, size: Infinity }] }],
+      ['compose', { doc_id, blocks: [{ kind: 'body', text: '가', size: -5 }] }],
+      ['compose', { doc_id, blocks: [{ kind: 'body', text: '가' }], letter_spacing: -1000 }],
+    ] as const) {
+      const r = await 도구부르기(도구, 인자 as Record<string, unknown>, 방);
+      expect(r.isError, `${도구} ${JSON.stringify(인자)}`).toBe(true);
+    }
+  });
+
+  it('find 의 빈 글을 거절한다', async () => {
+    const { 방, doc_id } = await 한문단('글');
+    expect((await 도구부르기('find', { doc_id, text: '' }, 방)).isError).toBe(true);
+  });
+
+  it('**compose 블록 가운데서 던져도 done·created 를 싣고, 그 블록은 안 남긴다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    const r = await 도구부르기('compose', { doc_id, blocks: [
+      { kind: 'heading', text: '첫 절' },
+      { kind: 'body', text: '본문 하나' },
+      { kind: 'band', text: '띠', background: 'red' },
+    ] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.structuredContent!['done']).toBe(2);
+    expect((r.structuredContent!['created'] as unknown[]).length).toBe(2);
+    const 글 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!['text'] as string;
+    expect(글).not.toContain('띠');
+  });
+});

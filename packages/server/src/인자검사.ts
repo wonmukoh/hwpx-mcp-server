@@ -43,15 +43,19 @@ export function 인자검사(값: unknown, s: 스키마, 어디 = ''): 검사탈
       }
       const o = 값 as Record<string, unknown>;
 
+      // **제 속성만 본다.** `s.properties?.[k]` 는 원형까지 뒤져서, 인자 이름이 `constructor`·
+      // `__proto__` 면 함수를 스키마로 알고 「is not iterable」로 터졌다 (2026-10-07 검토)
+      const 제것 = (k: string): 스키마 | undefined =>
+        s.properties && Object.prototype.hasOwnProperty.call(s.properties, k) ? s.properties[k] : undefined;
       for (const k of s.required ?? []) {
         if (o[k] === undefined) {
-          const 설명 = s.properties?.[k]?.description ?? '';
+          const 설명 = 제것(k)?.description ?? '';
           탈.push({ 어디: 어디 ? `${어디}.${k}` : k, 무엇: `꼭 있어야 한다${설명 ? ` — ${설명}` : ''}` });
         }
       }
 
       for (const [k, v] of Object.entries(o)) {
-        const 속 = s.properties?.[k];
+        const 속 = 제것(k);
         if (!속) {
           const 있는것 = Object.keys(s.properties ?? {});
           탈.push({
@@ -80,6 +84,15 @@ export function 인자검사(값: unknown, s: 스키마, 어디 = ''): 검사탈
       if (typeof 값 !== 'string') {
         return [{ 어디: 이름, 무엇: `글자여야 하는데 ${꼴이름(값)} 을 줬다` }];
       }
+      // **못 쓰는 글자는 입구에서 막는다 — 어느 인자든.** 본문 글만 막았더니 글꼴 이름·링크 주소·
+      // 책갈피 이름·메모 지은이로 들어가 깨진 XML 이 저장되고 「저장했다」고 답했다 (2026-10-07 검토).
+      const 나쁜것 = 못쓸글자(값);
+      if (나쁜것) {
+        return [{
+          어디: 이름,
+          무엇: `${나쁜것.자리}번째 글자 ${나쁜것.글자} 는 문서에 쓸 수 없다 (${나쁜것.왜}). 빼고 다시 줘라`,
+        }];
+      }
       if (s.enum && !s.enum.includes(값)) {
         return [{
           어디: 이름,
@@ -93,6 +106,9 @@ export function 인자검사(값: unknown, s: 스키마, 어디 = ''): 검사탈
     case 'integer': {
       if (typeof 값 !== 'number' || Number.isNaN(값)) {
         return [{ 어디: 이름, 무엇: `숫자여야 하는데 ${꼴이름(값)} 을 줬다` }];
+      }
+      if (!Number.isFinite(값)) {
+        return [{ 어디: 이름, 무엇: `끝이 있는 숫자여야 한다. 준 값: ${값}` }];
       }
       if (s.type === 'integer' && !Number.isInteger(값)) {
         탈.push({ 어디: 이름, 무엇: `정수여야 하는데 ${값} 을 줬다` });
@@ -113,6 +129,27 @@ export function 인자검사(값: unknown, s: 스키마, 어디 = ''): 검사탈
       return 탈;
     }
   }
+}
+
+/**
+ * 문서에 쓸 수 없는 글자 — XML 1.0 이 못 쓰는 제어문자(탭·줄바꿈 빼고), U+FFFE·FFFF,
+ * **짝 없는 대리 글자**(짝 없는 \uD800 따위는 저장하면 말없이 U+FFFD 로 바뀐다).
+ */
+function 못쓸글자(s: string): { 글자: string; 자리: number; 왜: string } | undefined {
+  for (let i = 0; i < s.length; i++) {
+    const n = s.charCodeAt(i);
+    const 꼴 = `U+${n.toString(16).toUpperCase().padStart(4, '0')}`;
+    if ((n < 0x20 && n !== 0x09 && n !== 0x0a && n !== 0x0d) || n === 0xfffe || n === 0xffff) {
+      return { 글자: 꼴, 자리: i, 왜: 'XML 이 못 쓰는 제어문자 — 든 파일은 한글이 못 연다' };
+    }
+    if (n >= 0xd800 && n <= 0xdbff) {
+      const 다음 = s.charCodeAt(i + 1);
+      if (다음 >= 0xdc00 && 다음 <= 0xdfff) { i++; continue; }
+      return { 글자: 꼴, 자리: i, 왜: '짝 없는 대리 글자' };
+    }
+    if (n >= 0xdc00 && n <= 0xdfff) return { 글자: 꼴, 자리: i, 왜: '짝 없는 대리 글자' };
+  }
+  return undefined;
 }
 
 /** 탈들을 한 덩이 말로 */

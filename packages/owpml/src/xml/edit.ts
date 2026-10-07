@@ -192,6 +192,39 @@ export function 글자칸읽기(t: ElementNode): string {
 }
 
 /**
+ * 런 바로 밑에서 **글자 칸 말고도 글인 것.** 고칠 수는 없고 읽기만 한다.
+ *
+ *   hp:dutmal   덧말 — 본문은 `hp:mainText`, 위·아래 작은 글은 `hp:subText`
+ *   hp:compose  글자 겹침 — 겹친 글자들이 `composeText` 속성에
+ *
+ * 글자 칸만 읽었더니 **덧말을 단 낱말이 본문에서 통째로 빠졌다.** 한글의 글 내보내기와
+ * 표본 35편을 대 보고 알았다(2026-10-07). 덧말의 작은 글은 본문이 아니라 뺀다.
+ * 글이 아닌 요소면 `undefined`.
+ */
+export function 런의고정글(c: ElementNode): string | undefined {
+  if (c.name === 'hp:dutmal') {
+    const 본 = c.children.find((x): x is ElementNode => x.kind === 'element' && x.name === 'hp:mainText');
+    return 본 ? textOf(본) : '';
+  }
+  if (c.name === 'hp:compose') return getAttr(c, 'composeText') ?? '';
+  return undefined;
+}
+
+/** 런 하나의 글 — 글자 칸과 덧말·글자 겹침을 **나온 차례대로** */
+export function 런글읽기(런: ElementNode): string {
+  const out: string[] = [];
+  for (const c of 런.children) {
+    if (c.kind !== 'element') continue;
+    if (c.name === 'hp:t') out.push(글자칸읽기(c));
+    else {
+      const 고정 = 런의고정글(c);
+      if (고정 !== undefined) out.push(고정);
+    }
+  }
+  return out.join('');
+}
+
+/**
  * 글자 칸 하나를 다시 쓴다 — `글자칸읽기` 의 짝.
  *
  * `\n` `\t` U+3000 U+00A0 은 개체로 되돌린다. **있던 개체는 차례대로 다시 쓴다** —

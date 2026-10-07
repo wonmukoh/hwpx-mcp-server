@@ -99,6 +99,8 @@ const 할일 = [
 if (한글까지) {
   할일.push(['한글이 받아들이나 (규격·컨테이너)', process.execPath, [path.join('검증', '한글수용시험.mjs')]]);
   할일.push(['한글이 받아들이나 (문서 계층)', process.execPath, [path.join('검증', '문서층수용시험.mjs')]]);
+  // 한글을 정답지로 — 한글이 읽는 글과 우리가 읽는 글이 같나 (덧말·자동 번호, 고친 뒤에도)
+  할일.push(['한글이 읽는 글과 같나', process.execPath, [path.join('검증', '한글글대조.mjs')]]);
   할일.push(['문단 여백 단위', process.execPath, [path.join('검증', '문단여백단위.mjs')]]);
   할일.push(['셀 여백 단위', process.execPath, [path.join('검증', '셀여백단위.mjs')]]);
   // 조판은 규격·왕복·시각 세 겹을 한 번에 본다

@@ -538,7 +538,7 @@ const 고장들 = [
   [
     "모르는 요소가 든 글자 칸을 고친다 (형광펜이 사라진다)",
     "packages/doc/src/본문.ts",
-    "    const 모르는것 = [...new Set(걸친.flatMap((i) => 글자칸의모르는것(조각[i]!.t)))];",
+    "    const 모르는것 = [...new Set(걸친.flatMap((i) => 글자칸의모르는것(조각[i]!.t!)))];",
     "    const 모르는것: string[] = [];",
     "packages/doc",
   ],
@@ -585,8 +585,8 @@ const 고장들 = [
   [
     '칸 미리보기가 글자 칸의 첫 자식 날 글만 읽는다 (줄 나눔 뒤가 빠지고 &amp; 가 나온다)',
     'packages/server/src/도구.ts',
-    "  return findAll(el as never, 'hp:t').map((t) => 글자칸읽기(t)).join('');",
-    "  return findAll(el as never, 'hp:t').map((t) => ((t.children[0] as { raw?: string } | undefined)?.raw ?? '')).join('');",
+    "  return findAll(el as never, 'hp:run').map((r) => 런글읽기(r)).join('');",
+    "  return findAll(el as never, 'hp:t').map((t) => ((t.children[0] as { raw?: string } | undefined)?.raw ?? '')).join('') + String(런글읽기).slice(0, 0);",
     'packages/server',
   ],
   [
@@ -1599,6 +1599,78 @@ const 고장들 = [
     'packages/server/src/도구.ts',
     "      const 다빔 = 칸들.every((c) => String(c['text'] ?? '').trim() === '');",
     '      const 다빔 = true;',
+    'packages/server',
+  ],
+
+  // ── 2026-10-07 한글 글 내보내기와 대 보고 고친 것 ──────────────────────────
+  [
+    '덧말을 안 읽는다 (덧말 단 낱말이 본문에서 빠진다)',
+    'packages/owpml/src/xml/edit.ts',
+    "  if (c.name === 'hp:dutmal') {",
+    "  if (c.name === 'hp:dutmal-안읽음') {",
+    'packages/server',
+  ],
+  [
+    'set_text 가 덧말을 글 조각으로 안 센다 (덧말 앞에 넣은 글이 덧말 뒤로 간다)',
+    'packages/doc/src/본문.ts',
+    '        return 고정 === undefined ? [] : [{ 고정: c, 글: 고정 }];',
+    '        return [];',
+    'packages/server',
+  ],
+  [
+    '번호를 셀 때 깊은 수준을 처음으로 안 돌린다 (「가. 나.」 다음 「2.」 아래가 「다.」)',
+    'packages/doc/src/번호.ts',
+    '      for (const k of [...셈.keys()]) if (k > 수준) 셈.delete(k);',
+    '      void 0;',
+    'packages/doc',
+  ],
+  [
+    '번호틀 글의 윗수준(^1)을 지금 셈이 아니라 시작 값으로 쓴다',
+    'packages/doc/src/번호.ts',
+    '        const 값 = 셈.get(k) ?? 틀.get(k)?.시작 ?? 1;',
+    '        const 값 = 틀.get(k)?.시작 ?? 1;',
+    'packages/doc',
+  ],
+  [
+    '번호 정의를 읽다가 머리글을 더럽힌다 (안 고친 문서가 바이트째 달라진다)',
+    'packages/doc/src/머리글.ts',
+    "      const l = firstChildNamed(this.refList, 이름);",
+    "      const l = this.목록(이름);",
+    'packages/doc',
+  ],
+  [
+    '번호가 붙는 문단에 번호를 또 써도 말이 없다 (「1. 1. 목적」)',
+    'packages/server/src/도구.ts',
+    "          if (말) { x['note'] = 말; 알림들.push(`${x['id'] as string}: ${말}`); }",
+    '          void 말;',
+    'packages/server',
+  ],
+  [
+    '번호 겹침을 「목 적」 같은 글에도 말한다 (문장부호 없는 한 글자를 번호로 친다)',
+    'packages/server/src/도구.ts',
+    '[.)）](?![0-9])|^[①-⑳㉠-㉭㉮-㉻]/.test(글)',
+    '[.)）]?(?![0-9])|^[①-⑳㉠-㉭㉮-㉻]/.test(글)',
+    'packages/server',
+  ],
+  [
+    '칸 읽기가 줄마다 붙는 번호·글머리표를 안 준다',
+    'packages/server/src/도구.ts',
+    '            ...(표지.has(p.el) ? { numbering: 표지.get(p.el)! } : {}),',
+    '',
+    'packages/server',
+  ],
+  [
+    '뼈대의 칸이 번호 붙는 줄 수를 안 준다',
+    'packages/server/src/도구.ts',
+    '                ...(번호줄 ? { numbered_lines: 번호줄 } : {}),',
+    '',
+    'packages/server',
+  ],
+  [
+    '문단 읽기가 번호를 안 준다',
+    'packages/server/src/도구.ts',
+    "          { ok: true, id: 인자.id, kind: 'paragraph', text: r.value.문단.글, ...(표지 ? { numbering: 표지 } : {}) });",
+    "          { ok: true, id: 인자.id, kind: 'paragraph', text: r.value.문단.글 });",
     'packages/server',
   ],
 ];

@@ -27,7 +27,7 @@ import { 조판, 블록종류, type 블록, 정렬맞추기, 크기맞추기, �
 import { 엮기 } from '@hwpx/render';
 import {
   childrenNamed, findAll, getAttr, setAttr, firstChildNamed, parseXml, pt, ptToHwp,
-  appendChild, insertAfter, removeNode, closestNamed, textOf, 글자칸읽기, type ElementNode,
+  appendChild, insertAfter, removeNode, closestNamed, textOf, 런글읽기, type ElementNode,
 } from '@hwpx/owpml';
 
 import {
@@ -623,11 +623,16 @@ export const 도구들: 도구[] = [
         // 것인지 밝혀 준다 — 안 밝히면 같은 글이 두 군데 있는 것처럼 보인다.
         in_shape: 참거짓('글상자(도형) 안에 든 문단일 때 켜진다'),
         preview: 글자('글 미리보기'),
+        numbering: 글자(
+          '문단일 때 — 한글이 이 문단 앞에 **저절로 붙이는** 번호·글머리표(「1.」「가.」「∘」). '
+          + '글이 아니라 preview·text 에 안 든다. 있으면 글에 번호를 또 쓰지 마라 — 「1. 1. 목적」이 된다',
+        ),
         rows: 정수('표일 때 줄 수'),
         cols: 정수('표일 때 칸 수'),
         in_cell: 글자('in_tables 일 때 — 이 표·칸이 든 바깥 칸 ID'),
         row: 정수('in_tables 일 때 — 칸의 줄 (0부터)'),
         col: 정수('in_tables 일 때 — 칸의 칸 (0부터)'),
+        numbered_lines: 정수('칸일 때 — 칸 안에서 번호·글머리표가 저절로 붙는 줄 수. 무엇이 붙는지는 get_content(칸) 의 paragraphs[].numbering'),
       })),
       truncated: 참거짓('한도에 걸려 잘렸나. true 면 limit 을 키워 다시 불러라'),
     }, ['ok', 'items', 'truncated']),
@@ -647,6 +652,8 @@ export const 도구들: 도구[] = [
 
       const 한도 = 인자.limit ?? 200;
       const 것들: Record<string, unknown>[] = [];
+      const 표지 = d.번호표지들();
+      const 번호칸 = (el: ElementNode) => (표지.has(el) ? { numbering: 표지.get(el)! } : {});
       for (const p of s.문단들) {
         // 표가 든 문단은 표로 적는다 — 그게 모델이 찾는 것이다
         const 표들 = childrenNamed(p.el, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:tbl'));
@@ -662,7 +669,7 @@ export const 도구들: 도구[] = [
           continue;
         }
         const 글 = p.글.trim();
-        것들.push({ id: d.이름표.아이디(p.el), kind: 'paragraph', preview: 미리보기(글) });
+        것들.push({ id: d.이름표.아이디(p.el), kind: 'paragraph', preview: 미리보기(글), ...번호칸(p.el) });
 
         // **글상자 안 글은 뼈대에 안 나오고 있었다.**
         //
@@ -681,7 +688,7 @@ export const 도구들: 도구[] = [
           for (const q of findAll(dt, 'hp:p')) {
             것들.push({
               id: d.이름표.아이디(q), kind: 'paragraph',
-              preview: 미리보기(new 문단(q, s.source).글.trim()), in_shape: true,
+              preview: 미리보기(new 문단(q, s.source).글.trim()), in_shape: true, ...번호칸(q),
             });
           }
         }
@@ -720,9 +727,11 @@ export const 도구들: 도구[] = [
 
               const 글 = 셀글(셀.el).trim();
               if (!글) continue;   // 빈 칸은 뼈대를 어지럽힌다. 채울 자리는 find 로 찾는다
+              const 번호줄 = childrenNamed(셀.subList, 'hp:p').filter((q) => 표지.has(q)).length;
               것들.push({
                 id: d.셀아이디(표아이디, y, x), kind: 'cell',
                 preview: 미리보기(글), row: y, col: x,
+                ...(번호줄 ? { numbered_lines: 번호줄 } : {}),
               });
             }
           }
@@ -801,7 +810,16 @@ export const 도구들: 도구[] = [
       paragraphs: 목록('칸일 때 — 그 안의 문단들 (줄 차례로)', 묶음('문단 하나', {
         id: 글자('문단 ID'),
         text: 글자('그 줄의 글'),
+        numbering: 글자('한글이 이 줄 앞에 저절로 붙이는 번호·글머리표. 글이 아니다'),
       })),
+      numbering: 글자(
+        '문단일 때 — 한글이 앞에 **저절로 붙이는** 번호·글머리표(「1.」「∘」). text 에 안 든다. '
+        + '있으면 set_text 에 번호를 또 쓰지 마라',
+      ),
+      numbered_paragraphs: 정수(
+        '문서일 때 — 저절로 번호·글머리표가 붙는 문단 수. text 에는 그 번호가 안 든다 '
+        + '(글이 아니다). 어느 문단인지는 get_outline 의 numbering 이 알려 준다',
+      ),
     }, ['ok', 'id', 'kind']),
     annotations: { title: '요소 내용 보기', readOnlyHint: true, idempotentHint: true },
     처리: 검사하고<{ doc_id: string; id?: string }>(내용스키마, (인자, 방) => {
@@ -829,8 +847,13 @@ export const 도구들: 도구[] = [
           메모들.length ? `메모 ${메모들.length}` : '',
           수식들.length ? `수식 ${수식들.length}` : '',
         ].filter(Boolean).join(' · ');
-        return 잘됨(`문서 전체 글 (${온글.length}자)${덧 ? ` — ${덧}` : ''}`, {
+        // **번호·글머리표는 글이 아니다** — 한글이 그려 준다. text 에 섞으면 find·set_text 에
+        // 그대로 넣어 못 찾거나 두 번 붙는다. 대신 있다는 것만은 꼭 말한다.
+        const 번호수 = 것.it.d.번호표지들().size;
+        return 잘됨(`문서 전체 글 (${온글.length}자)${덧 ? ` — ${덧}` : ''}`
+          + (번호수 ? ` · 자동 번호·글머리표가 붙는 문단 ${번호수}개 (글에는 안 든다 — get_outline 의 numbering)` : ''), {
           ok: true, id: 인자.doc_id, kind: 'document', text: 온글,
+          ...(번호수 ? { numbered_paragraphs: 번호수 } : {}),
           notes: 주들.map((n) => ({
             kind: n.갈래 === '각주' ? 'footnote' : 'endnote', number: n.번호, text: n.글,
           })),
@@ -845,16 +868,21 @@ export const 도구들: 도구[] = [
       if (!r.ok) return 못함(r.이유, r.어떻게);
 
       if (r.value.갈래 === '문단') {
-        return 잘됨(`${인자.id}: «${미리보기(r.value.문단.글)}»`,
-          { ok: true, id: 인자.id, kind: 'paragraph', text: r.value.문단.글 });
+        const 표지 = 것.it.d.번호표지들().get(r.value.문단.el);
+        return 잘됨(`${인자.id}: ${표지 ? `(${표지}) ` : ''}«${미리보기(r.value.문단.글)}»`,
+          { ok: true, id: 인자.id, kind: 'paragraph', text: r.value.문단.글, ...(표지 ? { numbering: 표지 } : {}) });
       }
       if (r.value.갈래 === '셀') {
         // **한 칸에 문단이 여럿일 수 있다.** 이어 붙여서만 주면
         // "첫 줄 글둘째 줄 글" 이 되어 두 줄인 줄도 모른다.
         // 실제 계획서 양식에 그런 칸이 4개 있었다.
         const 문단들 = 것.it.d.칸문단들(인자.id);
+        const 표지 = 것.it.d.번호표지들();
         const 줄들 = 문단들.ok
-          ? 문단들.value.map((p) => ({ id: 것.it.d.이름표.아이디(p.el), text: p.글 }))
+          ? 문단들.value.map((p) => ({
+            id: 것.it.d.이름표.아이디(p.el), text: p.글,
+            ...(표지.has(p.el) ? { numbering: 표지.get(p.el)! } : {}),
+          }))
           : [];
         const 글 = 줄들.map((x) => x.text).join('\n');
         return 잘됨(
@@ -1300,6 +1328,7 @@ export const 도구들: 도구[] = [
         op: 글자('무엇을 했나'),
         id: 글자('무엇을'),
         changed: 정수('몇 개가 바뀌었나'),
+        note: 글자('알아 둘 것 — 고치긴 했는데 보이는 모양이 기대와 다를 때 (예: 번호가 두 번 붙는다)'),
       })),
     }, ['ok', 'done']),
     annotations: { title: '문서 고치기', idempotentHint: false },
@@ -1346,13 +1375,52 @@ export const 도구들: 도구[] = [
       }
 
       const 합 = 낸것.reduce((a, x) => a + (x['changed'] as number), 0);
+      // **번호가 두 번 붙나.** 한글이 「1.」을 저절로 붙이는 문단에 「1. 목적」을 쓰면
+      // 쪽에는 「1. 1. 목적」이 보인다. 도구는 시킨 대로 했으니 실패는 아니다 — 알린다.
+      const 쓴곳 = 낸것.filter((x) => x['op'] === 'set_text' && x['changed'] !== 0);
+      const 알림들: string[] = [];
+      if (쓴곳.length > 0) {
+        const 표지 = d.번호표지들();
+        for (const x of 쓴곳) {
+          const 말 = 번호겹침(d, 표지, x['id'] as string);
+          if (말) { x['note'] = 말; 알림들.push(`${x['id'] as string}: ${말}`); }
+        }
+      }
       return 잘됨(
-        `${인자.edits.length}가지를 고쳐 ${합}곳이 바뀌었다`,
+        `${인자.edits.length}가지를 고쳐 ${합}곳이 바뀌었다`
+        + (알림들.length ? `\n\n**알아 둘 것**\n${알림들.join('\n')}` : ''),
         { ok: true, done: 인자.edits.length, results: 낸것 },
       );
     }),
   },
 ];
+
+/**
+ * 한글이 저절로 붙이는 번호·글머리표를 글에 **또 쓴 줄**이 있나. 있으면 알릴 말.
+ *
+ * 번호 꼴(「3.」「나)」「(2)」「①」)로 시작하면 숫자가 달라도 겹친 것으로 친다 —
+ * 표지가 「3.」인데 「1. 목적」이라 쓰면 「3. 1. 목적」이 된다.
+ */
+function 번호겹침(d: 문서, 표지: Map<ElementNode, string>, id: string): string | undefined {
+  const 찾은것 = d.찾기(id);
+  if (!찾은것.ok) return undefined;
+  const 문단들 = 찾은것.value.갈래 === '문단'
+    ? [찾은것.value.문단]
+    : 찾은것.value.갈래 === '셀' && d.칸문단들(id).ok ? (d.칸문단들(id) as { value: 문단[] }).value : [];
+  for (const p of 문단들) {
+    const 붙는것 = 표지.get(p.el);
+    if (!붙는것) continue;
+    const 글 = p.글.trimStart();
+    // 「가.」「3)」「(2)」「①」 — 문장부호까지 있어야 번호다(「목 적」·「3.1절」은 아니다)
+    const 번호꼴로 = /^[(（]?(?:[0-9]{1,3}|[가나다라마바사아자차카타파하]|[ㄱ-ㅎ]|[ivxIVX]{1,4}|[A-Za-z])[.)）](?![0-9])|^[①-⑳㉠-㉭㉮-㉻]/.test(글)
+      && /[0-9가-힣ㄱ-ㅎA-Za-z①-⑳㉠-㉻ⅰ-ⅹⅠ-Ⅹ]/.test(붙는것);
+    if (글.startsWith(붙는것.trim()) || 번호꼴로) {
+      return `이 줄 앞에는 한글이 「${붙는것}」를 저절로 붙인다 — 글이 「${글.slice(0, 12)}」로 시작해 `
+        + `쪽에는 「${붙는것} ${글.slice(0, 12)}」로 보인다. 번호를 빼고 다시 set_text 하라.`;
+    }
+  }
+  return undefined;
+}
 
 /** 고침 하나의 꼴 */
 interface 고침 {
@@ -2067,11 +2135,12 @@ function 미리보기(글: string, 폭 = 60): string {
  *
  * 전에는 글자 칸의 **첫 자식 하나의 날 글**만 읽었다. 그래서 줄 나눔이 든 칸은
  * 「담당자<hp:lineBreak/>2. 교육부」가 「담당자」에서 끊겼고, `&` 는 `&amp;` 로 나왔다.
- * 글자 칸은 `글자칸읽기` 로만 읽는다 (실측 35항).
+ * 글자 칸은 `글자칸읽기` 로만 읽는다 (실측 35항). 그리고 **런 단위로** 읽는다 —
+ * 덧말·글자 겹침도 글이라, 글자 칸만 모으면 덧말 단 낱말이 빠진다 (`런글읽기`).
  */
 function 셀글(el: unknown): string {
   if (!el) return '';
-  return findAll(el as never, 'hp:t').map((t) => 글자칸읽기(t)).join('');
+  return findAll(el as never, 'hp:run').map((r) => 런글읽기(r)).join('');
 }
 
 /**
@@ -2103,7 +2172,6 @@ function 칸줄글(el: unknown): string {
   const 목록 = firstChildNamed(el as ElementNode, 'hp:subList');
   if (!목록) return '';
   return childrenNamed(목록, 'hp:p')
-    .map((p) => childrenNamed(p, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'))
-      .map((t) => 글자칸읽기(t)).join(''))
+    .map((p) => childrenNamed(p, 'hp:run').map((r) => 런글읽기(r)).join(''))
     .join('\n');
 }

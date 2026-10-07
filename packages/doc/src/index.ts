@@ -5,3 +5,4 @@ export * from './표.js';
 export * from './본문.js';
 export * from './그림.js';
 export * from './문서.js';
+export * from './번호.js';

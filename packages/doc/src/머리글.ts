@@ -21,12 +21,13 @@
 
 import {
   getAttr, setAttr, appendChild, createElement, removeNode, insertAfter,
-  findFirst, childrenNamed, firstChildNamed,
+  findFirst, childrenNamed, firstChildNamed, textOf,
   parseXml, serializeXml, serializeNode, 복제하기, 지문,
   ptToHwp, 굵기맞추기,
   type ElementNode, type XmlDocument, type HwpUnit, type Pt, type 테두리굵기값,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
+import type { 번호정의 } from './번호.js';
 
 /** `refList` 아래 목록들. **순서가 규격이다** — 함부로 바꾸면 한글이 못 읽는다 */
 export const 목록순서 = [
@@ -218,6 +219,41 @@ export class 머리글 {
       ? this.doc.root
       : findFirst(this.doc.root, 'hh:head');
     return head ? Number(getAttr(head, 'secCnt') ?? 1) : 1;
+  }
+
+  /**
+   * 문단 번호·글머리표를 매기는 데 드는 것을 **읽기만** 한다 (`목록()` 은 없으면 만든다 —
+   * 읽다가 머리글을 더럽히면 안 고친 문서가 바이트째 달라진다).
+   */
+  번호정의(): 번호정의 {
+    const 목록 = (이름: string, 낱: string) => {
+      const l = firstChildNamed(this.refList, 이름);
+      return l ? childrenNamed(l, 낱) : [];
+    };
+    const 머리 = new Map<string, { 갈래: string; idRef: string; 수준: number }>();
+    for (const pp of 목록('hh:paraProperties', 'hh:paraPr')) {
+      const h = findFirst(pp, 'hh:heading');
+      const 갈래 = h ? getAttr(h, 'type') ?? 'NONE' : 'NONE';
+      if (갈래 === 'NONE') continue;
+      머리.set(getAttr(pp, 'id') ?? '', {
+        갈래, idRef: getAttr(h!, 'idRef') ?? '0', 수준: Number(getAttr(h!, 'level') ?? 0),
+      });
+    }
+    const 번호틀 = new Map<string, Map<number, { 시작: number; 꼴: string; 틀: string }>>();
+    for (const n of 목록('hh:numberings', 'hh:numbering')) {
+      const 수준들 = new Map<number, { 시작: number; 꼴: string; 틀: string }>();
+      for (const ph of childrenNamed(n, 'hh:paraHead')) {
+        수준들.set(Number(getAttr(ph, 'level') ?? 1), {
+          시작: Number(getAttr(ph, 'start') ?? 1),
+          꼴: getAttr(ph, 'numFormat') ?? 'DIGIT',
+          틀: textOf(ph),
+        });
+      }
+      번호틀.set(getAttr(n, 'id') ?? '', 수준들);
+    }
+    const 글머리 = new Map<string, string>();
+    for (const b of 목록('hh:bullets', 'hh:bullet')) 글머리.set(getAttr(b, 'id') ?? '', getAttr(b, 'char') ?? '');
+    return { 머리, 번호틀, 글머리 };
   }
 
   private get refList(): ElementNode {

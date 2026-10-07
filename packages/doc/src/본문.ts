@@ -21,7 +21,7 @@
  */
 
 import {
-  getAttr, setAttr, textOf, setText, appendChild, createElement, createText, 글자칸읽기, 글자칸쓰기, 글자칸의모르는것,
+  getAttr, setAttr, textOf, setText, appendChild, createElement, createText, 글자칸읽기, 글자칸쓰기, 글자칸의모르는것, 런글읽기, 런의고정글,
   removeNode, insertBefore, insertAfter, childrenNamed, firstChildNamed, findAll,
   복제하기, 못쓰는제어문자,
   type ElementNode,
@@ -97,12 +97,13 @@ export class 문단 {
     return childrenNamed(this.el, 'hp:run');
   }
 
-  /** 문단의 글. 런 여럿이면 이어 붙인다 */
+  /**
+   * 문단의 글. 런 여럿이면 이어 붙인다.
+   *
+   * 덧말·글자 겹침도 글이다 — 빼면 덧말 단 낱말이 본문에서 사라진다(`런글읽기`).
+   */
   get 글(): string {
-    return this.런들
-      .flatMap((r) => childrenNamed(r, 'hp:t'))
-      .map((t) => 글자칸읽기(t))
-      .join('');
+    return this.런들.map((r) => 런글읽기(r)).join('');
   }
 
   get 비었나(): boolean {
@@ -204,7 +205,15 @@ export class 문단 {
     // 옛 글과 새 글의 **같은 앞·같은 뒤**를 떼고, 가운데 다른 곳이 걸친 글자 칸만 고친다.
     // 양식을 채울 때 고침은 대개 한 곳이라, 링크·주·서식이 그 자리에 그대로 남는다.
     // 통째로 딴 글을 주면 예전처럼 첫 칸에 몰린다 — 그때는 잃은 서식을 센다.
-    const 조각 = 글칸들.map((t) => ({ t, 글: 글자칸읽기(t) }));
+    // 덧말·글자 겹침은 **글로 세되 고치지 않는 조각**이다(t 가 없다). 읽는 글과 같은 차례로
+    // 세야 자리가 맞는다 — 글자 칸만 세면 덧말 뒤 글을 고칠 때 엉뚱한 칸을 고친다.
+    const 조각: { t?: ElementNode; 고정?: ElementNode; 글: string }[] = 런들.flatMap((r) => r.children
+      .filter((c): c is ElementNode => c.kind === 'element')
+      .flatMap((c): { t?: ElementNode; 고정?: ElementNode; 글: string }[] => {
+        if (c.name === 'hp:t') return [{ t: c, 글: 글자칸읽기(c) }];
+        const 고정 = 런의고정글(c);
+        return 고정 === undefined ? [] : [{ 고정: c, 글: 고정 }];
+      }));
     let 앞 = 0;
     const 짧은쪽 = Math.min(옛글.length, 새글.length);
     while (앞 < 짧은쪽 && 옛글[앞] === 새글[앞]) 앞++;
@@ -222,18 +231,41 @@ export class 문단 {
     let 셈 = 0;
     for (const c of 조각) { 자리들.push({ 시작: 셈, 끝: 셈 + c.글.length }); 셈 += c.글.length; }
 
+    // 덧말 글이 새 글에 그대로 있으면 **앞뒤를 한꺼번에 고친 것**이다 — 한쪽씩이면 된다.
+    // 바뀐 곳을 한 덩이로 보니 덧말을 사이에 둔 두 고침을 못 가른다 (덧말은 표본 46편에 1개).
+    const 덧말에걸림 = (i: number) => 안됨<{ 바뀐수: number; 잃은서식: number }>(
+      `고칠 자리가 덧말(또는 글자 겹침) 「${조각[i]!.글}」 에 걸친다 — 그것은 고칠 수 없다`,
+      조각[i]!.글 !== '' && 새글.includes(조각[i]!.글)
+        ? `덧말 앞과 뒤를 한 번에 고치면 못 가른다. 덧말 「${조각[i]!.글}」 앞쪽을 먼저 set_text 하고, 뒤쪽을 다음에 하라.`
+        : '덧말 앞뒤의 글만 고쳐라 (덧말 글은 그대로 두고 set_text 하면 된다). 덧말째 바꾸려면 한글에서 고쳐라.',
+    );
     let 걸친: number[];
     if (앞 < 옛끝) {
       걸친 = 조각.map((_, i) => i).filter((i) => 자리들[i]!.끝 > 앞 && 자리들[i]!.시작 < 옛끝);
+      const 고정 = 걸친.find((i) => !조각[i]!.t);
+      if (고정 !== undefined) return 덧말에걸림(고정);
     } else {
       // 끼워 넣기만 한다 — 그 자리를 품은 칸. 경계면 **앞 칸**에 붙인다 (글쇠로 칠 때처럼
-      // 바로 앞 글자의 서식을 잇는다). 맨 앞이면 첫 칸.
-      const i = 조각.findIndex((_, k) => 자리들[k]!.시작 < 앞 && 앞 <= 자리들[k]!.끝);
-      걸친 = [i === -1 ? 0 : i];
+      // 바로 앞 글자의 서식을 잇는다). 앞 칸이 덧말이면 뒤 칸 머리에. 맨 앞이면 첫 칸.
+      const 품은것 = 조각.findIndex((_, k) => 자리들[k]!.시작 < 앞 && 앞 <= 자리들[k]!.끝);
+      if (품은것 !== -1 && !조각[품은것]!.t && 앞 < 자리들[품은것]!.끝) return 덧말에걸림(품은것);
+      let i = 품은것 !== -1 && 조각[품은것]!.t ? 품은것 : -1;
+      if (i === -1) i = 조각.findIndex((c, k) => c.t && 자리들[k]!.시작 === 앞);
+      if (i === -1) {
+        // 덧말 바로 앞이다 — 그 앞에 받아 줄 글자 칸이 없으면 **같은 런에 새로 낸다**
+        const 바로뒤 = 조각.findIndex((c, k) => c.고정 && 자리들[k]!.시작 === 앞);
+        if (바로뒤 === -1) return 덧말에걸림(Math.max(0, 품은것));
+        const 새칸 = createElement('hp:t', {});
+        글자칸쓰기(새칸, 넣을것);
+        insertBefore(조각[바로뒤]!.고정!, 새칸);
+        if (!짜임같나(옛글, 새글)) 줄정보지우기(this.el);
+        return 됨({ 바뀐수: 1, 잃은서식: 0 });
+      }
+      걸친 = [i];
     }
 
     // 형광펜·변경 추적 같은 요소가 든 칸은 되살리지 못한다 — 말없이 날리지 않고 거절한다
-    const 모르는것 = [...new Set(걸친.flatMap((i) => 글자칸의모르는것(조각[i]!.t)))];
+    const 모르는것 = [...new Set(걸친.flatMap((i) => 글자칸의모르는것(조각[i]!.t!)))];
     if (모르는것.length > 0) {
       return 안됨(
         `고칠 자리에 ${모르는것.join('·')} 가 들어 있다 — 고치면 그것이 사라진다`,
@@ -245,7 +277,8 @@ export class 문단 {
     const 끝칸 = 걸친[걸친.length - 1]!;
     const 비운것: ElementNode[] = [];
     for (const i of 걸친) {
-      const { t, 글 } = 조각[i]!;
+      const { t: 칸, 글 } = 조각[i]!;
+      const t = 칸!;
       const { 시작 } = 자리들[i]!;
       let 새것: string;
       if (i === 첫) {
@@ -262,7 +295,7 @@ export class 문단 {
     }
 
     // 다 비게 된 글자 칸은 치운다. 그 칸의 서식이 첫 칸과 달랐으면 **잃은 것**으로 센다.
-    const 첫서식 = getAttr(조각[첫]!.t.parent as ElementNode, 'charPrIDRef') ?? '0';
+    const 첫서식 = getAttr(조각[첫]!.t!.parent as ElementNode, 'charPrIDRef') ?? '0';
     const 잃은것 = new Set<string>();
     for (const t of 비운것) {
       const 런 = t.parent as ElementNode | undefined;

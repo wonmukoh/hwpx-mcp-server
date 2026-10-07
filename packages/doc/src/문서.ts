@@ -26,7 +26,8 @@ import {
 import { 됨, 안됨, type 결과 } from './결과.js';
 import { 이름표, 셀아이디, 셀아이디풀기 } from './식별자.js';
 import { 머리글, type 글자모양패치, type 문단모양패치 } from './머리글.js';
-import { 구역, 문단 } from './본문.js';
+import { 구역, 문단, 곁글인가 } from './본문.js';
+import { 번호매기기 } from './번호.js';
 import { 표, 셀, 든것보기, 든것말 } from './표.js';
 
 export interface 연산기록 {
@@ -96,6 +97,14 @@ export class 문서 {
 
   get 구역들(): 구역[] {
     return this.구역이름들.map((n) => this.구역(n));
+  }
+
+  /**
+   * 문단마다 한글이 앞에 그려 줄 **번호·글머리표** (`번호.ts`). 글이 아니라 글에는 안 든다.
+   * 고칠 때마다 달라지니(문단을 넣고 빼면 뒤 번호가 밀린다) 부를 때 센다.
+   */
+  번호표지들(): Map<ElementNode, string> {
+    return 번호매기기(this.머리.번호정의(), this.구역들.map((s) => s.root), 곁글인가);
   }
 
   // ── ID 로 가리키기 ──────────────────────────────────────────────────────

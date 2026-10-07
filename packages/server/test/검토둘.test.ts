@@ -82,3 +82,28 @@ describe('find 는 빈칸으로 탭·줄 나눔도 찾고, replace 는 그 자�
     expect(됨.isError, 됨.content[0]?.text).toBeUndefined();
   });
 });
+
+describe('묶음 가운데 op 이 던져도 어디까지 됐는지 말한다', () => {
+  it('**앞 고침이 들어갔으면 done 이 그 수다** — 「터졌다, done: 0」이 아니다', async () => {
+    const { 방, doc_id, id } = await 한문단('처음 글');
+    const r = await 도구부르기('edit', {
+      doc_id,
+      edits: [{ op: 'set_text', id, text: '고친 글' }, { op: 'set_style', id, background: 'banana' }],
+    }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.structuredContent!['done']).toBe(1);
+    expect(r.content[0]?.text).toContain('2번째');
+    expect(await 글(방, doc_id, id)).toBe('고친 글');
+  });
+});
+
+describe('잃은 서식을 버리지 않고 말한다', () => {
+  it('**서식이 다른 낱말들에 걸쳐 고치면 note 가 몇 가지가 합쳐졌는지 말한다**', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'body', text: '앞 **굵은 낱말** 뒤' }]);
+    const id = await 문단(방, doc_id, '굵은');
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '완전히 다른 글이다' }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 결과 = (r.structuredContent!['results'] as { note?: string }[])[0]!;
+    expect(결과.note).toContain('합쳐졌다');
+  });
+});

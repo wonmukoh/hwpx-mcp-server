@@ -1356,21 +1356,35 @@ export const 도구들: 도구[] = [
       const 낸것: Record<string, unknown>[] = [];
 
       for (const [i, e] of 인자.edits.entries()) {
-        const r = 고침하나(d, e);
+        // **던져도 여기서 받는다.** 받지 않으면 바깥 그물(「edit 이 터졌다」)까지 가서 done: 0 이
+        // 되는데, 앞 고침은 이미 들어가 있다 — 안내대로 다시 보내면 두 번 들어갔다 (2026-10-07 검토)
+        let r: ReturnType<typeof 고침하나>;
+        try {
+          r = 고침하나(d, e);
+        } catch (오류) {
+          r = 안됨(
+            `${(오류 as Error).message ?? String(오류)}`,
+            '값을 고쳐 이 고침부터 다시 해라.',
+          );
+        }
         if (!r.ok) {
           // **중간에 멈추면 어디까지 됐는지 말한다.** 반쯤 하고 됐다고 하면 안 된다.
           //
           // **앞의 것은 안 물린다(rollback 이 아니다).** 그대로 문서에 남는다.
           // 이걸 말로만 적어 뒀더니 부르는 쪽이 거꾸로 읽고 **다시 넣어 두 번 쓸** 뻔했다.
           // 그래서 답에 수로도 담는다 — 글을 파싱하지 않아도 알 수 있게.
+          // 사람이 읽는 말은 1부터 센다 (done·failed_at 은 0부터인 자리값 그대로).
           return 못함(
-            `${i}번째 고침(${e.op})에서 멈췄다: ${r.이유}`,
-            `${i}번째 앞의 ${i}개는 **이미 문서에 들어갔다** (안 물린다). `
-            + `다시 넣지 말고 ${i}번째부터 이어서 해라. ${r.어떻게}`,
+            `${i + 1}번째 고침(${e.op})에서 멈췄다: ${r.이유}`,
+            (i === 0 ? '아무것도 안 들어갔다. ' : `앞의 ${i}개는 **이미 문서에 들어갔다** (안 물린다). `
+              + `다시 넣지 말고 ${i + 1}번째부터 이어서 해라. `) + r.어떻게,
             { done: i, failed_at: i, failed_op: e.op, results: 낸것 },
           );
         }
-        낸것.push({ op: e.op, id: e.id ?? '', changed: r.value });
+        const 값 = r.value;
+        낸것.push(typeof 값 === 'number'
+          ? { op: e.op, id: e.id ?? '', changed: 값 }
+          : { op: e.op, id: e.id ?? '', changed: 값.수, note: 값.말 });
         if (구조를바꾸나.has(e.op)) 것.it.구조바꿈 = true;
       }
 
@@ -1378,12 +1392,12 @@ export const 도구들: 도구[] = [
       // **번호가 두 번 붙나.** 한글이 「1.」을 저절로 붙이는 문단에 「1. 목적」을 쓰면
       // 쪽에는 「1. 1. 목적」이 보인다. 도구는 시킨 대로 했으니 실패는 아니다 — 알린다.
       const 쓴곳 = 낸것.filter((x) => x['op'] === 'set_text' && x['changed'] !== 0);
-      const 알림들: string[] = [];
+      const 알림들: string[] = 낸것.filter((x) => x['note']).map((x) => `${x['id'] as string}: ${x['note'] as string}`);
       if (쓴곳.length > 0) {
         const 표지 = d.번호표지들();
         for (const x of 쓴곳) {
           const 말 = 번호겹침(d, 표지, x['id'] as string);
-          if (말) { x['note'] = 말; 알림들.push(`${x['id'] as string}: ${말}`); }
+          if (말) { x['note'] = x['note'] ? `${x['note'] as string} / ${말}` : 말; 알림들.push(`${x['id'] as string}: ${말}`); }
         }
       }
       return 잘됨(
@@ -1456,7 +1470,7 @@ interface 고침 {
  * 0 을 돌려주는 것과 실패하는 것은 다르다 — 0 은 "찾았는데 이미 그랬다" 이고,
  * 실패는 "못 찾았거나 못 한다" 이다. 둘을 섞으면 조용한 실패가 된다.
  */
-function 고침하나(d: 문서, e: 고침): 결과<number> {
+function 고침하나(d: 문서, e: 고침): 결과<number | { 수: number; 말: string }> {
   switch (e.op) {
     case 'set_text': {
       if (!e.id) return 안됨('set_text 에 id 가 없다', 'find 나 get_outline 이 준 ID 를 줘라.');
@@ -1465,6 +1479,15 @@ function 고침하나(d: 문서, e: 고침): 결과<number> {
       // 첫 문단만 갈고 "1곳이 바뀌었다" 고 말하면 옛 글이 뒤에 남는다.
       const r = e.id.startsWith('cell_') ? d.칸글바꾸기(e.id, e.text) : d.글바꾸기(e.id, e.text);
       if (!r.ok) return r;
+      // **잃은 서식은 센 것을 버리지 말고 말한다.** 문서 층은 전부터 셌는데 여기서 버려서,
+      // 「통째로 딴 글을 주면 서식이 합쳐진다」는 일을 부르는 쪽이 볼 길이 없었다 (2026-10-07 검토)
+      if (r.value.잃은서식 > 0) {
+        return 됨({
+          수: r.value.바뀐수,
+          말: `서식 ${r.value.잃은서식}가지(굵기·색 따위)가 앞 글의 서식으로 합쳐졌다 — 고친 곳이 `
+            + '서식이 다른 낱말들에 걸쳤다. 서식을 지키려면 그 낱말을 남기고 둘레만 고치거나, 고친 뒤 set_style 로 다시 걸어라.',
+        });
+      }
       return 됨(r.value.바뀐수);
     }
 

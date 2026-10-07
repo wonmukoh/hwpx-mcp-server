@@ -68,16 +68,11 @@ describe('덧말 단 낱말이 본문에서 빠지지 않는다', () => {
     expect(글).toBe('DUTMAL-REF-TEXT');
   });
 
-  it('**앞뒤를 한꺼번에 고치면 거절하되, 한쪽씩 하라고 일러 준다** — 그대로 하면 된다', async () => {
+  it('**덧말 앞뒤를 한꺼번에 고쳐도 된다** — 고친 곳을 따로 가르니 덧말은 안 걸린다', async () => {
     const { 방, doc_id } = await 열기(덧말파일);
     const id = await 덧말문단(방, doc_id);
-    const 한꺼번 = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '가 DUTMAL-REF-TEXT 나' }] }, 방);
-    expect(한꺼번.isError).toBe(true);
-    expect(한꺼번.content[0]?.text).toContain('먼저');
-    for (const 글 of ['가 DUTMAL-REF-TEXT', '가 DUTMAL-REF-TEXT 나']) {
-      const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: 글 }] }, 방);
-      expect(r.isError, r.content[0]?.text).toBeUndefined();
-    }
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '가 DUTMAL-REF-TEXT 나' }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
     const 자리 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '덧말-')), '둘.hwpx');
     await 도구부르기('save_document', { doc_id, path: 자리 }, 방);
     const 다시 = await 열기(자리);

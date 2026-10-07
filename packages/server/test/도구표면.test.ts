@@ -358,8 +358,10 @@ describe('edit — 열어 놓은 문서를 고친다', () => {
       ],
     }, 방);
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain('1번째');
+    // 사람이 읽는 말은 1부터 센다 — 둘째 고침에서 멈췄다
+    expect(r.content[0]!.text).toContain('2번째');
     expect(r.content[0]!.text).toContain('앞의 1개는');
+    expect(r.structuredContent!['done']).toBe(1);
   });
 
   it('표에 줄을 넣는다', async () => {

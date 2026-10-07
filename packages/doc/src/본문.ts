@@ -194,7 +194,7 @@ export class 문단 {
     const 옛글 = this.글;
     if (옛글 === 새글) return 됨({ 바뀐수: 0, 잃은서식: 0 });
 
-    // **바뀐 곳만 간다.**
+    // **바뀐 곳만 간다 — 여러 곳이면 한 곳씩.**
     //
     // 전에는 첫 글자 칸에 새 글을 통째로 넣고 나머지 글자 칸을 지웠다. 그러면
     //   - 문장 가운데 굵은 낱말의 서식이 사라지고 (표본 문단 1191개, 13편이 이 꼴)
@@ -202,11 +202,34 @@ export class 문단 {
     //   - 각주 표시가 어구 뒤에서 문장 끝으로 밀렸다.
     // 도구 설명은 「서식은 그대로 남는다」고 했다 (2026-09-27 검토 셋이 모두 잼).
     //
-    // 옛 글과 새 글의 **같은 앞·같은 뒤**를 떼고, 가운데 다른 곳이 걸친 글자 칸만 고친다.
-    // 양식을 채울 때 고침은 대개 한 곳이라, 링크·주·서식이 그 자리에 그대로 남는다.
-    // 통째로 딴 글을 주면 예전처럼 첫 칸에 몰린다 — 그때는 잃은 서식을 센다.
+    // 그다음엔 같은 앞·같은 뒤만 떼고 **가운데를 한 덩이로** 고쳤다. 낱말 두 개만 고쳐도
+    // 그 사이가 다 한 덩이라, 사이에 있던 각주가 낱말 한가운데로 가고 서식 런 다섯이 하나로
+    // 합쳐졌다 (2026-10-07 검토). 이제 옛 글과 새 글을 **글자 단위로 견줘 다른 곳마다** 고친다.
+    // 뒤에서부터 고치니 앞 곳의 자리는 안 밀린다. 못 하는 곳이 하나라도 있으면 아무것도 안 고친다.
+    const 곳들 = 고친곳들(옛글, 새글);
+    for (const 곳 of 곳들) {
+      const 봄 = this.한곳고치기(곳.앞, 곳.옛끝, 곳.넣을것, 새글, true);
+      if (!봄.ok) return 봄;
+    }
+    const 잃은것 = new Set<string>();
+    for (const 곳 of [...곳들].reverse()) {
+      const r = this.한곳고치기(곳.앞, 곳.옛끝, 곳.넣을것, 새글, false);
+      if (!r.ok) return r;   // 위에서 다 본 것이라 오지 않는다
+      for (const x of r.value) 잃은것.add(x);
+    }
+
+    if (!짜임같나(옛글, 새글)) 줄정보지우기(this.el);
+    return 됨({ 바뀐수: 1, 잃은서식: 잃은것.size });
+  }
+
+  /**
+   * 옛 글의 [앞, 옛끝) 을 넣을것으로 바꾼다 — 그 자리가 걸친 글자 칸만 고친다.
+   * `시험만` 이면 할 수 있는지만 본다(아무것도 안 고친다). 돌려주는 것은 잃은 서식들.
+   */
+  private 한곳고치기(앞: number, 옛끝: number, 넣을것: string, 새글: string, 시험만: boolean): 결과<Set<string>> {
     // 덧말·글자 겹침은 **글로 세되 고치지 않는 조각**이다(t 가 없다). 읽는 글과 같은 차례로
     // 세야 자리가 맞는다 — 글자 칸만 세면 덧말 뒤 글을 고칠 때 엉뚱한 칸을 고친다.
+    const 런들 = this.런들;
     const 조각: { t?: ElementNode; 고정?: ElementNode; 글: string }[] = 런들.flatMap((r) => r.children
       .filter((c): c is ElementNode => c.kind === 'element')
       .flatMap((c): { t?: ElementNode; 고정?: ElementNode; 글: string }[] => {
@@ -214,18 +237,6 @@ export class 문단 {
         const 고정 = 런의고정글(c);
         return 고정 === undefined ? [] : [{ 고정: c, 글: 고정 }];
       }));
-    let 앞 = 0;
-    const 짧은쪽 = Math.min(옛글.length, 새글.length);
-    while (앞 < 짧은쪽 && 옛글[앞] === 새글[앞]) 앞++;
-    let 뒤 = 0;
-    while (뒤 < 짧은쪽 - 앞 && 옛글[옛글.length - 1 - 뒤] === 새글[새글.length - 1 - 뒤]) 뒤++;
-    // 대리쌍(이모지 따위)을 가운데서 자르지 않는다
-    const 높은대리 = (c: number) => c >= 0xd800 && c <= 0xdbff;
-    if (앞 > 0 && 높은대리(옛글.charCodeAt(앞 - 1))) 앞--;
-    if (뒤 > 0 && 높은대리(옛글.charCodeAt(옛글.length - 뒤 - 1))) 뒤--;
-    const 옛끝 = 옛글.length - 뒤;
-    const 넣을것 = 새글.slice(앞, 새글.length - 뒤);
-
     // 글자 칸마다 옛 글 안에서의 자리
     const 자리들: { 시작: number; 끝: number }[] = [];
     let 셈 = 0;
@@ -233,7 +244,7 @@ export class 문단 {
 
     // 덧말 글이 새 글에 그대로 있으면 **앞뒤를 한꺼번에 고친 것**이다 — 한쪽씩이면 된다.
     // 바뀐 곳을 한 덩이로 보니 덧말을 사이에 둔 두 고침을 못 가른다 (덧말은 표본 46편에 1개).
-    const 덧말에걸림 = (i: number) => 안됨<{ 바뀐수: number; 잃은서식: number }>(
+    const 덧말에걸림 = (i: number) => 안됨<Set<string>>(
       `고칠 자리가 덧말(또는 글자 겹침) 「${조각[i]!.글}」 에 걸친다 — 그것은 고칠 수 없다`,
       조각[i]!.글 !== '' && 새글.includes(조각[i]!.글)
         ? `덧말 앞과 뒤를 한 번에 고치면 못 가른다. 덧말 「${조각[i]!.글}」 앞쪽을 먼저 set_text 하고, 뒤쪽을 다음에 하라.`
@@ -257,9 +268,9 @@ export class 문단 {
         if (바로뒤 === -1) return 덧말에걸림(Math.max(0, 품은것));
         const 새칸 = createElement('hp:t', {});
         글자칸쓰기(새칸, 넣을것);
+        if (시험만) return 됨(new Set<string>());
         insertBefore(조각[바로뒤]!.고정!, 새칸);
-        if (!짜임같나(옛글, 새글)) 줄정보지우기(this.el);
-        return 됨({ 바뀐수: 1, 잃은서식: 0 });
+        return 됨(new Set<string>());
       }
       걸친 = [i];
     }
@@ -272,6 +283,8 @@ export class 문단 {
         '형광펜·차례 표시·변경 추적 따위다. 한글에서 그 표시를 먼저 풀거나, 그 자리를 빼고 고쳐라.',
       );
     }
+
+    if (시험만) return 됨(new Set<string>());
 
     const 첫 = 걸친[0]!;
     const 끝칸 = 걸친[걸친.length - 1]!;
@@ -306,8 +319,7 @@ export class 문단 {
       if (런 && 런.children.every((c) => c.kind !== 'element')) removeNode(런);
     }
 
-    if (!짜임같나(옛글, 새글)) 줄정보지우기(this.el);
-    return 됨({ 바뀐수: 1, 잃은서식: 잃은것.size });
+    return 됨(잃은것);
   }
 
   /**
@@ -1360,6 +1372,72 @@ function 곁글읽기(el: ElementNode): string {
     .map((p) => childrenNamed(p, 'hp:run').flatMap((r) => childrenNamed(r, 'hp:t'))
       .map((t) => 글자칸읽기(t)).join(''))
     .join('\n');
+}
+
+/**
+ * 옛 글을 새 글로 만드는 **고친 곳들** — 옛 글 자리 [앞, 옛끝) 를 넣을것으로. 앞에서부터 차례로.
+ *
+ * 글자(코드 포인트) 단위 최장 공통 부분열로 견준다. 그대로 두면 「목적을 달성」→「목표를 이룸」
+ * 같은 고침이 「목」「을」 따위 우연히 같은 글자에서 잘게 쪼개져, 서식 조각이 엉뚱한 데 남는다.
+ * 그래서 **같은 글자가 둘 이하로 끼어 있으면 한 곳으로 합치고**, 가운데가 반 넘게 다르면
+ * 통째로 한 곳으로 본다(딴 글로 갈아 끼운 것이다). 길면(가운데 2천 글자 넘게) 견주지 않고 한 곳.
+ */
+export function 고친곳들(옛: string, 새: string): { 앞: number; 옛끝: number; 넣을것: string }[] {
+  const a = [...옛];
+  const b = [...새];
+  let 앞 = 0;
+  while (앞 < a.length && 앞 < b.length && a[앞] === b[앞]) 앞++;
+  let 뒤 = 0;
+  while (뒤 < a.length - 앞 && 뒤 < b.length - 앞 && a[a.length - 1 - 뒤] === b[b.length - 1 - 뒤]) 뒤++;
+  const 가운데a = a.slice(앞, a.length - 뒤);
+  const 가운데b = b.slice(앞, b.length - 뒤);
+  // 코드 포인트 차례 → UTF-16 자리
+  const 자리a: number[] = [0];
+  for (const c of a) 자리a.push(자리a[자리a.length - 1]! + c.length);
+  const 통째 = () => [{ 앞: 자리a[앞]!, 옛끝: 자리a[a.length - 뒤]!, 넣을것: 가운데b.join('') }];
+  const n = 가운데a.length;
+  const m = 가운데b.length;
+  if (n === 0 || m === 0 || n > 2000 || m > 2000) return 통째();
+
+  // 최장 공통 부분열 — 뒤에서부터 채워 앞에서부터 따라간다
+  const 너비 = m + 1;
+  const 표 = new Uint16Array((n + 1) * 너비);
+  for (let x = n - 1; x >= 0; x--) {
+    for (let y = m - 1; y >= 0; y--) {
+      표[x * 너비 + y] = 가운데a[x] === 가운데b[y]
+        ? 표[(x + 1) * 너비 + y + 1]! + 1
+        : Math.max(표[(x + 1) * 너비 + y]!, 표[x * 너비 + y + 1]!);
+    }
+  }
+  const 같은수 = 표[0]!;
+  if (같은수 * 2 < n) return 통째();
+
+  // 다른 곳들을 모은다 (가운데 안 코드 포인트 자리)
+  const 곳들: { a0: number; a1: number; b0: number; b1: number }[] = [];
+  let x = 0;
+  let y = 0;
+  let 지금: { a0: number; a1: number; b0: number; b1: number } | undefined;
+  const 닫기 = () => { if (지금) { 곳들.push(지금); 지금 = undefined; } };
+  while (x < n || y < m) {
+    if (x < n && y < m && 가운데a[x] === 가운데b[y]) { 닫기(); x++; y++; continue; }
+    지금 ??= { a0: x, a1: x, b0: y, b1: y };
+    if (y < m && (x >= n || 표[x * 너비 + y + 1]! >= 표[(x + 1) * 너비 + y]!)) { y++; 지금.b1 = y; }
+    else { x++; 지금.a1 = x; }
+  }
+  닫기();
+
+  // 같은 글자가 둘 이하로 끼어 있으면 합친다
+  const 합친것: typeof 곳들 = [];
+  for (const g of 곳들) {
+    const 앞곳 = 합친것[합친것.length - 1];
+    if (앞곳 && g.a0 - 앞곳.a1 <= 2) { 앞곳.a1 = g.a1; 앞곳.b1 = g.b1; }
+    else 합친것.push({ ...g });
+  }
+  return 합친것.map((g) => ({
+    앞: 자리a[앞 + g.a0]!,
+    옛끝: 자리a[앞 + g.a1]!,
+    넣을것: 가운데b.slice(g.b0, g.b1).join(''),
+  }));
 }
 
 /** 서로 같은 것으로 치는 **가로 빈칸** — 보통·전각(U+3000)·묶음(U+00A0)·얇은 빈칸들 */

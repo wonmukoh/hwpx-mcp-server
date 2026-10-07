@@ -71,7 +71,10 @@ for (const 이름 of 목록) {
       각주: false, 미주: false, 메모: false, 수식: false, 다단: false, 개요: false,
       바탕쪽: false, 개체: false };
 
-    const r1 = d.글바꾸기(pid, 표시);
+    // 덧말·글자 겹침이 든 문단은 그 글을 **고칠 수 없다**(거절이 맞다) — 그 글을 두고 뒤에 붙인다.
+    // 전에는 덧말을 안 읽어 문단이 빈 줄 알고 통째로 넣었다 (2026-10-07 한글 글 대조).
+    const 고정있나 = findAll(쓸문단.el, 'hp:dutmal').length + findAll(쓸문단.el, 'hp:compose').length > 0;
+    const r1 = d.글바꾸기(pid, 고정있나 ? `${쓸문단.글}${표시}` : 표시);
     한일.글 = r1.ok;
 
     // 개체 넷은 **둘째** 문단에 넣는다. 첫 문단은 뒤에서 어구를 쪼개 강조하므로

@@ -174,3 +174,25 @@ describe('입구에서 막는다 — 어느 인자든', () => {
     expect(글).not.toContain('띠');
   });
 });
+
+describe('큰 표에서도 멈추지 않는다', () => {
+  it('**줄 3000개 표를 짜고 줄을 넣고 저장해도 몇 초 안이다** — 전에는 표 검사가 (줄×칸)² 이었다', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    const 시작 = Date.now();
+    const r = await 도구부르기('compose', { doc_id, blocks: [{ kind: 'table', headers: ['가', '나', '다', '라', '마', '바'],
+      rows: Array.from({ length: 3000 }, () => ['1', '2', '3', '4', '5', '6']) }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const tbl = ((r.structuredContent!['created'] as { ids: string[] }[])[0]!.ids).find((x) => x.startsWith('tbl_'))!;
+    await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_row', id: tbl, count: 1000 }] }, 방);
+    expect(Date.now() - 시작).toBeLessThan(20_000);
+  }, 60_000);
+
+  it('쓸 일 없는 크기는 입구에서 막는다 — 칸 하나를 500×500 으로 나누기', async () => {
+    const { 방, doc_id } = await 새문서([{ kind: 'table', headers: ['가', '나'], rows: [['1', '2']] }]);
+    const 칸 = ((await 도구부르기('find', { doc_id, kind: 'cell' }, 방)).structuredContent!['matches'] as { id: string }[])[0]!.id;
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'split_cell', id: 칸, rows: 500, cols: 500 }] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('100 이하');
+  });
+});

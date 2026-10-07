@@ -390,8 +390,8 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   at: 정수('insert_row·insert_col — 몇 번째 자리에 넣을까 (0부터). 안 주면 맨 뒤. '
     + 'delete_row·delete_col — 몇 번째부터 지울까 (0부터). '
     + 'split_table — 몇 번째 줄부터 떼어낼까. **지우기·가르기는 꼭 줘야 한다**'),
-  count: 정수('insert_row·delete_row 는 줄 수, insert_col·delete_col 은 칸 수. 기본 1. '
-    + 'set_columns 는 **단 수** (1이면 안 나눈다)'),
+  count: 범위(정수('insert_row·delete_row 는 줄 수, insert_col·delete_col 은 칸 수. 기본 1. '
+    + 'set_columns 는 **단 수** (1이면 안 나눈다). 한 번에 1000 까지'), 1, 1000),
   // **지우는 것은 되돌릴 수 없다.** 그래서 기본은 빈 것만 지운다.
   force: 참거짓(
     'delete_row·delete_col·delete_paragraph·delete_table — 글·그림이 든 것도 지울까. '
@@ -401,8 +401,9 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   rowspan: 정수('merge_cells — 세로로 몇 줄을 합칠까. 기본 1'),
   colspan: 정수('merge_cells — 가로로 몇 칸을 합칠까. 기본 1'),
   // split_cell 은 **안 주면 합침 풀기**, 주면 성한 칸에 금을 긋는다.
-  rows: 정수('split_cell — 세로로 몇 줄로 나눌까. 안 주면 합침을 푼다'),
-  cols: 정수('split_cell — 가로로 몇 칸으로 나눌까. 안 주면 합침을 푼다'),
+  // 한 칸을 500×500 으로 나누면 1분이 걸렸다 — 쓸 일이 없는 크기는 입구에서 막는다
+  rows: 범위(정수('split_cell — 세로로 몇 줄로 나눌까. 안 주면 합침을 푼다'), 1, 100),
+  cols: 범위(정수('split_cell — 가로로 몇 칸으로 나눌까. 안 주면 합침을 푼다'), 1, 100),
   page_break: 고름('set_table — 쪽 경계에서 표를 어떻게 나눌까',
     ['split', 'cell', 'none']),
   repeat_header: 참거짓('set_table — 머리 줄을 쪽마다 되풀이할까'),

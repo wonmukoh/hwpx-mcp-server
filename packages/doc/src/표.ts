@@ -1168,21 +1168,32 @@ export class 표 {
     }
 
     // 칸이 빠짐없이 덮이나 — 여기가 깨지면 한글이 표를 잘못 그린다
+    //
+    // **셀마다 한 번만 읽어 칸 지도에 센다.** 전에는 칸마다 셀 전부를 다시 읽어 (줄×칸)² 이었다 —
+    // 짜임을 바꾸는 op 마다, 저장할 때마다 부르니 줄 200개에 10초, 5000줄 넣기는 끝나지 않았다
+    // (2026-10-07 견딤성 검토, 시간의 94% 가 여기).
+    const 셀자리들 = this.셀들.map((x) => ({ x, a: x.자리 }));
+    const 셈 = new Uint16Array(Math.max(0, 줄수 * 칸수));
+    for (const { a } of 셀자리들) {
+      for (let r = Math.max(0, a.row); r < Math.min(줄수, a.row + a.rowSpan); r++) {
+        for (let c = Math.max(0, a.col); c < Math.min(칸수, a.col + a.colSpan); c++) {
+          const k = r * 칸수 + c;
+          if (셈[k]! < 65535) 셈[k]!++;
+        }
+      }
+    }
     for (let r = 0; r < 줄수; r++) {
       for (let c = 0; c < 칸수; c++) {
-        const 덮는것 = this.셀들.filter((x) => x.덮나(r, c));
-        if (덮는것.length === 0) 탈.push({ 급: '탈', 말: `(${r},${c}) 칸을 덮는 셀이 없다` });
-        else if (덮는것.length > 1) {
-          탈.push({ 급: '탈', 말: `(${r},${c}) 칸을 셀 ${덮는것.length}개가 겹쳐 덮는다` });
-        }
+        const n = 셈[r * 칸수 + c]!;
+        if (n === 0) 탈.push({ 급: '탈', 말: `(${r},${c}) 칸을 덮는 셀이 없다` });
+        else if (n > 1) 탈.push({ 급: '탈', 말: `(${r},${c}) 칸을 셀 ${n}개가 겹쳐 덮는다` });
       }
     }
 
     // 덮은 칸 셀의 폭 = 열 폭의 합.
     // 한글은 어긋나도 읽는다 (실제 문서 1292개 가운데 4개가 어긋나 있었다). 그래서 주의다.
     const 폭 = this.열폭;
-    for (const cell of this.셀들) {
-      const a = cell.자리;
+    for (const { x: cell, a } of 셀자리들) {
       if (a.colSpan < 2) continue;
       let 합 = 0, 다있나 = true;
       for (let i = a.col; i < a.col + a.colSpan; i++) {

@@ -325,7 +325,7 @@ export class 문단 {
    * 칸 경계를 넘는 어구는 못 찾는다 — 그건 `못찾음: true` 로 알린다.
    * **찾은 척하고 서식을 부수는 것보다, 못 찾았다고 말하는 편이 낫다.**
    */
-  어구바꾸기(찾을글: string, 새글: string, 한도 = Number.MAX_SAFE_INTEGER): 결과<{ 바뀐수: number; 못찾음: boolean }> {
+  어구바꾸기(찾을글: string, 새글: string, 한도 = Number.MAX_SAFE_INTEGER): 결과<{ 바뀐수: number; 못찾음: boolean; 찾은수: number; 탭줄자리: boolean }> {
     if (찾을글.length === 0) {
       return 안됨('찾을 글이 비었다', '무엇을 바꿀지 적어라.');
     }
@@ -345,13 +345,17 @@ export class 문단 {
     // 세 번 든 어구를 한 번에 다 바꾸고 1 로 셌다 — limit: 1 을 줘도 셋이 바뀌었다.
     const 틀 = 빈칸무관틀(찾을글);
     let 바뀐수 = 0;
+    let 찾은수 = 0;
     for (const r of this.런들) {
       for (const t of childrenNamed(r, 'hp:t')) {
         if (바뀐수 >= 한도) break;
         const 지금 = 글자칸읽기(t);
         let 여기 = 0;
         const 새것 = 지금.replace(new RegExp(틀, 'g'), (m) => {
+          // 이미 그 글이면 센 것으로 치지 않는다 — 「바뀌었다」는 수가 부풀면 확인할 길이 없다
           if (바뀐수 >= 한도) return m;
+          찾은수++;
+          if (m === 새글) return m;
           바뀐수++;
           여기++;
           return 새글;
@@ -370,7 +374,11 @@ export class 문단 {
     }
     if (바뀐수 > 0 && !짜임같나(찾을글, 새글)) 줄정보지우기(this.el);
     // 칸 안에서는 못 찾았는데 문단 전체로 보면 있다 → 칸 경계를 넘는 어구다
-    return 됨({ 바뀐수, 못찾음: 바뀐수 === 0 && new RegExp(틀).test(this.글) });
+    const 못찾음 = 찾은수 === 0 && new RegExp(틀).test(this.글);
+    // 빈칸 자리가 문서에서는 탭·줄 나눔이다 — find 는 걸리지만 replace 는 일부러 안 건다
+    // (「빈칸 하나 지우기」가 탭·줄 나눔까지 지우면 안 된다). 그 말을 해 줘야 막다른 길이 아니다.
+    const 탭줄자리 = 찾은수 === 0 && !못찾음 && new RegExp(빈칸무관틀(찾을글, true)).test(this.글);
+    return 됨({ 바뀐수, 찾은수, 못찾음, 탭줄자리 });
   }
 
   /**
@@ -1354,13 +1362,24 @@ function 곁글읽기(el: ElementNode): string {
     .join('\n');
 }
 
+/** 서로 같은 것으로 치는 **가로 빈칸** — 보통·전각(U+3000)·묶음(U+00A0)·얇은 빈칸들 */
+export const 가로빈칸 = /[ \u00a0\u2000-\u200a\u202f\u3000]/;
+
 /**
- * 어구를 찾는 틀 — **빈칸 종류를 가리지 않는다.** 보통 빈칸·전각 빈칸·묶음 빈칸·탭·
- * 줄 나눔이 서로 같은 것으로 걸린다. 도구의 `find` 와 같은 잣대다.
+ * 어구를 찾는 틀 — **빈칸 종류는 안 가리고 개수는 가린다.** 도구의 `find` 와 같은 잣대다.
+ *
+ * 가로 빈칸 하나는 가로 빈칸 하나에 걸린다(전각이든 묶음이든). 탭·줄 나눔은 제 글자로만 —
+ * `탭줄도` 를 켜면 빈칸 하나가 탭·줄 나눔 하나에도 걸린다 (find 가 그렇게 찾는다).
+ *
+ * 전에는 빈칸 덩이를 `\s+` 로 바꿨다. 그러면 「두 칸 → 한 칸」 replace 가 **문서의 모든
+ * 빈칸 덩이** — 탭·줄 나눔·전각 빈칸까지 — 를 보통 빈칸 하나로 갈았다. 보도자료 한 편에서
+ * 두 칸짜리는 23곳인데 597곳이 바뀌었다고 했고, 제목의 전각 빈칸이 다 사라졌다
+ * (2026-10-07 검토).
  */
-export function 빈칸무관틀(찾을글: string): string {
+export function 빈칸무관틀(찾을글: string, 탭줄도 = false): string {
   const 막기 = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return 찾을글.split(/\s+/).map(막기).join('\\s+');
+  const 빈칸 = 탭줄도 ? '[\\s\\u00a0\\u2000-\\u200a\\u202f\\u3000]' : '[ \\u00a0\\u2000-\\u200a\\u202f\\u3000]';
+  return [...찾을글].map((c) => (가로빈칸.test(c) ? 빈칸 : 막기(c))).join('');
 }
 
 function 짜임같나(옛: string, 새: string): boolean {

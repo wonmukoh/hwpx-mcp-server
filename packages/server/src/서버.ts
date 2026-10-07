@@ -191,8 +191,56 @@ export function 서버만들기(방: 문서방 = new 문서방(), 목록: 도구
   return s;
 }
 
+/** 요청 하나가 이보다 크면 그 요청만 버린다 (SDK 기본은 10MB 에서 서버째 닫는다) */
+export const 요청최대바이트 = 64 * 1024 * 1024;
+
+/**
+ * **너무 큰 요청 하나에 서버가 죽지 않게** 읽기 버퍼를 감싼다.
+ *
+ * SDK 는 요청 한 줄이 10MB 를 넘으면 transport 를 닫는다 — 서버가 code 0 으로 말없이
+ * 끝나고 **열어 둔 문서와 저장 안 한 고침이 다 사라졌다** (2026-10-07 견딤성 검토: 20MB 짜리
+ * find 하나). 한글은 한 글자가 3바이트라 350만 자면 닿는다.
+ *
+ * 한도를 64MB 로 올리고, 넘으면 **그 줄만 버리고** 다음 줄부터 다시 읽는다. 버린 것은
+ * stderr 에 남긴다(클라이언트는 그 요청의 답을 못 받아 시간 초과로 안다).
+ */
+export function 큰요청견디기(t: StdioServerTransport, 한도 = 요청최대바이트): boolean {
+  const 버퍼 = (t as unknown as { _readBuffer?: { append(c: Buffer): void; clear(): void } })._readBuffer;
+  if (!버퍼 || typeof 버퍼.append !== 'function') return false;   // SDK 속이 바뀌었다 — 서버시험이 잡는다
+  const 원래 = 버퍼.append.bind(버퍼);
+  let 쌓인 = 0;
+  let 버리는중 = false;
+  버퍼.append = (조각: Buffer) => {
+    if (버리는중) {
+      const 끝 = 조각.indexOf(0x0a);
+      if (끝 === -1) return;
+      버리는중 = false;
+      조각 = 조각.subarray(끝 + 1);
+      쌓인 = 0;
+      if (조각.length === 0) return;
+    }
+    const 줄끝 = 조각.lastIndexOf(0x0a);
+    쌓인 = 줄끝 === -1 ? 쌓인 + 조각.length : 조각.length - 줄끝 - 1;
+    if (쌓인 > 한도) {
+      process.stderr.write(`hwpx-mcp: 요청 한 줄이 ${Math.round(한도 / 1048576)}MB 를 넘어 그 요청만 버렸다 — 서버는 계속 돈다\n`);
+      버퍼.clear();
+      버리는중 = true;
+      쌓인 = 0;
+      return;
+    }
+    원래(조각);
+  };
+  return true;
+}
+
 /** stdio 로 붙인다. 진입점이 부른다 */
 export async function 붙이기(방: 문서방 = new 문서방()): Promise<void> {
   const s = 서버만들기(방);
-  await s.connect(new StdioServerTransport());
+  const t = new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: 요청최대바이트 * 2 });
+  큰요청견디기(t);
+  await s.connect(t);
+  // 닫히면 까닭을 남긴다 — 전에는 말없이 code 0 으로 끝나 무엇이 일어났는지 몰랐다.
+  // (connect 가 onclose 를 제 것으로 거니, 그 뒤에 감싼다)
+  const 원래닫힘 = t.onclose;
+  t.onclose = () => { process.stderr.write('hwpx-mcp: 연결이 닫혀 끝낸다\n'); 원래닫힘?.(); };
 }

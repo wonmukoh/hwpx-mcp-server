@@ -996,12 +996,30 @@ export class 문서 {
         '→ 마지막에 한 고침을 되짚어 보라. 그것만 물리고 저장하면 된다.',
       ].join('\n'));
     }
+    // 고쳤으면 미리보기를 갈아 끼운다 — 안 그러면 옛 글이 파일 미리보기에 남는다
+    if (this.dirty) this.통.미리보기갈기(this.미리보기글());
+    this.통.mimetype바로잡기();
     if (this.머리.dirty) this.통.writeText(부품.header, this.머리.toXml());
     for (const [이름, doc] of this.구역doc) {
       if (!doc.root.dirty) continue;
       this.통.writeText(이름, serializeXml(doc));
     }
     return this.통.save();
+  }
+
+  /** 파일 미리보기 글 — 한글처럼 본문 앞쪽 천 글자 남짓, 줄은 CRLF */
+  private 미리보기글(): string {
+    const 줄들: string[] = [];
+    let 길이 = 0;
+    for (const s of this.구역들) {
+      for (const p of s.모든문단들) {
+        if (곁글인가(p.el)) continue;
+        줄들.push(p.글);
+        길이 += p.글.length + 2;
+        if (길이 >= 1000) return 줄들.join('\r\n').slice(0, 1000);
+      }
+    }
+    return 줄들.join('\r\n');
   }
 
   /** 안쪽 컨테이너 (그림·manifest 를 다룰 때) */

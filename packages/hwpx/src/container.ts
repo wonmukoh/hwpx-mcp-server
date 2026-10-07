@@ -17,11 +17,12 @@
  */
 
 import {
-  createEntry, entryData, readZip, setEntryData, writeZip,
+  createEntry, entryData, readZip, setEntryData, writeZip, crc32,
   압축방식정하기, STORE, ZipError,
   type ZipArchive, type ZipEntry,
 } from './zip.js';
 import { 빈문서바이트 } from './빈문서.js';
+import { deflateSync } from 'node:zlib';
 
 export const 부품 = {
   mimetype: 'mimetype',
@@ -79,6 +80,14 @@ export class HwpxContainer {
       throw new HwpxError(
         `${부품.header} 가 없다`,
         'HWPX 가 아니거나 파일이 깨졌다.'
+      );
+    }
+    // **열 때 보는 것과 저장할 때 보는 것을 맞춘다.** 구역이 없는 파일을 열어 주면
+    // 「구역 0개」로 고치고 나서 저장에서야 영영 막혔다 (2026-10-07 검토)
+    if (c.sectionNames().length === 0) {
+      throw new HwpxError(
+        '구역(Contents/section0.xml …)이 하나도 없다',
+        '본문이 없는 파일이다. 한글에서 열어 다시 저장해 보거나 원본을 다시 받아라.'
       );
     }
     return c;
@@ -167,6 +176,41 @@ export class HwpxContainer {
   /** 손댄 부품 이름들 */
   dirtyNames(): string[] {
     return this.zip.entries.filter((e) => e.dirty).map((e) => e.name);
+  }
+
+  /**
+   * **mimetype 을 규격대로 되쓴다** — 압축돼 있으면 풀어서(STORE) 담는다.
+   *
+   * 남이 만든 파일에 그런 것이 있다. 열기·고치기는 다 되는데 저장만 「mimetype 은 압축하면
+   * 안 된다」로 **영영** 막혔다 — 우리가 고칠 수 있는 것을 막기만 했다 (2026-10-07 검토).
+   */
+  mimetype바로잡기(): boolean {
+    const 첫 = this.zip.entries[0];
+    if (!첫 || 첫.name !== 부품.mimetype || 첫.method === STORE) return false;
+    setEntryData(첫, entryData(첫), STORE);
+    return true;
+  }
+
+  /**
+   * **미리보기를 지금 글로 갈아 끼운다** (`Preview/PrvText.txt` · `Preview/PrvImage.png`).
+   *
+   * 한글은 저장할 때 첫 쪽의 글과 그림을 여기 넣고, 탐색기·한글의 파일 미리보기가 이것을
+   * 보여 준다. 우리는 손대지 않아서 **고친 문서에 옛 글이 그대로** 남았다 — 학생 이름을 지워
+   * 내보내도 미리보기와 zip 안에 이름이 남았다 (2026-10-07 검토). 글은 새로 쓰고, 그림은 같은
+   * 크기의 흰 그림으로 바꾼다(쪽을 그릴 수 없으니 옛 쪽을 남기지 않는 것이 먼저다).
+   */
+  미리보기갈기(글: string): void {
+    const 글자리 = 'Preview/PrvText.txt';
+    const 그림자리 = 'Preview/PrvImage.png';
+    if (this.has(글자리)) this.write(글자리, Buffer.from(글, 'utf8'));
+    if (this.has(그림자리)) {
+      const 옛 = this.read(그림자리);
+      // PNG 머리(IHDR)에서 크기를 읽는다. 못 읽으면 한글이 흔히 쓰는 크기
+      const 맞나 = 옛.length > 24 && 옛.toString('latin1', 12, 16) === 'IHDR';
+      const 너비 = Math.min(맞나 ? 옛.readUInt32BE(16) : 724, 2000) || 1;
+      const 높이 = Math.min(맞나 ? 옛.readUInt32BE(20) : 1024, 2000) || 1;
+      this.write(그림자리, 흰그림(너비, 높이));
+    }
   }
 
   // ── 저장 ───────────────────────────────────────────────────────────────
@@ -378,3 +422,29 @@ export function 부품압축방식(c: HwpxContainer, name: string): number | und
 
 export { STORE, DEFLATE, 압축방식정하기, ZipError } from './zip.js';
 export type { ZipEntry } from './zip.js';
+
+/** 흰 PNG (RGB 8비트) — 미리보기 그림을 지울 때 쓴다 */
+function 흰그림(너비: number, 높이: number): Buffer {
+  const 토막 = (종류: string, 몸: Buffer): Buffer => {
+    const 길이 = Buffer.alloc(4);
+    길이.writeUInt32BE(몸.length);
+    const 이름몸 = Buffer.concat([Buffer.from(종류, 'latin1'), 몸]);
+    const 검 = Buffer.alloc(4);
+    검.writeUInt32BE(crc32(이름몸) >>> 0);
+    return Buffer.concat([길이, 이름몸, 검]);
+  };
+  const 머리 = Buffer.alloc(13);
+  머리.writeUInt32BE(너비, 0);
+  머리.writeUInt32BE(높이, 4);
+  머리[8] = 8; 머리[9] = 2; 머리[10] = 0; 머리[11] = 0; 머리[12] = 0;
+  const 줄 = Buffer.alloc(1 + 너비 * 3, 0xff);
+  줄[0] = 0;   // 거르개 없음
+  const 날것 = Buffer.alloc(줄.length * 높이);
+  for (let y = 0; y < 높이; y++) 줄.copy(날것, y * 줄.length);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    토막('IHDR', 머리),
+    토막('IDAT', deflateSync(날것)),
+    토막('IEND', Buffer.alloc(0)),
+  ]);
+}

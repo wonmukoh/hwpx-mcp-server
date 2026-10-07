@@ -36,7 +36,63 @@ import {
 } from './스키마.js';
 import { 인자검사, 탈말, 절대경로검사 } from './인자검사.js';
 import { 잘됨, 못함, type 도구결과 } from './결과내기.js';
-import { 문서방 } from './문서방.js';
+import { 문서방, 최대열린수 } from './문서방.js';
+
+/** 파일의 크기·고친 때 — 연 뒤 밖에서 바뀌었나 견줄 때 쓴다. 없으면 빈 글 */
+function 파일표(p: string): string {
+  try {
+    const s = fs.statSync(p);
+    return `${s.size}:${s.mtimeMs}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 경로의 **파일 이름**이 쓸 만한가. 윈도우에서 이름에 `:` 가 들면 대체 데이터 스트림
+ * (`a.hwpx:숨은.hwpx`)이 되어, 「저장했다」는데 보이는 파일은 0바이트였다 (2026-10-07 검토).
+ */
+function 파일이름검사(p: string): { 이유: string; 어떻게: string } | undefined {
+  const 이름 = path.basename(p);
+  if (/[:*?"<>|]/.test(이름)) {
+    return {
+      이유: `파일 이름 「${이름}」 에 쓸 수 없는 글자(: * ? " < > |)가 있다`,
+      어떻게: '윈도우는 이 글자를 파일 이름에 못 쓴다. 빼고 다시 줘라.',
+    };
+  }
+  return undefined;
+}
+
+/**
+ * 파일을 읽고 쓰다 난 오류를 **사람이 할 일**로 옮긴다. 전에는 「save_document 이 터졌다 …
+ * 그래도 터지면 이 MCP 의 버그다」로 나왔다 — 가장 흔한 까닭은 한글이 그 파일을 열어 둔 것이다.
+ */
+function 파일오류말(e: unknown, 무엇: '읽' | '쓰'): { 이유: string; 어떻게: string } {
+  const 코드 = (e as { code?: string }).code ?? '';
+  const 원말 = String((e as Error).message ?? e).split('\n')[0];
+  switch (코드) {
+    case 'EBUSY':
+      return {
+        이유: `다른 프로그램이 그 파일을 잡고 있어 ${무엇}지 못했다`,
+        어떻게: '한글 같은 프로그램에서 그 파일을 열어 두었으면 닫고 다시 하거나, 다른 이름으로 저장하라.',
+      };
+    case 'EPERM':
+    case 'EACCES':
+      return {
+        이유: `그 파일(또는 폴더)에 ${무엇}기 권한이 없다`,
+        어떻게: '읽기 전용 파일이거나 다른 프로그램이 잡고 있거나 권한이 없는 폴더다. '
+          + '다른 폴더·이름으로 저장하거나, 한글에서 열어 둔 것이면 닫아라.',
+      };
+    case 'EISDIR':
+      return { 이유: '그 경로는 파일이 아니라 폴더다', 어떻게: '폴더 안의 파일 경로를 .hwpx 까지 적어라.' };
+    case 'ENOENT':
+      return { 이유: `그 경로를 찾지 못했다 (${원말})`, 어떻게: '폴더가 있는지, 이름에 쓸 수 없는 글자가 없는지 보라.' };
+    case 'ENOSPC':
+      return { 이유: '디스크에 자리가 없다', 어떻게: '자리를 비우거나 다른 드라이브에 저장하라.' };
+    default:
+      return { 이유: `파일을 ${무엇}지 못했다: ${원말}`, 어떻게: '경로와 권한을 보고 다시 해라.' };
+  }
+}
 
 export interface 도구주석 {
   title?: string;
@@ -98,6 +154,7 @@ const 저장스키마 = 묶음('문서를 저장한다', {
   doc_id,
   path: 절대경로('저장할 곳. 안 주면 연 곳에 덮어쓴다'),
   overwrite: 참거짓('이미 있는 파일을 덮어쓸 건가. 기본 false — 켜지 않으면 거절한다'),
+  force: 참거짓('연 뒤 밖에서(한글·다른 손잡이) 바뀐 파일이라도 덮어쓴다 — 그 고침은 사라진다. 기본 false'),
 }, ['doc_id']);
 
 const 닫기스키마 = 묶음('문서를 닫는다', { doc_id }, ['doc_id']);
@@ -426,11 +483,20 @@ export const 도구들: 도구[] = [
       sections: 정수('구역 수'),
       paragraphs: 정수('문단 수'),
       tables: 정수('표 수'),
+      also_open_as: 목록('같은 파일이 이미 열려 있는 손잡이들 — 있으면 하나만 써라', 글자('손잡이')),
     }, ['ok', 'doc_id']),
     annotations: { title: '문서 열기', readOnlyHint: true },
     처리: 검사하고<{ path: string; read_only?: boolean }>(열기스키마, (인자, 방) => {
       const 절대 = 절대경로검사(인자.path);
       if (!절대.ok) return 못함(절대.이유, 절대.어떻게);
+      const 이름탈 = 파일이름검사(인자.path);
+      if (이름탈) return 못함(이름탈.이유, 이름탈.어떻게);
+      if (방.개수 >= 최대열린수) {
+        return 못함(
+          `이미 문서 ${방.개수}개가 열려 있다 (한도 ${최대열린수})`,
+          'list_documents 로 보고 다 쓴 것을 close_document 로 닫아라. 한 편에 수십 MB 를 먹는다.',
+        );
+      }
       if (!fs.existsSync(인자.path)) {
         const 폴더 = path.dirname(인자.path);
         const 있는것 = fs.existsSync(폴더)
@@ -444,9 +510,21 @@ export const 도구들: 도구[] = [
         );
       }
 
+      // **파일을 못 읽은 것과 HWPX 가 아닌 것은 다르다.** 전에는 둘 다 「.hwp 를 잘못
+      // 부른 건 아닌지」라 했다 — 한글이 잡고 있거나 폴더인데도 (2026-10-07 검토)
+      let 바이트: Buffer;
+      try {
+        if (fs.statSync(인자.path).isDirectory()) {
+          return 못함(`${인자.path} 는 파일이 아니라 폴더다`, '그 안의 .hwpx 파일 경로를 줘라.');
+        }
+        바이트 = fs.readFileSync(인자.path);
+      } catch (e) {
+        const 말 = 파일오류말(e, '읽');
+        return 못함(말.이유, 말.어떻게);
+      }
       let d: 문서;
       try {
-        d = 문서.열기(fs.readFileSync(인자.path));
+        d = 문서.열기(바이트);
       } catch (e) {
         return 못함(
           `열 수 없다: ${(e as Error).message.split('\n')[0]}`,
@@ -454,12 +532,22 @@ export const 도구들: 도구[] = [
         );
       }
       d.ID매기기();
+      const 이미 = 방.같은파일(인자.path);
       const id = 방.들이기(d, { 경로: 인자.path, 읽기만: 인자.read_only ?? false });
+      const 열린것 = 방.꺼내기(id)!;
+      열린것.파일표 = 파일표(인자.path);
       const 문단수 = d.구역들.reduce((n, s) => n + s.모든문단들.length, 0);
       const 표수 = d.구역들.reduce((n, s) => n + s.표들.length, 0);
       return 잘됨(
-        `${path.basename(인자.path)} 를 열었다 — 구역 ${d.구역들.length}개 · 문단 ${문단수}개 · 표 ${표수}개 (${id})`,
-        { ok: true, doc_id: id, sections: d.구역들.length, paragraphs: 문단수, tables: 표수 },
+        `${path.basename(인자.path)} 를 열었다 — 구역 ${d.구역들.length}개 · 문단 ${문단수}개 · 표 ${표수}개 (${id})`
+        + (이미.length
+          ? `\n\n**같은 파일이 이미 ${이미.join(', ')} 로 열려 있다.** 둘 다 고쳐 저장하면 나중 것이 앞 것을 `
+            + '지운다 — 하나만 쓰고 나머지는 close_document 로 닫아라 (나중에 저장하는 쪽은 「밖에서 바뀌었다」로 막힌다).'
+          : ''),
+        {
+          ok: true, doc_id: id, sections: d.구역들.length, paragraphs: 문단수, tables: 표수,
+          ...(이미.length ? { also_open_as: 이미 } : {}),
+        },
       );
     }),
   },
@@ -484,7 +572,7 @@ export const 도구들: 도구[] = [
       ),
     }, ['ok']),
     annotations: { title: '문서 저장', destructiveHint: true, idempotentHint: true },
-    처리: 검사하고<{ doc_id: string; path?: string; overwrite?: boolean }>(저장스키마, (인자, 방) => {
+    처리: 검사하고<{ doc_id: string; path?: string; overwrite?: boolean; force?: boolean }>(저장스키마, (인자, 방) => {
       const 것 = 문서꺼내기(방, 인자.doc_id);
       if (!것.ok) return 것.결과;
       if (것.it.읽기만) {
@@ -503,6 +591,8 @@ export const 도구들: 도구[] = [
       }
       const 절대 = 절대경로검사(낼곳);
       if (!절대.ok) return 못함(절대.이유, 절대.어떻게);
+      const 이름탈 = 파일이름검사(낼곳);
+      if (이름탈) return 못함(이름탈.이유, 이름탈.어떻게);
       // **.hwpx 로만 쓴다.** 전에는 x.hwp 나 확장자 없는 이름에도 HWPX(zip)를 그대로 써서,
       // 이름만 hwp 인 파일이 생겼다 — 한글은 이름을 보고 HWP 로 열려다 못 연다.
       if (!/\.hwpx$/i.test(낼곳)) {
@@ -516,6 +606,16 @@ export const 도구들: 도구[] = [
         return 못함(
           `${낼곳} 가 이미 있다`,
           '덮어쓰려면 overwrite: true 를 같이 주거나, 다른 path 를 적어라.',
+        );
+      }
+      // **연 뒤에 밖에서 바뀌었으면 덮지 않는다.** 한글에서 고쳐 저장했거나, 같은 파일을
+      // 다른 손잡이로 저장한 것이다. 덮으면 그 고침이 말없이 사라진다 (2026-10-07 검토 둘이 잼).
+      if (fs.existsSync(낼곳) && 것.it.경로 !== undefined && 방.같은자리(것.it.경로, 낼곳)
+        && 것.it.파일표 !== undefined && 파일표(낼곳) !== 것.it.파일표 && !인자.force) {
+        return 못함(
+          `${path.basename(낼곳)} 이 연 뒤에 밖에서 바뀌었다 — 덮으면 그 고침이 사라진다`,
+          '한글에서 고쳤거나 같은 파일을 다른 doc_id 로 저장한 것이다. 다른 path 로 저장해 두 판을 견주거나, '
+          + '밖의 고침을 버려도 되면 force: true 를 같이 줘라.',
         );
       }
 
@@ -538,8 +638,21 @@ export const 도구들: 도구[] = [
       if (!fs.existsSync(폴더)) {
         return 못함(`${폴더} 폴더가 없다`, '있는 폴더에 저장하거나 폴더를 먼저 만들어라.');
       }
-      fs.writeFileSync(낼곳, 바이트);
+      // **원자적으로 쓴다** — 같은 폴더의 임시 파일에 다 쓴 뒤 이름을 바꾼다.
+      // 전에는 바로 덮어써서, 쓰다가 실패하면(잠김·디스크 가득·OneDrive 끊김) 원본이 0바이트가
+      // 됐다 (2026-10-07 검토). 이름 바꾸기는 다 되거나 안 되거나다 — 원본이 반쯤 남지 않는다.
+      const 임시 = path.join(폴더, `.${path.basename(낼곳)}.${process.pid}.${Date.now()}.tmp`);
+      try {
+        fs.writeFileSync(임시, 바이트);
+        fs.renameSync(임시, 낼곳);
+      } catch (e) {
+        try { fs.rmSync(임시, { force: true }); } catch { /* 못 지워도 원본은 그대로다 */ }
+        const 말 = 파일오류말(e, '쓰');
+        return 못함(말.이유, `${말.어떻게} (원본 파일은 그대로다)`);
+      }
       것.it.경로 = 낼곳;
+      것.it.파일표 = 파일표(낼곳);
+      것.it.안저장 = false;
       const 밀렸다 = 것.it.구조바꿈 === true;
       return 잘됨(
         `${path.basename(낼곳)} 로 저장했다 (${바이트.length.toLocaleString()}바이트)`
@@ -1249,6 +1362,8 @@ export const 도구들: 도구[] = [
     }>(조판스키마, (인자, 방) => {
       const 것 = 문서꺼내기(방, 인자.doc_id);
       if (!것.ok) return 것.결과;
+      // 고치려 든 순간부터 「저장 안 한 고침」이 있다고 친다 — 오래 안 써도 안 치운다
+      if (!것.it.읽기만) 것.it.안저장 = true;
       if (것.it.읽기만) {
         return 못함('읽기만 하려고 연 문서다', 'read_only 없이 다시 열어라.');
       }
@@ -1351,6 +1466,7 @@ export const 도구들: 도구[] = [
         return 못함('고칠 것이 하나도 없다', 'edits 에 적어도 하나를 적어라.');
       }
 
+      것.it.안저장 = true;   // 오래 안 써도 안 치운다 (저장하면 풀린다)
       const d = 것.it.d;
       d.ID매기기();
       const 낸것: Record<string, unknown>[] = [];

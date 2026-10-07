@@ -82,3 +82,14 @@ describe('문단에서 두 곳을 고쳐도 각주·서식이 제자리에 남�
     expect(p.글).toBe('교육청은 굵은 낱말 가운데 두고 발표했다.');
   });
 });
+
+describe('저장 길목의 마지막 그물', () => {
+  it('**속성에 든 제어문자도 저장 전에 잡는다** — 입구를 빠져나간 길이 있어도', async () => {
+    const { setAttr, findAll } = await import('@hwpx/owpml');
+    const d = 문서.열기(fs.readFileSync(path.join(뿌리, '자료', '기준파일', 'ref-text-basic.hwpx')));
+    const p = d.구역들[0]!.문단들[0]!;
+    setAttr(p.el, 'paraPrIDRef', 'a\u0001b');
+    expect(() => d.저장()).toThrow(/제어문자/);
+    expect(findAll).toBeTypeOf('function');
+  });
+});

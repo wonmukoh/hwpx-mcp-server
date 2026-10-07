@@ -169,7 +169,7 @@ const 뼈대스키마 = 묶음('문서 뼈대를 본다', {
   limit: 범위(정수('몇 개까지 볼까. 기본 200. 잘리면 답의 truncated 가 true 다'), 1),
   // 양식은 글이 거의 다 표 안에 있다. 맨 위만 보면 아무것도 안 보인다 —
   // 학교 가정통신문은 문서 전체가 **문단 하나에 든 표 둘**이라 뼈대가 1개로 나왔다.
-  in_tables: 참거짓('표 **안**의 셀까지 볼까. 양식을 채울 때 켠다'),
+  in_tables: 참거짓('표 **안**의 셀까지 볼까. 양식을 채울 때 켠다. **글이 든 칸만** 나온다 — 채울 빈 칸은 find 의 kind: "cell" 로 찾는다'),
 }, ['doc_id']);
 
 const 내용스키마 = 묶음('요소 하나의 내용을 본다 (id 를 안 주면 문서 전체 글)', {
@@ -218,7 +218,7 @@ const 블록스키마: 스키마 = 묶음('블록 하나', {
   color: 글자('band 의 글자색 #RRGGBB'),
   title: 글자('box 의 머리 줄'),
   items: 목록('box 의 항목들, 또는 outline 의 항목들', 묶음('항목', {
-    level: 정수('개조식 단계 1~4. 깊을수록 들여쓴다'),
+    level: 범위(정수('개조식 단계 1~4. 깊을수록 들여쓴다'), 1, 4),
     text: 글자('항목 글'),
     bold: 참거짓('굵게 할까'),
   })),
@@ -1076,6 +1076,9 @@ export const 도구들: 도구[] = [
         // **본문에서 찾은 것과 곁글에서 찾은 것은 다르다.** 안 갈라 주면
         // 각주·메모에서 걸린 것을 본문인 줄 알고 고치러 간다.
         in_note: 참거짓('각주·미주·메모 **안**에서 찾았다 — 본문 글이 아니다'),
+        // get_outline 은 붙이는데 find 는 안 붙여, 같은 문단이 어디 있는지 두 도구가 달리 말했다
+        in_shape: 참거짓('글상자(도형) 안 문단이다'),
+        in_header: 고름('머리말·꼬리말 안 문단이다 — 쪽마다 되풀이되는 글', ['header', 'footer']),
       })),
       // **잘렸다는 것을 답에 담는다.** count 와 matches.length 를 견주라고
       // 맡겨 두면 아무도 안 견준다 — 그러면 못 본 것을 못 봤는지도 모른다.
@@ -1129,6 +1132,8 @@ export const 도구들: 도구[] = [
               id: d.이름표.아이디(p.el), kind: 'paragraph', preview: 미리보기(p.글),
               ...(칸 !== undefined ? { in_cell: 칸 } : {}),
               ...(곁글인가(p.el) ? { in_note: true } : {}),
+              ...(closestNamed(p.el, 'hp:drawText') ? { in_shape: true } : {}),
+              ...(closestNamed(p.el, 'hp:header') ? { in_header: 'header' } : closestNamed(p.el, 'hp:footer') ? { in_header: 'footer' } : {}),
             });
           }
         }
@@ -1384,6 +1389,11 @@ export const 도구들: 도구[] = [
         const 검 = 절대경로검사(그림.path);
         if (!검.ok) return 못함(`${i + 1}번째 블록(image, blocks[${i}]): ${검.이유}`, 검.어떻게);
       }
+      // **값을 먼저 본다** — edit 의 set_style 처럼. 전에는 shape 의 border_color:"blue"·
+      // background:"yellow" 가 그대로 XML 에 들어갔고(한글은 검정으로 그리거나 버린다),
+      // 표 밖 칸 꾸밈(row 9)은 말없이 버려졌다 (2026-10-07 검토).
+      const 값탈 = 조판값검사(인자.blocks as unknown as Record<string, unknown>[], 인자.highlight_color);
+      if (값탈) return 못함(값탈, '값을 고쳐 다시 보내라. 아무 블록도 안 들어갔다.', { done: 0, created: [] });
 
       const 여백 = {
         ...(인자.margin_left !== undefined ? { margin_left: 인자.margin_left } : {}),
@@ -1556,6 +1566,65 @@ function 번호겹침(d: 문서, 표지: Map<ElementNode, string>, id: string): 
     if (글.startsWith(붙는것.trim()) || 번호꼴로) {
       return `이 줄 앞에는 한글이 「${붙는것}」를 저절로 붙인다 — 글이 「${글.slice(0, 12)}」로 시작해 `
         + `쪽에는 「${붙는것} ${글.slice(0, 12)}」로 보인다. 번호를 빼고 다시 set_text 하라.`;
+    }
+  }
+  return undefined;
+}
+
+/** #RRGGBB 인가 */
+const 색꼴 = /^#[0-9A-Fa-f]{6}$/;
+
+/**
+ * compose 블록들의 값을 짜기 **전에** 본다. 틀린 것이 있으면 어디가 왜인지 말, 없으면 undefined.
+ *
+ *   색        color · background · border_color · shade · header_background (배경은 none 도)
+ *   선        cells 의 top·bottom·left·right — 「0.4 mm #2A5DA8」 꼴이나 none
+ *   표 칸     cells·merges 의 row·col 이 표 안에 드나
+ */
+function 조판값검사(블록들: Record<string, unknown>[], 강조색?: string): string | undefined {
+  if (강조색 !== undefined && !색꼴.test(강조색)) return `highlight_color 「${강조색}」 는 #RRGGBB 가 아니다`;
+  const 색이름 = ['color', 'shade', 'border_color'];
+  const 배경이름 = ['background', 'header_background'];
+  const 색보기 = (o: Record<string, unknown>, 자리: string): string | undefined => {
+    for (const k of 색이름) {
+      const v = o[k];
+      if (typeof v === 'string' && !색꼴.test(v)) return `${자리}.${k} 「${v}」 는 #RRGGBB 가 아니다 (색 이름은 안 받는다)`;
+    }
+    for (const k of 배경이름) {
+      const v = o[k];
+      if (typeof v === 'string' && v !== 'none' && !색꼴.test(v)) return `${자리}.${k} 「${v}」 는 #RRGGBB 나 none 이 아니다`;
+    }
+    for (const k of ['top', 'bottom', 'left', 'right']) {
+      const v = o[k];
+      if (typeof v === 'string' && !테두리글맞나(v)) return `${자리}.${k} 「${v}」 는 「0.4 mm #2A5DA8」 꼴이나 none 이 아니다`;
+    }
+    return undefined;
+  };
+  for (const [i, b] of 블록들.entries()) {
+    const 자리 = `blocks[${i}]`;
+    const 탈 = 색보기(b, 자리);
+    if (탈) return 탈;
+    if (b['kind'] === 'table') {
+      const 머리 = Array.isArray(b['headers']) ? 1 : 0;
+      const 줄수 = 머리 + (Array.isArray(b['rows']) ? (b['rows'] as unknown[]).length : 0);
+      const 칸수 = Math.max(0, ...[b['headers'], ...((b['rows'] as unknown[]) ?? [])]
+        .filter(Array.isArray).map((r) => (r as unknown[]).length));
+      for (const [j, c] of ((b['cells'] as Record<string, unknown>[] | undefined) ?? []).entries()) {
+        const 칸탈 = 색보기(c, `${자리}.cells[${j}]`);
+        if (칸탈) return 칸탈;
+        const r = c['row'] as number | undefined;
+        const k = c['col'] as number | undefined;
+        if (r !== undefined && (r < 0 || r >= 줄수)) return `${자리}.cells[${j}].row ${r} 는 표 밖이다 (줄 0~${줄수 - 1}${머리 ? ', 머리 줄이 0' : ''})`;
+        if (k !== undefined && (k < 0 || k >= 칸수)) return `${자리}.cells[${j}].col ${k} 는 표 밖이다 (칸 0~${칸수 - 1})`;
+      }
+    }
+    if (Array.isArray(b['items'])) {
+      for (const [j, it] of (b['items'] as Record<string, unknown>[]).entries()) {
+        if (it && typeof it === 'object') {
+          const 탈2 = 색보기(it, `${자리}.items[${j}]`);
+          if (탈2) return 탈2;
+        }
+      }
     }
   }
   return undefined;

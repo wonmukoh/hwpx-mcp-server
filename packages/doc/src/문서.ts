@@ -747,7 +747,7 @@ export class 문서 {
     if (것.value.갈래 !== '문단') {
       return this.남기기('문단지우기', id, 안됨(
         `${id} 는 문단이 아니다 (${것.value.갈래})`,
-        것.value.갈래 === '표' ? '표는 표지우기로 지운다.' : '문단 ID(p_…)를 줘라.',
+        것.value.갈래 === '표' ? '표는 delete_table 로 지운다.' : '문단 ID(p_…)를 줘라.',
       ));
     }
     const p = 것.value.문단;

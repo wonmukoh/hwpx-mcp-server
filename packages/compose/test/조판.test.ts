@@ -217,7 +217,15 @@ describe('표', () => {
     const r = 조판(새문서(), [{ kind: 'table', rows: [['1', '2'], ['3']] }]);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.이유).toContain('1번째 줄');
+    expect(r.이유).toContain('rows[1] 은 1칸');
+  });
+
+  it('**어긋난 줄을 다 댄다** — 머리 줄 3칸에 1칸·4칸 줄이 섞여도', () => {
+    const r = 조판(새문서(), [{ kind: 'table', headers: ['가', '나', '다'], rows: [['1'], ['1', '2', '3', '4']] }]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.이유).toContain('headers 은 3칸');
+    expect(r.이유).toContain('rows[0] 은 1칸');
   });
 
   it('widths 개수가 안 맞으면 못 한다고 한다', () => {
@@ -384,6 +392,15 @@ describe('본문 · 소제목 · 주석 — 정부 문서의 뼈대', () => {
     const def = firstChildNamed(sw, 'hp:default')!;
     const m = firstChildNamed(def, 'hh:margin')!;
     expect(Number(getAttr(firstChildNamed(m, 'hc:intent')!, 'value'))).toBeLessThan(0);
+  });
+
+  it('**블록 한가운데서 던져도 그 블록만 걷고, 앞 블록을 만든것으로 싣는다**', () => {
+    const d = 새문서();
+    const r = 조판(d, [{ kind: 'heading', text: '첫 절' }, { kind: 'body', text: '본문' }, { kind: 'band', text: '띠글', background: 'red' }]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect((r as unknown as { 만든것: unknown[] }).만든것.length).toBe(2);
+    expect(d.구역들.flatMap((s) => s.모든문단들).map((p) => p.글).join('')).not.toContain('띠글');
   });
 
   it('안 닫힌 표시는 **블록 번호까지 짚어** 멈춘다', () => {

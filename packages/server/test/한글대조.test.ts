@@ -140,3 +140,15 @@ describe('한글이 저절로 붙이는 번호·글머리표를 알려 준다', 
     expect((r.structuredContent!['results'] as { note?: string }[])[0]!.note).toContain('「-」');
   });
 });
+
+describe('set_text 는 다 할 수 있을 때만 고친다', () => {
+  it('**한 곳이 덧말에 걸리면 다른 곳도 안 고친다** — 반쯤 고치고 거절하지 않는다', async () => {
+    const { 방, doc_id } = await 열기(덧말파일);
+    const id = await 덧말문단(방, doc_id);
+    // 앞 곳은 덧말 안(D→X, 못 함), 뒤 곳은 끝에 덧붙임(할 수 있음). 둘은 멀리 떨어져 따로 간다.
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: 'XUTMAL-REF-TEXT 끝' }] }, 방);
+    expect(r.isError).toBe(true);
+    const 글 = (await 도구부르기('get_content', { doc_id, id }, 방)).structuredContent!['text'] as string;
+    expect(글).toBe('DUTMAL-REF-TEXT');
+  });
+});

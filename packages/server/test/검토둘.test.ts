@@ -4,6 +4,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { 도구부르기, 문서방 } from '../src/index.js';
 
 async function 새문서(블록들: unknown[]) {
@@ -159,7 +162,7 @@ describe('입구에서 막는다 — 어느 인자든', () => {
     expect((await 도구부르기('find', { doc_id, text: '' }, 방)).isError).toBe(true);
   });
 
-  it('**compose 블록 가운데서 던져도 done·created 를 싣고, 그 블록은 안 남긴다**', async () => {
+  it('**compose 의 틀린 색은 짜기 전에 막는다** — 아무것도 안 들어가고 done 0', async () => {
     const 방 = new 문서방();
     const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
     const r = await 도구부르기('compose', { doc_id, blocks: [
@@ -168,8 +171,8 @@ describe('입구에서 막는다 — 어느 인자든', () => {
       { kind: 'band', text: '띠', background: 'red' },
     ] }, 방);
     expect(r.isError).toBe(true);
-    expect(r.structuredContent!['done']).toBe(2);
-    expect((r.structuredContent!['created'] as unknown[]).length).toBe(2);
+    expect(r.structuredContent!['done']).toBe(0);
+    expect(r.content[0]?.text).toContain('blocks[2].background');
     const 글 = (await 도구부르기('get_content', { doc_id }, 방)).structuredContent!['text'] as string;
     expect(글).not.toContain('띠');
   });
@@ -194,5 +197,62 @@ describe('큰 표에서도 멈추지 않는다', () => {
     const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'split_cell', id: 칸, rows: 500, cols: 500 }] }, 방);
     expect(r.isError).toBe(true);
     expect(r.content[0]?.text).toContain('100 이하');
+  });
+});
+
+describe('compose 값을 짜기 전에 본다', () => {
+  for (const [무엇, 블록] of [
+    ['shape 테두리 색 이름', { kind: 'shape', text: '가', border_color: 'blue' }],
+    ['shape 배경 색 이름', { kind: 'shape', text: '가', background: 'yellow' }],
+    ['표 밖 칸 꾸밈', { kind: 'table', rows: [['1', '2']], cells: [{ row: 9, col: 9, background: '#FFFFFF' }] }],
+    ['칸 선 꼴', { kind: 'table', rows: [['1', '2']], cells: [{ row: 0, top: 'thick red' }] }],
+    ['개조식 수준 9', { kind: 'outline', items: [{ text: '가', level: 9 }] }],
+  ] as const) {
+    it(`**${무엇}** 은 거절한다`, async () => {
+      const 방 = new 문서방();
+      const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+      const r = await 도구부르기('compose', { doc_id, blocks: [블록] }, 방);
+      expect(r.isError, JSON.stringify(블록)).toBe(true);
+    });
+  }
+});
+
+describe('find 가 어디서 찾았는지 말한다', () => {
+  it('**머리말 안 문단에 in_header 를 붙인다**', async () => {
+    const 방 = new 문서방();
+    const doc_id = (await 도구부르기('create_document', {}, 방)).structuredContent!['doc_id'] as string;
+    await 도구부르기('compose', { doc_id, blocks: [{ kind: 'body', text: '본문 글' }], header_text: '머리말 글' }, 방);
+    const r = await 도구부르기('find', { doc_id, text: '머리말 글', kind: 'paragraph' }, 방);
+    const 찾은것 = r.structuredContent!['matches'] as { in_header?: string }[];
+    expect(찾은것[0]!.in_header).toBe('header');
+    const 본 = (await 도구부르기('find', { doc_id, text: '본문 글', kind: 'paragraph' }, 방)).structuredContent!['matches'] as { in_header?: string }[];
+    expect(본[0]!.in_header).toBeUndefined();
+  });
+});
+
+describe('고장 내보기가 짚은 빈자리', () => {
+  it('**끝없는 수는 범위 위가 없는 인자로도 못 들어온다** (limit: Infinity)', async () => {
+    const { 방, doc_id } = await 한문단('글');
+    const r = await 도구부르기('find', { doc_id, text: '글', limit: Infinity }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('끝이 있는');
+  });
+
+  it('**크기 0 인 그림은 거절한다** — 받으면 너비·높이가 NaN', async () => {
+    const { 방, doc_id, id } = await 한문단('글');
+    // 0×0 PNG — 머리(IHDR)만 있으면 크기는 읽힌다
+    const 머리 = Buffer.alloc(13);
+    머리[8] = 8; 머리[9] = 2;
+    const 토막 = (종류: string, 몸: Buffer) => {
+      const 길이 = Buffer.alloc(4); 길이.writeUInt32BE(몸.length);
+      return Buffer.concat([길이, Buffer.from(종류, 'latin1'), 몸, Buffer.alloc(4)]);
+    };
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      토막('IHDR', 머리), 토막('IEND', Buffer.alloc(0))]);
+    const 자리 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '빈그림-')), '빈.png');
+    fs.writeFileSync(자리, png);
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'insert_image', id, path: 자리, width: 50 }] }, 방);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('0×0');
   });
 });

@@ -244,7 +244,7 @@ describe('지우면 안 될 때 안 지운다', () => {
 
     const b = d.문단지우기(표아이디);
     expect(b.ok).toBe(false);
-    if (!b.ok) expect(b.어떻게).toContain('표지우기');
+    if (!b.ok) expect(b.어떻게).toContain('delete_table');
   });
 
   it('**지운 뒤 저장해도 한글이 열 수 있는 꼴이다**', () => {

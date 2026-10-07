@@ -24,7 +24,7 @@ import {
   type ElementNode, type XmlDocument, childrenNamed, removeNode, setText, 못쓰는제어문자,
 } from '@hwpx/owpml';
 import { 됨, 안됨, type 결과 } from './결과.js';
-import { 이름표, 셀아이디, 셀아이디풀기 } from './식별자.js';
+import { 이름표, 셀아이디, 셀아이디풀기, 소금내기 } from './식별자.js';
 import { 머리글, type 글자모양패치, type 문단모양패치 } from './머리글.js';
 import { 구역, 문단, 곁글인가 } from './본문.js';
 import { 번호매기기 } from './번호.js';
@@ -115,7 +115,8 @@ export class 문서 {
    * 부르지 않으면 ID 가 없다 — 게으르게 매기면 `문단들()` 을 부른 순서에 따라
    * ID 가 달라져서 헷갈린다. 한 번에 매기고 그 뒤로는 안 바뀐다.
    */
-  ID매기기(): { 문단: number; 표: number } {
+  ID매기기(소금?: string): { 문단: number; 표: number } {
+    if (소금 !== undefined) this.이름표.소금치기(소금내기(소금));
     let 문단수 = 0, 표수 = 0;
     for (const s of this.구역들) {
       for (const p of s.모든문단들) { this.이름표.아이디(p.el); 문단수++; }

@@ -466,7 +466,8 @@ export const 도구들: 도구[] = [
     annotations: { title: '빈 문서 만들기', idempotentHint: false },
     처리: 검사하고(만들기스키마, (_인자, 방) => {
       const d = 문서.새로();
-      d.ID매기기();
+      // 새 문서는 경로가 없다 — 만들 때마다 다른 소금 (빈 문서끼리 ID 가 겹치지 않게)
+      d.ID매기기(`새문서:${Date.now()}:${Math.random()}`);
       const id = 방.들이기(d);
       return 잘됨(`빈 문서를 만들었다 (${id})`, { ok: true, doc_id: id });
     }),
@@ -533,7 +534,8 @@ export const 도구들: 도구[] = [
           'HWPX 가 맞는지, .hwp(옛 형식)를 .hwpx 로 잘못 부른 건 아닌지 보라.',
         );
       }
-      d.ID매기기();
+      // 경로로 소금을 친다 — 같은 파일을 다시 열면 같은 ID, 딴 파일이면 딴 ID
+      d.ID매기기(인자.path.replace(/\//g, '\\').toLowerCase());
       const 이미 = 방.같은파일(인자.path);
       const id = 방.들이기(d, { 경로: 인자.path, 읽기만: 인자.read_only ?? false });
       const 열린것 = 방.꺼내기(id)!;

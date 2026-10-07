@@ -144,3 +144,27 @@ describe('오래 안 쓴 문서', () => {
     expect(방.꺼내기(그냥연것)).toBeUndefined();
   });
 });
+
+describe('ID 는 문서마다 다르다', () => {
+  it('**딴 문서의 ID 로는 못 고친다** — 말없이 엉뚱한 문단을 고치지 않는다', async () => {
+    const 방 = new 문서방();
+    const 가 = (await 열기(방, 사본('가.hwpx'))).structuredContent!['doc_id'] as string;
+    const 나 = (await 열기(방, 사본('나.hwpx'))).structuredContent!['doc_id'] as string;
+    const 가뼈 = (await 도구부르기('get_outline', { doc_id: 가, limit: 5000 }, 방)).structuredContent!['items'] as { id: string }[];
+    const 나뼈 = (await 도구부르기('get_outline', { doc_id: 나, limit: 5000 }, 방)).structuredContent!['items'] as { id: string }[];
+    const 나것 = new Set(나뼈.map((x) => x.id));
+    expect(가뼈.filter((x) => 나것.has(x.id)).length).toBe(0);
+    const r = await 도구부르기('edit', { doc_id: 나, edits: [{ op: 'set_text', id: 가뼈[0]!.id, text: 'x' }] }, 방);
+    expect(r.isError).toBe(true);
+  });
+
+  it('같은 파일을 다시 열면 같은 ID 다 (짜임을 안 바꿨으면)', async () => {
+    const 파일 = 사본();
+    const 뼈 = async () => {
+      const 방 = new 문서방();
+      const id = (await 열기(방, 파일)).structuredContent!['doc_id'] as string;
+      return ((await 도구부르기('get_outline', { doc_id: id }, 방)).structuredContent!['items'] as { id: string }[]).map((x) => x.id);
+    };
+    expect(await 뼈()).toEqual(await 뼈());
+  });
+});

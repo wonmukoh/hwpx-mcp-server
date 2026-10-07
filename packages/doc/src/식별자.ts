@@ -80,16 +80,32 @@ export function 앞머리정하기(태그: string): string {
   return 앞머리[태그] ?? 태그.replace(/^[a-z]+:/, '').toLowerCase();
 }
 
-// 36^4 = 1679616. 그것과 서로소인 큰 홀수를 곱하면 1:1 로 섞인다.
+// 36^5 = 60466176. 그것과 서로소인 큰 홀수를 곱하면 1:1 로 섞인다.
 // 되돌릴 수 있으니 잃는 것이 없고, 이웃한 번호가 이웃해 보이지 않는다.
-const 자리 = 36 ** 4;
-const 섞는수 = 1_010_101;      // 1679616 과 서로소
+//
+// **다섯 자리에 문서마다 소금을 친다.** 전에는 네 자리를 0 부터 같은 차례로 매겨, 어느 문서든
+// 첫 문단이 같은 ID 였다. 그래서 문서 A 의 ID 를 문서 B 의 손잡이와 같이 주면 B 의 엉뚱한
+// 문단을 말없이 고쳤다 (2026-10-07 검토). 소금으로 문서마다 출발점이 다르고, 자리가 넓어
+// 남의 ID 가 우연히 걸릴 일이 드물다 (2천 개 든 문서에서 1/3만).
+const 자리 = 36 ** 5;
+const 섞는수 = 1_010_101;      // 2^10·3^10 과 서로소 (홀수, 3 의 배수 아님)
 // 0 부터 시작하면 첫 ID 가 `p_0000` 이 되어 번호처럼 보인다.
 // 그러면 모델이 `p_0001` 도 있으리라 여긴다. 그래서 밀어 둔다.
 const 밀기 = 7_919;
 
 function 섞기(n: number): string {
-  return (((n + 밀기) * 섞는수) % 자리).toString(36).padStart(4, '0');
+  // 곱이 2^53 을 넘지 않게 BigInt 로 — 자리(6천만)×섞는수(백만)는 넘는다
+  return Number((BigInt(n + 밀기) * BigInt(섞는수)) % BigInt(자리)).toString(36).padStart(5, '0');
+}
+
+/**
+ * 글에서 소금을 낸다 — 같은 글이면 같은 소금. 파일 경로를 넣으면 **같은 파일을 다시 열어도
+ * 같은 ID** 가 나온다(짜임을 안 바꿨으면 ids_stale 이 false 인 그 약속).
+ */
+export function 소금내기(글: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < 글.length; i++) { h ^= 글.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h % 자리;
 }
 
 /**
@@ -101,6 +117,11 @@ export class 이름표 {
   private readonly 노드에서 = new WeakMap<ElementNode, string>();
   private readonly 아이디에서 = new Map<string, ElementNode>();
   private 다음번호 = 0;
+
+  /** 출발점을 정한다. **ID 를 하나라도 매기기 전에만** 먹힌다 */
+  소금치기(소금: number): void {
+    if (this.아이디에서.size === 0) this.다음번호 = Math.abs(Math.trunc(소금)) % 자리;
+  }
 
   /** 이 노드의 ID. 없으면 그 자리에서 매긴다 */
   아이디(node: ElementNode): string {

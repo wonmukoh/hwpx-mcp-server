@@ -26,7 +26,7 @@ import {
 import { 됨, 안됨, type 결과 } from './결과.js';
 import { 이름표, 셀아이디, 셀아이디풀기, 소금내기 } from './식별자.js';
 import { 머리글, type 글자모양패치, type 문단모양패치 } from './머리글.js';
-import { 구역, 문단, 곁글인가 } from './본문.js';
+import { 구역, 문단, 곁글인가, 고친곳들 } from './본문.js';
 import { 번호매기기 } from './번호.js';
 import { 표, 셀, 든것보기, 든것말 } from './표.js';
 
@@ -257,11 +257,19 @@ export class 문서 {
     } else if (줄들.length === 지금줄수) {
       let k = 0;
       나눔 = 지금모양.map((n) => { const 몫 = 줄들.slice(k, k + n).join('\n'); k += n; return 몫; });
-    } else if (줄들.length <= 문단들.length) {
-      나눔 = 문단들.map((_, i) => 줄들[i] ?? '');
     } else {
-      const 앞 = 줄들.slice(0, 문단들.length - 1);
-      나눔 = [...앞, 줄들.slice(문단들.length - 1).join('\n')];
+      // **줄 수가 달라졌으면 먼저 고친 곳으로 가른다.** 읽을 때 문단 가름과 문단 안 줄 나눔이
+      // 둘 다 `\n` 이라, 줄 수만 보고 나누면 「적정⏎규모화 | 지원금」 칸 끝에 한 줄을 붙였을 뿐인데
+      // 「적정 | 규모화⏎지원금⏎추가줄」로 짜임이 무너졌다 (2026-10-07 검토). 고친 곳마다 그것이 든
+      // 문단을 찾아 그 문단만 고친다. 문단 가름을 지우거나 걸치면 그때 옛 규칙으로 간다.
+      const 갈림 = 칸고침가르기(문단들.map((p) => p.글), 줄들.join('\n'));
+      if (갈림) 나눔 = 갈림;
+      else if (줄들.length <= 문단들.length) {
+        나눔 = 문단들.map((_, i) => 줄들[i] ?? '');
+      } else {
+        const 앞 = 줄들.slice(0, 문단들.length - 1);
+        나눔 = [...앞, 줄들.slice(문단들.length - 1).join('\n')];
+      }
     }
     let 바뀐수 = 0;
     let 잃은서식 = 0;
@@ -1127,4 +1135,30 @@ function 바탕쪽XML(
     + ' pageDuplicate="0" pageFront="0">'
     + serializeNode(속, '')
     + '</masterPage>';
+}
+
+/**
+ * 칸의 문단 글들과 새 글(문단 사이는 `\n`)을 견줘 **문단마다 새 글**을 낸다.
+ * 고친 곳이 모두 한 문단 안에 들면(문단 끝에 덧붙이는 것도) 그 문단만 바뀐다.
+ * 문단 가름(`\n`)을 지우거나 걸치는 고침이 있으면 undefined — 부르는 쪽이 옛 규칙으로 간다.
+ */
+export function 칸고침가르기(옛글들: string[], 새글: string): string[] | undefined {
+  const 자리: { 시작: number; 끝: number }[] = [];
+  let 셈 = 0;
+  for (const g of 옛글들) { 자리.push({ 시작: 셈, 끝: 셈 + g.length }); 셈 += g.length + 1; }
+  const 곳들 = 고친곳들(옛글들.join('\n'), 새글);
+  const 문단곳: { 앞: number; 옛끝: number; 넣을것: string }[][] = 옛글들.map(() => []);
+  for (const 곳 of 곳들) {
+    const i = 자리.findIndex((z) => z.시작 <= 곳.앞 && 곳.옛끝 <= z.끝);
+    if (i === -1) return undefined;
+    문단곳[i]!.push(곳);
+  }
+  return 옛글들.map((g, i) => {
+    let 글 = g;
+    for (const 곳 of [...문단곳[i]!].reverse()) {
+      const 시작 = 자리[i]!.시작;
+      글 = 글.slice(0, 곳.앞 - 시작) + 곳.넣을것 + 글.slice(곳.옛끝 - 시작);
+    }
+    return 글;
+  });
 }

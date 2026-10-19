@@ -168,3 +168,47 @@ describe('ID 는 문서마다 다르다', () => {
     expect(await 뼈()).toEqual(await 뼈());
   });
 });
+
+describe('깨진 파일은 열 때 말한다', () => {
+  const 바꿔열기 = async (고치기: (zip: ReturnType<typeof readZip>) => void) => {
+    const zip = readZip(fs.readFileSync(보도자료));
+    고치기(zip);
+    const 파일 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '깨진-')), '깨진.hwpx');
+    fs.writeFileSync(파일, writeZip(zip));
+    return 도구부르기('open_document', { path: 파일 }, new 문서방());
+  };
+
+  it('**같은 이름 부품이 둘이면 거절한다** — 「구역 2개」로 열지 않는다', async () => {
+    const r = await 바꿔열기((zip) => {
+      const 구역 = zip.entries.find((e) => e.name === 'Contents/section0.xml')!;
+      zip.entries.push({ ...구역 });
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('같은 이름');
+  });
+
+  it('**manifest 가 XML 로 안 읽히면 거절한다**', async () => {
+    const r = await 바꿔열기((zip) => {
+      const e = zip.entries.find((x) => x.name === 'Contents/content.hpf')!;
+      setEntryData(e, Buffer.from('<opf:package><깨짐', 'utf8'));
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('content.hpf');
+  });
+
+  it('**구역 XML 이 깨지면 어느 부품인지 말한다**', async () => {
+    const r = await 바꿔열기((zip) => {
+      const e = zip.entries.find((x) => x.name === 'Contents/section0.xml')!;
+      setEntryData(e, Buffer.from('<hs:sec><hp:p>', 'utf8'));
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toContain('section0.xml');
+  });
+
+  it('manifest 이름에 틀린 퍼센트 꼴이 있어도 「URI malformed」로 터지지 않는다', () => {
+    const 통 = HwpxContainer.open(fs.readFileSync(보도자료));
+    const hpf = 통.readText('Contents/content.hpf');
+    통.writeText('Contents/content.hpf', hpf.replace('</opf:manifest>', '<opf:item id="x" href="50%할인.png" media-type="image/png"/></opf:manifest>'));
+    expect(() => 통.manifest검사()).not.toThrow();
+  });
+});

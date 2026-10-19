@@ -23,6 +23,7 @@ import {
 } from './zip.js';
 import { 빈문서바이트 } from './빈문서.js';
 import { deflateSync } from 'node:zlib';
+import { parseXml } from '@hwpx/owpml';
 
 export const 부품 = {
   mimetype: 'mimetype',
@@ -81,6 +82,30 @@ export class HwpxContainer {
         `${부품.header} 가 없다`,
         'HWPX 가 아니거나 파일이 깨졌다.'
       );
+    }
+    // **같은 이름 부품이 둘이면 받지 않는다.** 전에는 section0.xml 이 둘인 파일을 「구역 2개」로
+    // 열고 둘 다 그대로 저장했다 — 한글은 어느 하나만 읽는다 (2026-10-07 견딤성 검토).
+    const 본것 = new Set<string>();
+    for (const e of zip.entries) {
+      if (본것.has(e.name)) {
+        throw new HwpxError(
+          `zip 안에 같은 이름 ${e.name} 이 둘 있다`,
+          '파일이 깨졌다. 한글에서 열어 다시 저장해 보거나 원본을 다시 받아라.'
+        );
+      }
+      본것.add(e.name);
+    }
+    // **manifest(content.hpf)가 XML 로 안 읽히면 받지 않는다.** 전에는 깨진 채로 열고 고치고
+    // 그대로 옮겨 저장했다 — 저장 검사도 못 잡았다 (2026-10-07 견딤성 검토).
+    if (zip.byName.has(부품.manifest)) {
+      try {
+        parseXml(c.readText(부품.manifest));
+      } catch (e) {
+        throw new HwpxError(
+          `${부품.manifest} 이 XML 로 안 읽힌다: ${(e as Error).message.split('\n')[0]}`,
+          '파일이 깨졌다. 한글에서 열어 다시 저장해 보거나 원본을 다시 받아라.'
+        );
+      }
     }
     // **열 때 보는 것과 저장할 때 보는 것을 맞춘다.** 구역이 없는 파일을 열어 주면
     // 「구역 0개」로 고치고 나서 저장에서야 영영 막혔다 (2026-10-07 검토)
@@ -382,7 +407,10 @@ export class HwpxContainer {
     const hpf = this.readText(부품.manifest);
     const 적힌것 = new Set<string>();
     for (const m of hpf.matchAll(/<opf:item\b[^>]*\bhref="([^"]+)"/g)) {
-      적힌것.add(decodeURIComponent(m[1]!));
+      // 퍼센트 꼴이 틀린 이름(「50%할인.png」)은 그대로 쓴다 — 전에는 「URI malformed」로 터졌다
+      let 이름 = m[1]!;
+      try { 이름 = decodeURIComponent(이름); } catch { /* 그대로 */ }
+      적힌것.add(이름);
     }
 
     const 있는것 = new Set(this.names());

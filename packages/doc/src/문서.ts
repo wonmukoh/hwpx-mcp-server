@@ -66,7 +66,9 @@ export class 문서 {
   ) {}
 
   private static 찍어서(통: HwpxContainer): 문서 {
-    const d = new 문서(통, new 머리글(통.readText(부품.header)));
+    // **어느 부품이 깨졌는지 말한다.** 전에는 「태그가 안 닫혔다 (1줄 2685칸)」만 나와
+    // header 인지 section0 인지 몰랐다 (2026-10-07 견딤성 검토).
+    const d = new 문서(통, 부품읽기(부품.header, () => new 머리글(통.readText(부품.header))));
     d.처음탈 = new Set(d.검사());
     return d;
   }
@@ -89,7 +91,7 @@ export class 문서 {
   구역(이름: string): 구역 {
     let doc = this.구역doc.get(이름);
     if (!doc) {
-      doc = parseXml(this.통.readText(이름));
+      doc = 부품읽기(이름, () => parseXml(this.통.readText(이름)));
       this.구역doc.set(이름, doc);
     }
     return new 구역(doc.root, 이름, doc.source);
@@ -1161,4 +1163,14 @@ export function 칸고침가르기(옛글들: string[], 새글: string): string[
     }
     return 글;
   });
+}
+
+/** 부품을 읽다 깨지면 **그 부품 이름을 붙여** 다시 던진다 */
+function 부품읽기<T>(이름: string, 읽기: () => T): T {
+  try {
+    return 읽기();
+  } catch (e) {
+    const 말 = String((e as Error).message ?? e).split('\n')[0];
+    throw new Error(`${이름} 이 XML 로 안 읽힌다 — ${말}\n→ 파일이 깨졌다. 한글에서 열어 다시 저장해 보거나 원본을 다시 받아라.`);
+  }
 }

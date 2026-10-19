@@ -1821,8 +1821,35 @@ const 고장들 = [
     '  if (false) {',
     'packages/server',
   ],
+  [
+    '같은 이름 부품이 둘인 zip 을 연다 (구역 2개로 읽고 둘 다 저장)',
+    'packages/hwpx/src/container.ts',
+    '      if (본것.has(e.name)) {',
+    '      if (본것.has(e.name) && false) {',
+    'packages/server',
+  ],
+  [
+    '깨진 manifest 를 연다 (그대로 옮겨 저장)',
+    'packages/hwpx/src/container.ts',
+    '        parseXml(c.readText(부품.manifest));',
+    '        void parseXml;',
+    'packages/server',
+  ],
+  [
+    '깨진 부품을 열면 어느 부품인지 안 말한다',
+    'packages/doc/src/문서.ts',
+    '      doc = 부품읽기(이름, () => parseXml(this.통.readText(이름)));',
+    '      doc = parseXml(this.통.readText(이름)); void 부품읽기;',
+    'packages/server',
+  ],
+  [
+    'manifest 이름의 틀린 퍼센트 꼴에 터진다 (URI malformed)',
+    'packages/hwpx/src/container.ts',
+    '      try { 이름 = decodeURIComponent(이름); } catch { /* 그대로 */ }',
+    '      이름 = decodeURIComponent(이름);',
+    'packages/server',
+  ],
 ];
-
 /** 찾을 글의 줄끝을 파일에 맞춘다. 파일마다 LF 이기도 CRLF 이기도 하다 */
 function 줄끝맞추기(파일글, 찾을글) {
   const CRLF = String.fromCharCode(13, 10);

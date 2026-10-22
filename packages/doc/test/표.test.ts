@@ -682,10 +682,24 @@ describe('셀을 나눈다', () => {
 });
 
 describe('쪽 경계에서 표를 어떻게 나눌까', () => {
-  it('셋을 다 줄 수 있다 — 규격 기본은 셀 단위다', () => {
+  /**
+   * **짝을 짐작했다가 거꾸로 넣었다.** 「나눔」을 `TABLE` 로 넣었는데 한글은 그것을
+   * 「셀 단위로 나눔」(COM PageBreak 1)으로 읽었다 — 긴 칸이 안 갈라지고 통째로 다음 쪽으로
+   * 밀렸다 (2026-10-22 가산점 양식). 한글에게 0·1·2 를 시켜 만든 기준 파일로 짝을 댄다.
+   */
+  it('**한글이 만든 표 셋을 한글의 이름대로 읽는다** — 나누지 않음·셀 단위로 나눔·나눔', () => {
+    const c = HwpxContainer.open(fs.readFileSync(path.join(기준파일, 'ref-table-pagebreak.hwpx')));
+    const xml = c.readText(c.sectionNames()[0]!);
+    const 표들 = findAll(parseXml(xml).root, 'hp:tbl').map((el) => new 표(el, xml));
+    expect(표들.map((t) => getAttr(t.el, 'pageBreak')), '기준 파일이 이 시험이 기대는 꼴이다')
+      .toEqual(['NONE', 'TABLE', 'CELL']);
+    expect(표들.map((t) => t.쪽넘김)).toEqual(['안나눔', '셀단위', '나눔']);
+  });
+
+  it('셋을 다 줄 수 있다 — 「나눔」은 CELL, 「셀 단위로 나눔」은 TABLE 이다', () => {
     const { t } = 표읽기('ref-table-basic.hwpx');
     for (const [값, 적힘] of [
-      ['나눔', 'TABLE'], ['셀단위', 'CELL'], ['안나눔', 'NONE'],
+      ['나눔', 'CELL'], ['셀단위', 'TABLE'], ['안나눔', 'NONE'],
     ] as ['나눔' | '셀단위' | '안나눔', string][]) {
       t.쪽넘김주기(값);
       expect(getAttr(t.el, 'pageBreak')).toBe(적힘);
@@ -693,10 +707,10 @@ describe('쪽 경계에서 표를 어떻게 나눌까', () => {
     }
   });
 
-  it('**적힌 것이 없으면 셀 단위다** (규격 기본값)', () => {
+  it('**적힌 것이 없으면 나눔이다** (규격 기본값 Cell — 칸 안 글도 나눈다)', () => {
     const { t } = 표읽기('ref-table-basic.hwpx');
     setAttr(t.el, 'pageBreak', '');
-    expect(t.쪽넘김).toBe('셀단위');
+    expect(t.쪽넘김).toBe('나눔');
   });
 });
 

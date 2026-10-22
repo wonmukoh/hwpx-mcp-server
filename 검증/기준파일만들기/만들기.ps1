@@ -158,6 +158,38 @@ $목록 = [ordered]@{
         }
     }
 
+    "ref-table-pagebreak" = @{
+        확인 = "쪽 경계에서 나누기(PageBreak 0·1·2)와 글자처럼 취급이 tbl/@pageBreak·pos/@treatAsChar 에 어떻게 적히나"
+        만들기 = {
+            # 대화상자 이름은 「나누지 않음 · 셀 단위로 나눔 · 나눔」 이고 COM 값은 0·1·2 다.
+            # 표마다 그 값을 하나씩 주고, 첫 표만 글자처럼 취급을 켠다 (학교 양식 표가 거의 다 그렇다).
+            # 짐작한 짝(나눔=TABLE)이 거꾸로였다 — 2026-10-22 가산점 양식에서 겪었다.
+            $h = $script:hwp
+            글 "표 셋 — 쪽 넘김 0·1·2"; 줄바꿈
+            foreach ($k in 0..2) {
+                $act = $h.CreateAction("TableCreate"); $set = $act.CreateSet(); $act.GetDefault($set)
+                $set.SetItem("Rows", 1); $set.SetItem("Cols", 1)
+                $set.SetItem("WidthType", 0); $set.SetItem("HeightType", 0)
+                $act.Execute($set) | Out-Null
+                글 ("표" + $k)
+                실행 "MoveDocEnd" | Out-Null
+                줄바꿈
+            }
+            $c = $h.HeadCtrl; $i = 0
+            while ($c -ne $null) {
+                if ($c.CtrlID -eq "tbl") {
+                    $p = $c.Properties
+                    $p.SetItem("PageBreak", $i)
+                    $p.SetItem("TreatAsChar", [int]($i -eq 0))
+                    $c.Properties = $p
+                    $i++
+                }
+                $c = $c.Next
+            }
+            if ($i -ne 3) { throw "표를 셋 만들려 했는데 $i 개다" }
+        }
+    }
+
     "ref-image" = @{
         확인 = "그림 — pic/orgSz/curSz/imgRect/BinData 압축 방식/manifest"
         만들기 = {

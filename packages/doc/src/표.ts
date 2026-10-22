@@ -1082,27 +1082,63 @@ export class 표 {
   /**
    * **쪽 경계에서 표를 어떻게 나눌까.** 「표/셀 속성 → 표」의 「여러 쪽 지원」이다.
    *
-   * | 대화상자 | 값 | 무슨 뜻인가 |
-   * |---|---|---|
-   * | 나눔 | `TABLE` | 표는 나누되 **셀은 안 나눈다** — 칸이 통째로 다음 쪽으로 |
-   * | 셀 단위로 나눔 | `CELL` | 셀 **안의 글까지** 나눈다 |
-   * | 나누지 않음 | `NONE` | 안 나눈다 — 표가 통째로 다음 쪽으로 넘어간다 |
+   * | 대화상자 | COM PageBreak | 값 | 무슨 뜻인가 |
+   * |---|---|---|---|
+   * | 나눔 | 2 | `CELL` | 셀 **안의 글까지** 나눈다 — 긴 칸이 두 쪽에 걸쳐 이어진다 |
+   * | 셀 단위로 나눔 | 1 | `TABLE` | 줄 경계에서만 나눈다 — 칸은 통째로 다음 쪽으로 |
+   * | 나누지 않음 | 0 | `NONE` | 안 나눈다 — 표가 통째로 다음 쪽으로 넘어간다 |
+   *
+   * **이름이 엇갈린다** — 「셀 단위로 나눔」이 `TABLE` 이고 「나눔」이 `CELL` 이다. 규격도 그렇게
+   * 적었다(Table: 테이블은 나누지만 셀은 나누지 않는다 · Cell: 셀 내의 텍스트도 나눈다). 전에는 이름만
+   * 보고 거꾸로 짝지어, 「나눔」을 줘도 긴 칸이 안 갈라지고 통째로 다음 쪽으로 밀렸다 (2026-10-22
+   * 가산점 양식). 한글에게 0·1·2 를 시켜 만든 기준 파일이 `ref-table-pagebreak.hwpx` 다.
    *
    * 실측에서 셋이 다 쓰인다 — `CELL` 333 · `NONE` 20 · `TABLE` 2.
    * 그런데 우리 표 조각에는 `CELL` 이 박혀 있고 **바꿀 길이 없었다.**
    * 한 쪽에 꼭 붙어 있어야 하는 결재란·서명란이 `NONE` 이라야 하는데 못 줬다.
    */
   쪽넘김주기(값: '나눔' | '셀단위' | '안나눔'): void {
-    const 표기 = { 나눔: 'TABLE', 셀단위: 'CELL', 안나눔: 'NONE' } as const;
+    const 표기 = { 나눔: 'CELL', 셀단위: 'TABLE', 안나눔: 'NONE' } as const;
     setAttr(this.el, 'pageBreak', 표기[값]);
   }
 
   get 쪽넘김(): '나눔' | '셀단위' | '안나눔' {
     switch (getAttr(this.el, 'pageBreak')) {
-      case 'TABLE': return '나눔';
+      case 'TABLE': return '셀단위';
       case 'NONE': return '안나눔';
-      default: return '셀단위';   // 규격 기본값이 Cell 이다
+      default: return '나눔';   // 규격 기본값이 Cell 이다 — 「나눔」
     }
+  }
+
+  /**
+   * **글자처럼 취급**(`hp:pos/@treatAsChar`)을 켜고 끈다. 「표/셀 속성 → 기본 → 위치」의 그 칸이다.
+   *
+   * 켜진 표는 글자 하나처럼 줄 안에 든다 — 그래서 **쪽을 못 넘긴다.** 쪽 넘김을 무엇으로 줘도
+   * 쪽보다 길어지면 통째로 다음 쪽으로 밀리고 넘친 것은 잘린다 (2026-10-22 가산점 양식). 학교 양식
+   * 표는 거의 다 켜져 있어서, 칸에 긴 글을 넣는 양식이면 끄고 `쪽넘김주기('나눔')` 를 같이 준다.
+   *
+   * 한글에게 끄라고 시켜 보면(COM `TreatAsChar=0` 뒤 저장) 바뀌는 것은 이 속성 하나와 **표를 붙든
+   * 문단의 `hp:linesegarray`** 다. 그 줄 정보는 표를 글자 하나로 쳐서 잰 것이라(높이 61099 짜리
+   * 한 줄) 끄면 틀린 값이 된다. 한글도 지우고 저장했다. 그래서 같이 지운다 — 켤 때도 마찬가지다.
+   */
+  글자처럼주기(켤까: boolean): 결과<{ 바뀜: boolean }> {
+    const pos = firstChildNamed(this.el, 'hp:pos');
+    if (pos === undefined) {
+      return 안됨('이 표에 자리 잡기(hp:pos)가 없다', '한글이 만든 표라면 늘 있다. 깨진 표다.');
+    }
+    const 값 = 켤까 ? '1' : '0';
+    if (getAttr(pos, 'treatAsChar') === 값) return 됨({ 바뀜: false });
+    setAttr(pos, 'treatAsChar', 값);
+    let 위 = this.el.parent as ElementNode | undefined;
+    while (위 !== undefined && 위.name !== 'hp:p') 위 = 위.parent as ElementNode | undefined;
+    if (위 !== undefined) for (const 배치 of childrenNamed(위, 'hp:linesegarray')) removeNode(배치);
+    return 됨({ 바뀜: true });
+  }
+
+  /** 글자처럼 취급하나. 안 적혀 있으면 꺼진 것으로 친다 (규격에 기본값이 안 적혀 있다) */
+  get 글자처럼(): boolean {
+    const pos = firstChildNamed(this.el, 'hp:pos');
+    return pos !== undefined && getAttr(pos, 'treatAsChar') === '1';
   }
 
   /** 머리 줄을 쪽마다 되풀이할까 */

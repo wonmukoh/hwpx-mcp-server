@@ -143,7 +143,7 @@ args = ["-y", "hwpx-mcp"]
   split_cell        합침을 푼다. rows·cols 를 주면 성한 칸에 금을 긋는다
   split_table       표를 두 개로 가른다
   join_tables       표 둘을 이어 붙인다
-  set_table         쪽 경계에서 나누는 방식 · 머리 줄 되풀이
+  set_table         쪽 경계에서 나누는 방식 · 머리 줄 되풀이 · 글자처럼 취급 (끄면 표가 쪽을 넘긴다)
 
 넣고 빼기
 

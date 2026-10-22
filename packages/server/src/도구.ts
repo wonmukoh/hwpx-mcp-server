@@ -405,9 +405,19 @@ const 고침스키마: 스키마 = 묶음('고칠 것 하나', {
   // 한 칸을 500×500 으로 나누면 1분이 걸렸다 — 쓸 일이 없는 크기는 입구에서 막는다
   rows: 범위(정수('split_cell — 세로로 몇 줄로 나눌까. 안 주면 합침을 푼다'), 1, 100),
   cols: 범위(정수('split_cell — 가로로 몇 칸으로 나눌까. 안 주면 합침을 푼다'), 1, 100),
-  page_break: 고름('set_table — 쪽 경계에서 표를 어떻게 나눌까',
+  page_break: 고름(
+    'set_table — 쪽 경계에서 표를 어떻게 나눌까. split 은 한글의 「나눔」(칸 안 글도 두 쪽에 걸쳐 '
+    + '이어진다) · cell 은 「셀 단위로 나눔」(줄 경계에서만 나뉘고 긴 칸은 통째로 다음 쪽으로) · '
+    + 'none 은 「나누지 않음」. **글자처럼 취급하는 표는 무엇을 줘도 안 나뉜다** — treat_as_char: false 를 같이 준다',
     ['split', 'cell', 'none']),
   repeat_header: 참거짓('set_table — 머리 줄을 쪽마다 되풀이할까'),
+  // 학교 양식 표는 거의 다 글자처럼 취급이 켜져 있다. 켜진 표는 쪽을 못 넘겨, 칸에 긴 글을
+  // 넣으면 표가 통째로 다음 쪽으로 밀리고 잘렸다 (2026-10-22 가산점 양식). 끌 길이 없었다.
+  treat_as_char: 참거짓(
+    'set_table — 글자처럼 취급 (「표/셀 속성 → 기본 → 위치」). 켜진 표는 글자 하나처럼 줄 안에 들어 '
+    + '**쪽을 못 넘긴다** — 칸에 긴 글을 넣어 표가 한 쪽보다 길어지면 false 로 끄고 page_break: split 을 같이 준다. '
+    + 'get_content 의 treat_as_char 로 지금 값을 본다',
+  ),
   with_id: 글자(
     'join_tables — 아래에 이어 붙일 표 ID (tbl_…). id 표보다 문서에서 뒤에 있어야 하고, '
     + '캡션이 있으면 거절한다 (붙이면 캡션이 사라진다)',
@@ -920,11 +930,12 @@ export const 도구들: 도구[] = [
       // **써 놓고 확인할 길이 없으면 안 쓴 것과 같다.** set_table 로 넣고 저장한 뒤
       // 다시 열어도 돌아오는 것이 없어, 부르는 쪽이 「됐다」 는 말만 믿어야 했다.
       page_break: 글자(
-        '표일 때 — 쪽 경계에서 나누는 방식. split · cell · none. '
-        + "적혀 있지 않으면 규격 기본인 cell 로 낸다 — 「안 준 것」과 「cell 로 준 것」은 "
-        + '규격상 구분되지 않는다. none·split 은 구분된다',
+        '표일 때 — 쪽 경계에서 나누는 방식. split(나눔) · cell(셀 단위로 나눔) · none(나누지 않음). '
+        + "적혀 있지 않으면 규격 기본인 split 으로 낸다 — 「안 준 것」과 「split 으로 준 것」은 "
+        + '규격상 구분되지 않는다. none·cell 은 구분된다',
       ),
       repeat_header: 참거짓('표일 때 — 머리 줄을 쪽마다 되풀이하나'),
+      treat_as_char: 참거짓('표일 때 — 글자처럼 취급하나. true 면 표가 쪽을 못 넘긴다 (set_table 로 끈다)'),
       // 칸일 때만. **문단마다 ID 를 준다** — 줄마다 따로 채우려면 이게 있어야 한다.
       paragraphs: 목록('칸일 때 — 그 안의 문단들 (줄 차례로)', 묶음('문단 하나', {
         id: 글자('문단 ID'),
@@ -1042,6 +1053,7 @@ export const 도구들: 도구[] = [
           ok: true, id: 인자.id, kind: 'table',
           rows: t.줄수, cols: t.칸수, cells: 칸들, empty: 다빔,
           page_break: 쪽넘김밖이름[t.쪽넘김], repeat_header: t.머리행반복,
+          treat_as_char: t.글자처럼,
         });
     }),
   },
@@ -1654,7 +1666,7 @@ interface 고침 {
   note?: 'footnote' | 'endnote'; level?: number; gap?: number;
   rowspan?: number; colspan?: number;
   rows?: number; cols?: number;
-  page_break?: string; repeat_header?: boolean;
+  page_break?: string; repeat_header?: boolean; treat_as_char?: boolean;
   with_id?: string;
   path?: string; width?: number; height?: number;
 }
@@ -2022,11 +2034,30 @@ function 고침하나(d: 문서, e: 고침): 결과<number | { 수: number; 말:
         t.value.머리행반복주기(e.repeat_header);
         바뀐수++;
       }
-      if (바뀐수 === 0) {
+      if (e.treat_as_char !== undefined) {
+        const r = t.value.글자처럼주기(e.treat_as_char);
+        if (!r.ok) return r;
+        if (r.value.바뀜) 바뀐수++;
+      }
+      if (e.page_break === undefined && e.repeat_header === undefined && e.treat_as_char === undefined) {
         return 안됨(
           'set_table 에 바꿀 것이 없다',
-          'page_break 나 repeat_header 가운데 하나는 줘라.',
+          'page_break · repeat_header · treat_as_char 가운데 하나는 줘라.',
         );
+      }
+      // **나누랬는데 못 나뉘는 짝을 말한다.** 글자처럼 취급하는 표는 쪽 넘김을 무엇으로 줘도
+      // 쪽을 못 넘긴다 — 가산점 양식에서 page_break 를 줬는데도 표가 통째로 밀려 잘렸다.
+      if (t.value.글자처럼 && t.value.쪽넘김 !== '안나눔' && e.page_break !== undefined) {
+        return 됨({
+          수: 바뀐수,
+          말: '이 표는 글자처럼 취급이 켜져 있어 쪽을 못 넘긴다 — page_break 가 먹으려면 treat_as_char: false 를 같이 줘라.',
+        });
+      }
+      if (!t.value.글자처럼 && t.value.쪽넘김 === '안나눔' && e.treat_as_char === false) {
+        return 됨({
+          수: 바뀐수,
+          말: '글자처럼 취급은 껐지만 쪽 넘김이 none 이라 표가 여전히 안 나뉜다 — page_break: split 을 같이 줘라.',
+        });
       }
       return 됨(바뀐수);
     }

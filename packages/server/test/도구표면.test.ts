@@ -1857,10 +1857,12 @@ describe('써 놓고 확인할 길이 있나', () => {
     }
   });
 
-  it('안 준 표는 규격 기본인 cell 로 낸다', async () => {
+  it('compose 가 짠 표는 split 으로 낸다 — 조각에 박힌 CELL 은 한글의 「나눔」이다', async () => {
+    // 전에는 CELL 을 cell(셀 단위로 나눔)로 읽었다. 한글에게 물으니 CELL 은 칸 안 글까지
+    // 나누는 「나눔」(COM PageBreak 2)이었다 (2026-10-22, 기준 파일 ref-table-pagebreak).
     const { 방, doc_id, 표아이디 } = await 표든문서();
     const r = await 도구부르기('get_content', { doc_id, id: 표아이디 }, 방);
-    expect(r.structuredContent!['page_break']).toBe('cell');
+    expect(r.structuredContent!['page_break']).toBe('split');
   });
 
   it('머리 줄 되풀이도 돌아온다 — 켜고 끄는 것이 다 보인다', async () => {

@@ -181,13 +181,25 @@ export class 문단 {
           '표 안에 쓰려면 셀 ID(cell_…)로 가리켜라. 새 글은 문단을 새로 만들어 넣어라.',
         );
       }
-      // 정말 빈 문단이면 글칸을 만들어 넣는다
+      // 정말 빈 문단이면 글칸을 만들어 넣는다. 빈 데 빈 글이면 할 것이 없다 — 실패가 아니라 0 이다.
+      if (새글 === '') return 됨({ 바뀐수: 0, 잃은서식: 0 });
       const 새칸 = createElement('hp:t', {});
       글자칸쓰기(새칸, 새글);
-      const 런 = createElement('hp:run', { charPrIDRef: '0' }, [새칸]);
-      const 배치 = firstChildNamed(this.el, 'hp:linesegarray');
-      if (배치) insertBefore(배치, 런);
-      else appendChild(this.el, 런);
+      // **한글이 남겨 둔 빈 런에 넣는다.** 빈 문단은 거의 다 `<hp:run charPrIDRef="18"/>` 하나다
+      // (표본 빈 문단 2463개가 그 꼴이고 빈 런이 둘인 것은 없다). 그 런이 이 자리에서 글쇠를 치면
+      // 받을 서식이다. 전에는 charPr 0 런을 새로 내어 그 뒤에 붙여서, 12pt 휴먼명조 양식에
+      // 함초롬바탕 10pt 로 찍혔다 (2026-10-22 가산점 양식). 런이 아예 없으면 앞 문단의 런을 잇는다.
+      const 빈런 = 런들[0];
+      if (빈런) appendChild(빈런, 새칸);
+      else {
+        const 런 = createElement('hp:run', { charPrIDRef: 앞런서식(this.el) }, [새칸]);
+        const 배치 = firstChildNamed(this.el, 'hp:linesegarray');
+        if (배치) insertBefore(배치, 런);
+        else appendChild(this.el, 런);
+      }
+      // **줄 정보도 지운다.** 빈 줄 하나로 잰 `hp:lineseg` 가 남으면 한글이 그 말을 믿고
+      // 여러 줄 글을 한 줄에 겹쳐 그린다. 글이 있던 문단은 지우면서 빈 문단만 빠뜨렸다 (같은 날).
+      줄정보지우기(this.el);
       return 됨({ 바뀐수: 1, 잃은서식: 0 });
     }
 
@@ -1336,6 +1348,24 @@ export class 구역 {
  */
 function 줄정보지우기(문단el: ElementNode): void {
   for (const arr of childrenNamed(문단el, 'hp:linesegarray')) removeNode(arr);
+}
+
+/**
+ * 런이 하나도 없는 문단에 글을 넣을 때 쓸 서식 — **같은 통에서 앞 문단의 마지막 런**.
+ *
+ * 글쇠로 칠 때처럼 바로 앞 글의 서식을 잇는다. 앞이 없으면 0 이다.
+ * (표본에 런 없는 문단은 둘뿐이라 드문 길이다. 빈 런이 있으면 그 런을 쓴다.)
+ */
+function 앞런서식(문단el: ElementNode): string {
+  const 통 = 문단el.parent as ElementNode | undefined;
+  if (!통) return '0';
+  const 형제 = childrenNamed(통, 'hp:p');
+  for (let i = 형제.indexOf(문단el) - 1; i >= 0; i--) {
+    const 런 = childrenNamed(형제[i]!, 'hp:run').at(-1);
+    const 서식 = 런 && getAttr(런, 'charPrIDRef');
+    if (서식 !== undefined) return 서식;
+  }
+  return '0';
 }
 
 /**

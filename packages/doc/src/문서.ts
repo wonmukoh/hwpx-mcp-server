@@ -311,35 +311,83 @@ export class 문서 {
     return this.남기기('글바꾸기', id, p.value.글바꾸기(새글));
   }
 
-  /** 글자 서식. 스타일은 복제·지문 대조를 거친다 */
-  글자서식주기(id: string, 패치: 글자모양패치): 결과<{ charPrId: string; 바뀐수: number }> {
+  /**
+   * **서식을 줄 문단들** — 문단 ID 면 그 문단, 칸 ID 면 **칸의 문단 전부.**
+   *
+   * 전에는 칸을 줘도 `문단찾기` 로 첫 문단만 집었다. 「주요 활동 실적」처럼 문단이 여럿인 칸에
+   * 크기를 주면 첫 줄만 바뀌고 나머지는 그대로였다 (2026-10-22 가산점 양식) — 칸글바꾸기가
+   * 예전에 밟았던 것과 같은 조용한 반쪽이다.
+   */
+  private 서식줄문단들(id: string): 결과<문단[]> {
+    const r = this.찾기(id);
+    if (r.ok && r.value.갈래 === '셀') return this.칸문단들(id);
     const p = this.문단찾기(id);
-    if (!p.ok) return this.남기기('글자서식주기', id, p);
-
-    const 지금 = p.value.글자모양들[0] ?? '0';
-    const 확보 = this.머리.charPr확보(지금, 패치);
-    if (!확보.ok) return this.남기기('글자서식주기', id, 확보);
-
-    const r = p.value.글자모양주기(확보.value.id);
-    if (!r.ok) return this.남기기('글자서식주기', id, r);
-    return this.남기기('글자서식주기', id, 됨({ charPrId: 확보.value.id, 바뀐수: r.value.바뀐수 }));
+    return p.ok ? 됨([p.value]) : p;
   }
 
-  /** 문단 서식 (정렬·여백·줄간격) */
-  문단서식주기(id: string, 패치: 문단모양패치): 결과<{ paraPrId: string; 바뀐수: number }> {
-    const p = this.문단찾기(id);
-    if (!p.ok) return this.남기기('문단서식주기', id, p);
+  /**
+   * 글자 서식. 스타일은 복제·지문 대조를 거친다.
+   *
+   * **런마다 제 서식에 패치를 얹는다.** 전에는 첫 런의 서식에 얹은 것 하나로 런을 다 덮어서,
+   * 크기만 바꾸랬는데 문장 가운데 굵은 낱말이 풀리고 칸 머리의 「○」 런까지 글 런의 모양이 됐다.
+   * 빈 런도 바꾼다 — 나중에 그 빈 문단에 글을 넣으면 그 런의 서식을 잇기 때문이다.
+   * 돌려주는 `charPrId` 는 첫 런의 것이다.
+   */
+  글자서식주기(id: string, 패치: 글자모양패치): 결과<{ charPrId: string; 바뀐수: number }> {
+    const 것들 = this.서식줄문단들(id);
+    if (!것들.ok) return this.남기기('글자서식주기', id, 것들);
 
-    const 확보 = this.머리.paraPr확보(p.value.문단모양, 패치);
-    if (!확보.ok) return this.남기기('문단서식주기', id, 확보);
-    // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
-    // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
-    // 주면 그랬다, 2026-09-27 검토 둘이 잼).
-    if (확보.value.id === p.value.문단모양) {
-      return this.남기기('문단서식주기', id, 됨({ paraPrId: 확보.value.id, 바뀐수: 0 }));
+    const 옮김 = new Map<string, string>();   // 옛 charPr → 패치를 얹은 charPr
+    const 얹기 = (옛: string): 결과<string> => {
+      const 있던것 = 옮김.get(옛);
+      if (있던것 !== undefined) return 됨(있던것);
+      const 확보 = this.머리.charPr확보(옛, 패치);
+      if (!확보.ok) return 확보;
+      옮김.set(옛, 확보.value.id);
+      return 됨(확보.value.id);
+    };
+    let charPrId: string | undefined;
+    let 바뀐수 = 0;
+    for (const p of 것들.value) {
+      for (const 런 of p.런들) {
+        const 옛 = getAttr(런, 'charPrIDRef') ?? '0';
+        const 새 = 얹기(옛);
+        if (!새.ok) return this.남기기('글자서식주기', id, 새);
+        charPrId ??= 새.value;
+        // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙
+        if (새.value === 옛) continue;
+        setAttr(런, 'charPrIDRef', 새.value);
+        바뀐수++;
+      }
     }
-    p.value.문단모양주기(확보.value.id);
-    return this.남기기('문단서식주기', id, 됨({ paraPrId: 확보.value.id, 바뀐수: 1 }));
+    if (charPrId === undefined) {
+      // 런이 하나도 없다 — 서식을 걸 자리가 없다. 바탕 서식에 얹은 것을 알려만 준다.
+      const 확보 = this.머리.charPr확보('0', 패치);
+      if (!확보.ok) return this.남기기('글자서식주기', id, 확보);
+      charPrId = 확보.value.id;
+    }
+    return this.남기기('글자서식주기', id, 됨({ charPrId, 바뀐수 }));
+  }
+
+  /** 문단 서식 (정렬·여백·줄간격). 칸 ID 면 칸의 문단 전부에, 문단마다 제 모양에 얹는다 */
+  문단서식주기(id: string, 패치: 문단모양패치): 결과<{ paraPrId: string; 바뀐수: number }> {
+    const 것들 = this.서식줄문단들(id);
+    if (!것들.ok) return this.남기기('문단서식주기', id, 것들);
+
+    let paraPrId: string | undefined;
+    let 바뀐수 = 0;
+    for (const p of 것들.value) {
+      const 확보 = this.머리.paraPr확보(p.문단모양, 패치);
+      if (!확보.ok) return this.남기기('문단서식주기', id, 확보);
+      paraPrId ??= 확보.value.id;
+      // **「이미 그랬다」는 실패가 아니라 0 이다** — set_text 와 같은 원칙. 실패로 내면
+      // edit 묶음이 거기서 멈춰 뒤 고침이 안 들어간다 (머리 줄이 이미 굵은 양식에 굵게를
+      // 주면 그랬다, 2026-09-27 검토 둘이 잼).
+      if (확보.value.id === p.문단모양) continue;
+      p.문단모양주기(확보.value.id);
+      바뀐수++;
+    }
+    return this.남기기('문단서식주기', id, 됨({ paraPrId: paraPrId!, 바뀐수 }));
   }
 
   /** 문단 안 어구만 강조 */

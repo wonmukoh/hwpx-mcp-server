@@ -276,7 +276,7 @@ describe('표', () => {
 
     it('그림 채우기는 **색으로 흉내 내지 않는다**', () => {
       // 엉뚱한 색을 칠하느니 비워 두는 편이 낫다
-      const d = 열기(path.join(표본, '로컬'), '그림많음-돌봄교실계획.hwpx');
+      const d = 열기(path.join(표본, '로컬'), '그림많음-돌봄방과후길라잡이.hwpx');
       const 머리 = parseXml(d.머리.toXml()).root;
       expect(findAll(머리, 'hc:imgBrush').length,
         'imgBrush 가 없으면 이 시험은 아무것도 안 본다').toBeGreaterThan(0);

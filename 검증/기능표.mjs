@@ -512,5 +512,32 @@ if (거짓말.length) {
   console.log(`\n**말과 파일이 다른 것 ${거짓말.length}건** — 이건 없는 기능보다 나쁘다:`);
   for (const r of 거짓말) console.log(`  ✗ ${r.갈래} / ${r.이름}`);
 }
+// ── 계획서의 '우리' 표를 다시 쓴다 ───────────────────────────────────────
+// 머리 주석에 적어 두고 안 만들어서, 06-계획.md 의 표가 44/59 에 멈춰 있었다
+// (0.8.0 에서 59/59 가 된 뒤로도 두 판 동안). 손으로 고치면 또 묵는다.
+if (process.argv.includes('--계획고치기')) {
+  const 계획 = path.join(뿌리, '기획', '06-계획.md');
+  const 글 = fs.readFileSync(계획, 'utf8');
+  const 줄끝 = 글.includes('\r\n') ? '\r\n' : '\n';
+  const 시작 = 글.indexOf('## 우리가 지금 할 수 있는 것');
+  const 표시작 = 글.indexOf(`${줄끝}### `, 시작);
+  const 끝 = 글.indexOf(`${줄끝}## `, 시작 + 1);
+  if (시작 < 0 || 표시작 < 0 || 끝 < 0 || 표시작 > 끝) {
+    console.error('\n06-계획.md 에서 「## 우리가 지금 할 수 있는 것」 절을 못 찾았다 — 안 고쳤다');
+    process.exit(1);
+  }
+  const 줄들 = [];
+  for (const 갈 of [...new Set(나온것.map((r) => r.갈래))]) {
+    줄들.push(`### ${갈}`, '', '| 기능 | 됨 | 비고 |', '|---|---|---|');
+    for (const r of 나온것.filter((r) => r.갈래 === 갈)) {
+      줄들.push(`| ${r.이름} | ${r.됨 ? '○' : '—'} | ${r.됨 ? '' : (r.왜 ?? '').replaceAll('|', '/')} |`);
+    }
+    줄들.push('');
+  }
+  줄들.push(`**${나온것.length}개 가운데 ${됨수}개.**`, '', '`—` 는 아직 넣을 길이 없는 것이다.', '', '');
+  fs.writeFileSync(계획, 글.slice(0, 표시작 + 줄끝.length) + 줄들.join(줄끝) + 글.slice(끝 + 줄끝.length));
+  console.log('\n기획/06-계획.md 의 「우리가 지금 할 수 있는 것」 표를 고쳤다');
+}
+
 // '없는 기능' 은 탈이 아니다. **거짓말만** 빌드를 깬다.
 process.exit(거짓말.length ? 1 : 0);

@@ -23,11 +23,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // 한글 경로가 섞이면 URL 을 손으로 다루면 안 된다. fileURLToPath 를 쓴다.
 const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
+const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
-// tsx 없이 돌리려고 소스를 직접 읽어 쓴다 (파서는 의존성이 없다)
-const { parseXml, serializeXml } = await import(
-  pathToFileURL(path.join(뿌리, '검증', '.빌드', 'index.js')).href
-);
+const { parseXml, serializeXml } = await import(B('owpml'));
 
 function readZip(file) {
   const buf = fs.readFileSync(file);

@@ -13,10 +13,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
+const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
-const { HwpxContainer } = await import(
-  pathToFileURL(path.join(뿌리, '검증', '.빌드hwpx', 'index.js')).href
-);
+const { HwpxContainer } = await import(B('hwpx'));
 
 const 원본경로 = path.join(뿌리, '자료', '기준파일', 'ref-blank.hwpx');
 const 바이트 = fs.readFileSync(원본경로);

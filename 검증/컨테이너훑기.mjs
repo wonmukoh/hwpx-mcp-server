@@ -18,10 +18,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
+const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
-const { HwpxContainer } = await import(
-  pathToFileURL(path.join(뿌리, '검증', '.빌드hwpx', 'index.js')).href
-);
+const { HwpxContainer } = await import(B('hwpx'));
 
 function 첫차이(a, b) {
   const n = Math.min(a.length, b.length);

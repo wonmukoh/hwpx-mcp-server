@@ -22,13 +22,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
+const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
-const { HwpxContainer } = await import(
-  pathToFileURL(path.join(뿌리, '검증', '.빌드hwpx', 'index.js')).href
-);
-const { parseXml, serializeXml, findAll, childrenNamed, setAttr } = await import(
-  pathToFileURL(path.join(뿌리, '검증', '.빌드', 'index.js')).href
-);
+const { HwpxContainer } = await import(B('hwpx'));
+const { parseXml, serializeXml, findAll, childrenNamed, setAttr } = await import(B('owpml'));
 
 const 무대 = path.join(os.tmpdir(), 'hwpx-unit');
 fs.rmSync(무대, { recursive: true, force: true });

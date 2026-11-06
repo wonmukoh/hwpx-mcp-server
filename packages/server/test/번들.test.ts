@@ -9,7 +9,7 @@
  * 살아 있어서, `__dirname` 갈래를 없애도 시험이 다 통과한다.
  * **정말 묶어서 돌려 봐야 안다.**
  */
-import { describe, expect, it, beforeAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -26,10 +26,14 @@ const esbuild = path.join(뿌리, 'node_modules', 'esbuild', 'bin', 'esbuild');
  * 묶는 사이에 남이 갈아치우면 esbuild 가 읽던 파일이 사라진다.
  * 실제로 **간헐적으로** 그랬다: 혼자 돌리면 되고 전체를 돌리면 가끔 깨졌다.
  *
- * `.빌드전체` 는 vitest 도는 동안 아무도 안 건드린다 —
- * 시험들은 소스(`../src`)를 직접 부르고, 굽는 시험은 `--배포`(dist)만 만진다.
+ * **`.빌드전체` 에도 굽지 않는다** — 제 임시 자리(`--낼곳`)에 굽는다. 전에는 `.빌드전체` 에 구웠는데,
+ * 고장 내보기가 고장을 심은 채 이 시험을 부르면 `.빌드전체` 에 고장이 담긴 채 남았다. 그 뒤의
+ * 한글 갈래들이 모두 그것을 물었다 (2026-11-05, 마지막 고장 「save_document 가 지운 수를 안 말한다」가
+ * 그대로 담겨 있었다 — `자료/실측.md` 28항과 같은 꼴).
  */
-const 진입점 = path.join(뿌리, '검증', '.빌드전체', 'packages', 'server', 'src', 'index.js');
+// 저장소 **안**에 굽는다 — 밖에 구우면 node_modules 를 못 찾는다 (굽는동안.test.ts 와 같은 수)
+const 굽는곳 = path.join(뿌리, '검증', `.빌드번들.${process.pid}`);
+const 진입점 = path.join(굽는곳, 'packages', 'server', 'src', 'index.js');
 
 /**
  * 묶어서 돌린 결과.
@@ -41,6 +45,10 @@ let 잰것: { 판: string; 이름: string } | undefined;
 let 못한까닭: string | undefined;
 let 적힌판 = '';
 
+afterAll(() => {
+  fs.rmSync(굽는곳, { recursive: true, force: true });
+});
+
 beforeAll(() => {
  try {
   적힌판 = (JSON.parse(fs.readFileSync(path.join(뿌리, 'package.json'), 'utf8')) as
@@ -48,7 +56,7 @@ beforeAll(() => {
 
   // 먼저 굽는다 — 묵은 것을 묶으면 옛것을 재게 된다.
   // **`--배포` 를 안 준다.** dist 는 남이 갈아치우는 자리다(위 설명).
-  execFileSync(process.execPath, [path.join(뿌리, '검증', '빌드.mjs')],
+  execFileSync(process.execPath, [path.join(뿌리, '검증', '빌드.mjs'), '--낼곳', 굽는곳],
     { cwd: 뿌리, stdio: 'pipe' });
 
   const 방 = fs.mkdtempSync(path.join(os.tmpdir(), 'cjs번들-'));

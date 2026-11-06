@@ -586,6 +586,11 @@ export const 도구들: 도구[] = [
         + '다시 열었을 때 표·문단·칸 ID 가 달라질 수 있고, 옛 ID 가 딴 것을 가리킬 수 있다 — '
         + 'get_outline·find 로 다시 받아야 한다. 연 채로 이어 쓰는 동안은 옛 ID 가 그대로다',
       ),
+      lineseg_cleared: 정수(
+        '글보다 뒤를 가리켜 **한글 2024 가 파일을 못 열게 하던** 줄 정보(lineseg)를 지운 문단 수. '
+        + '0 이 아니면 원본 파일은 한글 2024 에서 안 열렸고, 저장한 파일은 열린다. 글·서식은 그대로이고 '
+        + '한글이 열 때 줄을 다시 잰다',
+      ),
     }, ['ok']),
     annotations: { title: '문서 저장', destructiveHint: true, idempotentHint: true },
     처리: 검사하고<{ doc_id: string; path?: string; overwrite?: boolean; force?: boolean }>(저장스키마, (인자, 방) => {
@@ -670,6 +675,7 @@ export const 도구들: 도구[] = [
       것.it.파일표 = 파일표(낼곳);
       것.it.안저장 = false;
       const 밀렸다 = 것.it.구조바꿈 === true;
+      const 지운줄 = 것.it.d.지운넘친줄정보;
       return 잘됨(
         `${path.basename(낼곳)} 로 저장했다 (${바이트.length.toLocaleString()}바이트)`
         + (밀렸다
@@ -680,8 +686,16 @@ export const 도구들: 도구[] = [
             '지금 연 문서(doc_id)로는 그대로 쓸 수 있다. 다시 열어 쓸 것이면 '
             + 'get_outline·find 로 ID 를 새로 받아라.',
           ].join('\n')
+          : '')
+        + (지운줄 > 0
+          ? [
+            '',
+            '',
+            `**원본은 한글 2024 에서 안 열리는 파일이었다** — 글보다 뒤를 가리키는 줄 정보가 ${지운줄}문단에 있었다.`,
+            '그 줄 정보만 지우고 저장했다. 글·서식은 그대로이고, 한글이 열 때 줄을 다시 잰다.',
+          ].join('\n')
           : ''),
-        { ok: true, path: 낼곳, bytes: 바이트.length, ids_stale: 밀렸다 },
+        { ok: true, path: 낼곳, bytes: 바이트.length, ids_stale: 밀렸다, ...(지운줄 > 0 ? { lineseg_cleared: 지운줄 } : {}) },
       );
     }),
   },

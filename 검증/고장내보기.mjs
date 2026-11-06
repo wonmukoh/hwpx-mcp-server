@@ -774,8 +774,8 @@ const 고장들 = [
   [
     '저장 답에 ids_stale 을 안 싣는다 (말로만 적으면 기계가 못 읽는다)',
     'packages/server/src/도구.ts',
-    '        { ok: true, path: 낼곳, bytes: 바이트.length, ids_stale: 밀렸다 },',
-    '        { ok: true, path: 낼곳, bytes: 바이트.length },',
+    '        { ok: true, path: 낼곳, bytes: 바이트.length, ids_stale: 밀렸다, ...(지운줄 > 0 ? { lineseg_cleared: 지운줄 } : {}) },',
+    '        { ok: true, path: 낼곳, bytes: 바이트.length, ...(지운줄 > 0 ? { lineseg_cleared: 지운줄 } : {}) },',
     'packages/server',
   ],
   [
@@ -1733,7 +1733,7 @@ const 고장들 = [
   [
     '고친 문서의 미리보기에 옛 글이 남는다 (지운 이름이 zip 에 남는다)',
     'packages/doc/src/문서.ts',
-    '    if (this.dirty) this.통.미리보기갈기(this.미리보기글());',
+    '    if (고쳤나) this.통.미리보기갈기(this.미리보기글());',
     '    void this.미리보기글;',
     'packages/server',
   ],
@@ -1922,6 +1922,41 @@ const 고장들 = [
     'packages/server/src/도구.ts',
     '          treat_as_char: t.글자처럼,',
     '',
+    'packages/server',
+  ],
+  // ── 한글 2024 가 안 여는 넘친 줄 정보 (2026-11-05) ──────────────────────────
+  [
+    '저장할 때 넘친 줄 정보를 안 지운다 (원본이 안 열리던 양식이 그대로 안 열린다)',
+    'packages/doc/src/문서.ts',
+    '    for (const doc of this.구역doc.values()) this.지운넘친줄정보 += 넘친줄정보지우기(doc.root);',
+    '    void 넘친줄정보지우기;',
+    'packages/doc',
+  ],
+  [
+    '한 칸 넘는 줄 정보까지 지운다 (한글이 여는 멀쩡한 파일의 바이트가 바뀐다)',
+    'packages/doc/src/본문.ts',
+    '    if (끝 > 문단글위길이(p) + 1) {',
+    '    if (끝 > 문단글위길이(p)) {',
+    'packages/doc',
+  ],
+  [
+    '표 칸 안 문단은 안 본다 (가장 바깥 문단만 훑는다)',
+    'packages/doc/src/본문.ts',
+    [
+      "  for (const p of findAll(뿌리, 'hp:p')) {",
+      "    const 배치들 = childrenNamed(p, 'hp:linesegarray');",
+    ],
+    [
+      "  for (const p of childrenNamed(뿌리, 'hp:p')) {",
+      "    const 배치들 = childrenNamed(p, 'hp:linesegarray');",
+    ],
+    'packages/doc',
+  ],
+  [
+    'save_document 가 넘친 줄 정보를 지운 것을 말하지 않는다 (조용한 고침)',
+    'packages/server/src/도구.ts',
+    '      const 지운줄 = 것.it.d.지운넘친줄정보;',
+    '      const 지운줄 = 0;',
     'packages/server',
   ],
 ];

@@ -96,6 +96,20 @@ for (const [i, 양식] of 양식들.entries()) {
 
   const 방 = new 문서방();
 
+  // 0) **원본도 우리 도구로 한 번 열고 저장한다** — 아무것도 안 고치고.
+  // 기본 양식 셋은 줄 정보가 글보다 뒤를 가리켜 한글 2024 가 원본부터 못 열었다(실측 38 — 2026-11-06
+  // Draftsmith 가 고친 판으로 갈아 넣어 지금은 「원본은 그대로다」로 나온다). 옛 판을 받아도 견줄 원본 PDF 가
+  // 있도록 이 걸음은 둔다. 우리 저장은 그 줄 정보만 지우고, 멀쩡한 파일은 바이트가 그대로다.
+  {
+    const o = await 도구부르기('open_document', { path: 원본 }, 방);
+    const 저장0 = o.isError ? o
+      : await 도구부르기('save_document', { doc_id: o.structuredContent.doc_id, path: 원본, overwrite: true }, 방);
+    const 지운줄 = 저장0.structuredContent?.lineseg_cleared ?? 0;
+    적기(!저장0.isError, 저장0.isError
+      ? `원본을 못 거쳤다: ${저장0.content?.[0]?.text?.slice(0, 70)}`
+      : 지운줄 > 0 ? `원본에 넘친 줄 정보 ${지운줄}문단 — 지운 판을 원본으로 쓴다` : '원본은 그대로다');
+  }
+
   // 1) 연다
   const 열기 = await 도구부르기('open_document', { path: 고친것 }, 방);
   if (열기.isError) { 적기(false, `못 열었다: ${열기.content?.[0]?.text?.slice(0, 60)}`); continue; }

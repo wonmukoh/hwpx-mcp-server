@@ -1351,6 +1351,64 @@ function 줄정보지우기(문단el: ElementNode): void {
 }
 
 /**
+ * **글보다 뒤를 가리키는 줄 정보를 지운다** — 지운 문단 수를 돌려준다.
+ *
+ * 한글 2024(13.0)는 문단 하나라도 lineseg `textpos` 가 그 문단 글 길이를 넘으면
+ * **파일을 아예 안 연다** (2026-11-05 실측, `자료/실측.md` 38). 옛 한글은 열어 줬다.
+ * 우리가 글을 갈 때는 짜임이 다르면 줄 정보를 지우므로 이런 것을 **만들지는 않는다.**
+ * 그러나 남이 만든 양식이 이미 그렇게 넘쳐 있으면 우리는 그대로 내보냈다 —
+ * Draftsmith 기본 양식 셋과 드라이브의 [기본양식] 셋이 그랬다.
+ *
+ * 글 길이는 **위로** 잡는다: 글자 하나 1, 글 안 개체(탭·줄바꿈…)와 런의 개체(표·그림·
+ * 컨트롤 하나하나) 8. 한글이 실제로 세는 값보다 작게 잡으면 멀쩡한 줄 정보를 지운다
+ * (지워도 한글이 다시 재니 탈은 없지만 바이트가 바뀐다). 끝을 하나 넘는 것(`길이 + 1`)은
+ * 한글이 연다 — 한글이 만든 583편, 29만 문단을 재어 이 기준에 걸린 것은 6편뿐이었고
+ * 걸린 것은 모두 한글 2024 가 못 열었다.
+ */
+export function 넘친줄정보지우기(뿌리: ElementNode): number {
+  let 지운수 = 0;
+  for (const p of findAll(뿌리, 'hp:p')) {
+    const 배치들 = childrenNamed(p, 'hp:linesegarray');
+    if (배치들.length === 0) continue;
+    let 끝 = -1;
+    for (const arr of 배치들) {
+      for (const seg of childrenNamed(arr, 'hp:lineseg')) {
+        const n = Number(getAttr(seg, 'textpos'));
+        if (Number.isFinite(n) && n > 끝) 끝 = n;
+      }
+    }
+    if (끝 > 문단글위길이(p) + 1) {
+      for (const arr of 배치들) removeNode(arr);
+      지운수++;
+    }
+  }
+  return 지운수;
+}
+
+/** 한글이 세는 문단 글 길이를 **위로** 잡은 값 (`넘친줄정보지우기`) */
+function 문단글위길이(p: ElementNode): number {
+  let n = 0;
+  for (const r of childrenNamed(p, 'hp:run')) {
+    for (const c of r.children) {
+      if (c.kind !== 'element') continue;
+      if (c.name === 'hp:t') {
+        for (const t of c.children) {
+          // 원문 그대로라 `&amp;` 같은 것은 한 글자로 접는다
+          if (t.kind === 'text') n += [...t.raw.replace(/&[a-zA-Z#0-9]+;/g, 'x')].length;
+          else if (t.kind === 'cdata') n += [...t.raw].length;
+          else if (t.kind === 'element') n += 8;
+        }
+      } else if (c.name === 'hp:ctrl') {
+        n += 8 * Math.max(1, c.children.filter((x) => x.kind === 'element').length);
+      } else {
+        n += 8;
+      }
+    }
+  }
+  return n;
+}
+
+/**
  * 런이 하나도 없는 문단에 글을 넣을 때 쓸 서식 — **같은 통에서 앞 문단의 마지막 런**.
  *
  * 글쇠로 칠 때처럼 바로 앞 글의 서식을 잇는다. 앞이 없으면 0 이다.

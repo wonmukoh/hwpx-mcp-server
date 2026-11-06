@@ -23,6 +23,15 @@
  *   - 덧말의 작은 글: 한글은 「(덧말:…)」로 붙인다. 쪽에는 본문 위에 작게 보인다
  * 우리 쪽에서는 머리말·꼬리말 안 문단을 뺀다 — 한글이 글 내보내기에 안 넣는다.
  *
+ * 한글 글 내보내기가 **쪽에는 있는데 안 내는** 것이 둘 더 있다 (2026-11-05, 표본 둘에서 잼 —
+ * 같은 파일을 한글 PDF 로 구우면 다 있다). 우리 쪽에서 뺀다:
+ *
+ *   - **둘째 구역부터, 구역 첫 문단(쪽 설정 든 문단)에 놓인 표** — 표째로 안 낸다.
+ *     돌봄 길라잡이 구역 1 의 근로계약서 뒤쪽 32문단, AI 교과서 매뉴얼 구역 1·2 의 평가표 머리.
+ *   - **글자 겹치기**(`hp:compose`, 예: 「／○」) — 겹친 글자를 안 낸다.
+ *
+ * 그리고 사용자 영역 글자(PUA)로 정한 글머리표는 「●」로 바꿔 낸다 — 우리 쪽도 그렇게 바꿔 견준다.
+ *
  *   node 검증/한글글대조.mjs
  */
 import * as fs from 'node:fs';
@@ -35,7 +44,7 @@ const 여기 = path.dirname(fileURLToPath(import.meta.url));
 const 뿌리 = path.dirname(여기);
 const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 const { 문서, 곁글인가 } = await import(B('doc'));
-const { closestNamed } = await import(B('owpml'));
+const { closestNamed, findAll, childrenNamed, getAttr } = await import(B('owpml'));
 
 const 무대 = path.join(os.tmpdir(), 'hwpx-글대조');
 const 원본칸 = path.join(무대, '원본');
@@ -51,12 +60,50 @@ const 자리들 = [
 const 파일들 = 자리들.filter((d) => fs.existsSync(d))
   .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.hwpx')).map((f) => path.join(d, f)));
 
-/** 우리가 읽는 글 — 번호·글머리표를 앞에 붙이고, 머리말·꼬리말은 뺀다 */
+/** 둘째 구역부터, 구역 첫 문단에 놓인 표들 — 한글 글 내보내기가 안 낸다 (머리 주석) */
+function 한글이안내는표들(d) {
+  const 표들 = new Set();
+  for (const s of d.구역들.slice(1)) {
+    const 첫 = childrenNamed(s.root, 'hp:p')[0];
+    if (!첫) continue;
+    for (const r of childrenNamed(첫, 'hp:run')) for (const t of childrenNamed(r, 'hp:tbl')) 표들.add(t);
+  }
+  return 표들;
+}
+
+/** 한글 글 내보내기에 안 나오는 자리인가 — 곁글·머리말·꼬리말·위의 표 안 */
+function 안나오는자리(el, 안내는표) {
+  if (곁글인가(el) || closestNamed(el, 'hp:header') || closestNamed(el, 'hp:footer')) return true;
+  for (let 위 = el.parent; 위 !== undefined; 위 = 위.parent) if (안내는표.has(위)) return true;
+  return false;
+}
+
+/**
+ * 글머리표가 **사용자 영역 글자**(U+E000~F8FF, 예: Wingdings 체크 U+F0FC)면 한글 글 내보내기는 「●」로 낸다.
+ * 쪽에는 그 글꼴의 모양(✔)이 찍힌다 (2026-11-05, AI 교과서 활용 안내 표본 — 실측 39).
+ */
+function 한글이내는표지(표지) {
+  return /^[-]$/u.test(표지) ? '●' : 표지;
+}
+
+/** 우리가 읽는 글 — 번호·글머리표를 앞에 붙이고, 한글이 안 내는 것은 뺀다 */
 function 우리글(d) {
   const 표지 = d.번호표지들();
-  return d.구역들.flatMap((s) => s.모든문단들
-    .filter((p) => !곁글인가(p.el) && !closestNamed(p.el, 'hp:header') && !closestNamed(p.el, 'hp:footer'))
-    .map((p) => (표지.has(p.el) ? `${표지.get(p.el)} ` : '') + p.글)).join('\n');
+  const 안내는표 = 한글이안내는표들(d);
+  let 글 = d.구역들.flatMap((s) => s.모든문단들
+    .filter((p) => !안나오는자리(p.el, 안내는표))
+    .map((p) => (표지.has(p.el) ? `${한글이내는표지(표지.get(p.el))} ` : '') + p.글)).join('\n');
+  // 글자 겹치기의 겹친 글자를 하나씩 덜어 낸다 — 한글은 안 낸다. 견주기는 글자 묶음이라 자리는 상관없다
+  for (const s of d.구역들) {
+    for (const c of findAll(s.root, 'hp:compose')) {
+      if (안나오는자리(c, 안내는표)) continue;
+      for (const 자 of getAttr(c, 'composeText') ?? '') {
+        const i = 글.indexOf(자);
+        if (i >= 0) 글 = 글.slice(0, i) + 글.slice(i + 자.length);
+      }
+    }
+  }
+  return 글;
 }
 
 // ── 1. 원본 사본과 고친 사본을 만든다 ────────────────────────────────────────
@@ -69,10 +116,10 @@ for (const f of 파일들) {
   const d = 문서.열기(fs.readFileSync(f));
   const 원본글 = 우리글(d);
   let 별 = 0;
+  const 안내는표 = 한글이안내는표들(d);
   for (const s of d.구역들) {
     for (const p of s.모든문단들) {
-      if (곁글인가(p.el) || p.글.trim() === '') continue;
-      if (closestNamed(p.el, 'hp:header') || closestNamed(p.el, 'hp:footer')) continue;
+      if (안나오는자리(p.el, 안내는표) || p.글.trim() === '') continue;
       const r = p.글바꾸기(`${p.글}★`);
       if (r.ok && r.value.바뀐수 > 0) 별++;
     }

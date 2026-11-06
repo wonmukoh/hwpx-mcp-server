@@ -26,7 +26,7 @@ import {
 import { 됨, 안됨, type 결과 } from './결과.js';
 import { 이름표, 셀아이디, 셀아이디풀기, 소금내기 } from './식별자.js';
 import { 머리글, type 글자모양패치, type 문단모양패치 } from './머리글.js';
-import { 구역, 문단, 곁글인가, 고친곳들 } from './본문.js';
+import { 구역, 문단, 곁글인가, 고친곳들, 넘친줄정보지우기 } from './본문.js';
 import { 번호매기기 } from './번호.js';
 import { 표, 셀, 든것보기, 든것말 } from './표.js';
 
@@ -59,6 +59,14 @@ export class 문서 {
    * 그래서 재는 것은 흠의 있고 없고가 아니라 **늘었나**다.
    */
   private 처음탈: ReadonlySet<string> = new Set();
+
+  /**
+   * 마지막 `저장()` 에서 지운 **넘친 줄 정보** 문단 수 (`넘친줄정보지우기`).
+   *
+   * 0 이 아니면 원본이 한글 2024 에서 안 열리던 파일이다. 지운 판은 열린다.
+   * 조용히 고치지 않고 이 수를 저장 결과에 실어 말한다.
+   */
+  지운넘친줄정보 = 0;
 
   private constructor(
     private readonly 통: HwpxContainer,
@@ -1058,6 +1066,13 @@ export class 문서 {
     // **쓸 XML 을 통째로 마지막에 한 번 더 본다.** 글자 칸만 보는 그물은 속성(글꼴 이름·링크
     // 주소·책갈피 이름·메모 지은이)으로 들어간 제어문자를 놓쳐, 깨진 XML 을 저장하고 「저장했다」고
     // 했다 (2026-10-07 검토). 입구에서 막지만, 길이 늘면 입구를 또 놓친다 — 마지막 그물은 쓰는 글 전체다.
+    // 넘친 줄 정보를 지우기 **전에** 사용자가 고친 것이 있었나를 본다 — 줄 정보만 지운 것은
+    // 글이 그대로라 미리보기를 갈 까닭이 없다.
+    const 고쳤나 = this.dirty;
+    // **한글 2024 가 안 여는 줄 정보를 지운다.** 검사() 가 구역을 모두 읽어 두었다.
+    // 멀쩡한 파일은 걸리는 것이 없어 바이트가 그대로다.
+    this.지운넘친줄정보 = 0;
+    for (const doc of this.구역doc.values()) this.지운넘친줄정보 += 넘친줄정보지우기(doc.root);
     const 쓸것: [string, string][] = [];
     if (this.머리.dirty) 쓸것.push([부품.header, this.머리.toXml()]);
     for (const [이름, doc] of this.구역doc) if (doc.root.dirty) 쓸것.push([이름, serializeXml(doc)]);
@@ -1069,7 +1084,7 @@ export class 문서 {
       }
     }
     // 고쳤으면 미리보기를 갈아 끼운다 — 안 그러면 옛 글이 파일 미리보기에 남는다
-    if (this.dirty) this.통.미리보기갈기(this.미리보기글());
+    if (고쳤나) this.통.미리보기갈기(this.미리보기글());
     this.통.mimetype바로잡기();
     for (const [이름, xml] of 쓸것) this.통.writeText(이름, xml);
     return this.통.save();

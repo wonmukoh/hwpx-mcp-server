@@ -94,7 +94,12 @@ describe('표본의 개체 든 문단 — 글을 바꿔 되써도 개체가 남�
         }
         // **글을 바꿔** 되쓴다 — 같은 글이면 건너뛰어 아무것도 안 잰다
         const r = p.글바꾸기(`${글}.`);
-        expect(r.ok).toBe(true);
+        // **형광펜이 든 칸은 거절이 맞다** (아래 「모르는 요소가 든 글자 칸」). 그것이 정말 있을 때만
+        // 봐준다 — 아무 거절이나 봐주면 「다 거절한다」는 고장이 이 시험을 지나간다. 거절해도 개체는 그대로여야 한다.
+        if (!r.ok) {
+          const 형광펜 = findAll(p.el, 'hp:markpenBegin').length + findAll(p.el, 'hp:markpenEnd').length;
+          expect(형광펜, `형광펜도 없는데 거절했다: «${글.slice(0, 40)}» ${r.이유}`).toBeGreaterThan(0);
+        }
         const 뒤 = 개체이름.map((n) => 제것세기(p.el, n));
         expect(뒤, `되쓰니 개체가 사라졌다: «${글.slice(0, 40)}»`).toEqual(전);
       }

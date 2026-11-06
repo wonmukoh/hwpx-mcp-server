@@ -26,7 +26,7 @@ const 뿌리 = path.dirname(여기);
 const B = (p) => pathToFileURL(path.join(뿌리, '검증', '.빌드전체', 'packages', p, 'src', 'index.js')).href;
 
 const { HwpxContainer } = await import(B('hwpx'));
-const { parseXml, serializeXml, findAll, setText, textOf } = await import(B('owpml'));
+const { parseXml, serializeXml, findAll, setText, textOf, childrenNamed, removeNode } = await import(B('owpml'));
 
 // 한글은 OneDrive 경로에서 보안 대화상자를 띄운다. 로컬 임시 폴더에서 다룬다.
 const 무대 = path.join(os.tmpdir(), 'hwpx-수용시험');
@@ -68,7 +68,15 @@ for (const 이름 of 목록) {
       for (const ch of doc.children) 전부더럽히기(ch);
       if (!표시넣음) {
         const 글자들 = findAll(doc.root, 'hp:t');
-        if (글자들.length) { setText(글자들[0], 표시); 표시넣음 = true; }
+        if (글자들.length) {
+          setText(글자들[0], 표시);
+          // **그 문단의 줄 정보도 지운다** — 우리 도구가 글을 갈 때 하는 대로. 안 지우면 줄 정보가
+          // 바뀐 글보다 뒤를 가리켜 한글 2024 가 파일을 아예 안 연다 (실측 38). 검증 쪽 탈이다.
+          let 문단 = 글자들[0].parent;
+          while (문단 && 문단.name !== 'hp:p') 문단 = 문단.parent;
+          if (문단) for (const arr of childrenNamed(문단, 'hp:linesegarray')) removeNode(arr);
+          표시넣음 = true;
+        }
       }
       c.writeText(구역, serializeXml(doc));
     }

@@ -52,6 +52,15 @@ describe('번호 세기', () => {
     expect(ps.map((p) => 지도.get(p))).toEqual(['1.', undefined, '2.']);
   });
 
+  it('**사용자 영역 글자로 정한 글머리표는 「●」로 읽는다** — 위쪽 사용자 영역도, 보통 글자는 그대로', () => {
+    for (const [자, 나올것] of [['', '●'], ['', '●'], ['\u{F02B1}', '●'], ['∘', '∘'], ['-', '-'], ['●', '●']] as const) {
+      const { 뿌리el, ps } = 문단들(['9']);
+      const 틀 = 정의({ 1: '^1.' }, {});
+      틀.글머리.set('4', 자);
+      expect(번호매기기(틀, [뿌리el], () => false).get(ps[0]!), `U+${자.codePointAt(0)!.toString(16)}`).toBe(나올것);
+    }
+  });
+
   it('번호 꼴', () => {
     expect(번호꼴(3, 'HANGUL_SYLLABLE')).toBe('다');
     expect(번호꼴(4, 'ROMAN_CAPITAL')).toBe('IV');

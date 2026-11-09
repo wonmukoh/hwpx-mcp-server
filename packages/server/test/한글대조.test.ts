@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { HwpxContainer } from '@hwpx/container';
 import { 도구부르기, 문서방 } from '../src/index.js';
 
 const 뿌리 = path.resolve(__dirname, '../../..');
@@ -138,6 +139,65 @@ describe('한글이 저절로 붙이는 번호·글머리표를 알려 준다', 
     const id = await 문단찾기(방, doc_id, '지방 주도 성장의 기반이 되는');
     const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id, text: '- 지방 주도 성장 지원' }] }, 방);
     expect((r.structuredContent!['results'] as { note?: string }[])[0]!.note).toContain('「-」');
+  });
+});
+
+describe('사용자 영역 글자로 정한 글머리표 (실측 39)', () => {
+  /** 보도자료의 글머리표 「-」를 U+F0FC 로 바꾼 파일 — 공개 표본만으로 재려고 짠다 */
+  function 기호글머리파일(): string {
+    const c = HwpxContainer.open(fs.readFileSync(보도자료));
+    const 머리 = c.readText('Contents/header.xml');
+    const 바꾼것 = 머리.replace(/(<hh:bullet\b[^>]*\bchar=")-(")/g, '$1$2');
+    expect(바꾼것, '표본에 「-」 글머리표가 없어졌다').not.toBe(머리);
+    c.writeText('Contents/header.xml', 바꾼것);
+    c.mimetype바로잡기();
+    const 파일 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '기호글머리-')), '원본.hwpx');
+    fs.writeFileSync(파일, c.save());
+    return 파일;
+  }
+
+  const 머리글 = (파일: string) => HwpxContainer.open(fs.readFileSync(파일)).readText('Contents/header.xml');
+
+  async function 번호칸(방: 문서방, doc_id: string) {
+    const 뼈 = (await 도구부르기('get_outline', { doc_id, limit: 2000, in_tables: true }, 방)).structuredContent!;
+    const 칸 = (뼈['items'] as { id: string; numbered_lines?: number }[]).find((x) => x.numbered_lines)!;
+    return (await 도구부르기('get_content', { doc_id, id: 칸.id }, 방)).structuredContent!['paragraphs'] as
+      { id: string; text: string; numbering?: string }[];
+  }
+
+  it('**numbering 이 「●」로 나온다** — 글에는 안 들고, 뜻 없는 글자가 안 샌다', async () => {
+    const { 방, doc_id } = await 열기(기호글머리파일());
+    const 줄들 = await 번호칸(방, doc_id);
+    expect(줄들.map((x) => x.numbering)).toEqual(['●', '●', '●']);
+    expect(줄들[0]!.text.startsWith('●')).toBe(false);
+    expect(JSON.stringify(줄들)).not.toContain('');
+  });
+
+  it('**읽기만 하면 파일이 바이트째 그대로다**', async () => {
+    const 파일 = 기호글머리파일();
+    const { 방, doc_id } = await 열기(파일);
+    await 번호칸(방, doc_id);
+    const 낼곳 = path.join(path.dirname(파일), '낸것.hwpx');
+    await 도구부르기('save_document', { doc_id, path: 낼곳 }, 방);
+    expect(fs.readFileSync(낼곳).equals(fs.readFileSync(파일))).toBe(true);
+  });
+
+  it('**고쳐 저장해도 머리글의 글머리표는 원래 글자다** — 쪽에는 원래 모양이 찍혀야 한다', async () => {
+    const { 방, doc_id } = await 열기(기호글머리파일());
+    const 줄들 = await 번호칸(방, doc_id);
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id: 줄들[0]!.id, text: '고친 줄' }] }, 방);
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+    const 낼곳 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), '기호글머리-')), '고친것.hwpx');
+    await 도구부르기('save_document', { doc_id, path: 낼곳 }, 방);
+    expect(머리글(낼곳)).toContain('char=""');
+    expect(머리글(낼곳)).not.toMatch(/<hh:bullet\b[^>]*\bchar="●"/);
+  });
+
+  it('**읽은 「●」를 글에 또 쓰면 알린다** — 쪽에는 원래 모양 뒤에 ● 가 또 찍힌다', async () => {
+    const { 방, doc_id } = await 열기(기호글머리파일());
+    const 줄들 = await 번호칸(방, doc_id);
+    const r = await 도구부르기('edit', { doc_id, edits: [{ op: 'set_text', id: 줄들[0]!.id, text: '● 고친 줄' }] }, 방);
+    expect((r.structuredContent!['results'] as { note?: string }[])[0]!.note).toContain('「●」');
   });
 });
 

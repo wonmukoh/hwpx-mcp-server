@@ -23,6 +23,7 @@
  *
  *     node 검증/HTML닮음.mjs [문서이름조각]
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -93,7 +94,7 @@ for (const [i, 것] of 것들.entries()) {
 function 한글로굽기(짝들) {
   const NL = String.fromCharCode(10);
   const 줄 = ["$ErrorActionPreference='Continue'",
-    '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+    한글띄우기,
     // **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
     // **사용자가 다른 프로그램에 하는 클릭을 먹는다.** 검증 한 바퀴에 수십 번이다.
     'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
@@ -113,7 +114,7 @@ function 한글로굽기(짝들) {
   // PowerShell 5.1 은 .ps1 을 **ANSI 로 읽는다** — BOM 을 붙여야 UTF-8 로 읽는다
   const 스크립트 = path.join(무대, 'bake.ps1');
   fs.writeFileSync(스크립트, '\uFEFF' + 줄.join(NL), 'utf8');
-  return execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 스크립트],
+  return 한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 스크립트],
     { encoding: 'buffer', timeout: 3_000_000, maxBuffer: 1 << 26 }).toString('utf8');
 }
 
@@ -246,6 +247,8 @@ if (잰것 > 0) {
     + (닮평균 === null ? '' : ` · 디자인 닮음 평균 ${(닮평균 * 100).toFixed(0)}%`));
 }
 
+// **아무것도 안 재면 통과가 아니다.** 한글이 안 뜨면 문서를 다 건너뛰고 ○ 로 끝났다 (2026-11-06)
+if (잰것 === 0) { console.error('\n✗ 한 편도 못 쟀다 — 한글이 떴는지 봐라'); process.exit(1); }
 if (실패 > 0) {
   console.error(`\n✗ ${실패}편에서 글이 사라지거나 못 구웠다`);
   process.exit(1);

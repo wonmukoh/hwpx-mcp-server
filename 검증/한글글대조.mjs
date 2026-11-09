@@ -30,10 +30,12 @@
  *     돌봄 길라잡이 구역 1 의 근로계약서 뒤쪽 32문단, AI 교과서 매뉴얼 구역 1·2 의 평가표 머리.
  *   - **글자 겹치기**(`hp:compose`, 예: 「／○」) — 겹친 글자를 안 낸다.
  *
- * 그리고 사용자 영역 글자(PUA)로 정한 글머리표는 「●」로 바꿔 낸다 — 우리 쪽도 그렇게 바꿔 견준다.
+ * 사용자 영역 글자(PUA)로 정한 글머리표는 한글이 「●」로 낸다. 우리 읽기도 그렇게 주므로(`번호.ts`) 여기서는
+ * 바꾸지 않고 그대로 견준다 — 이 대조가 그 동작을 한글에 대고 재는 시험이다.
  *
  *   node 검증/한글글대조.mjs
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -78,21 +80,13 @@ function 안나오는자리(el, 안내는표) {
   return false;
 }
 
-/**
- * 글머리표가 **사용자 영역 글자**(U+E000~F8FF, 예: Wingdings 체크 U+F0FC)면 한글 글 내보내기는 「●」로 낸다.
- * 쪽에는 그 글꼴의 모양(✔)이 찍힌다 (2026-11-05, AI 교과서 활용 안내 표본 — 실측 39).
- */
-function 한글이내는표지(표지) {
-  return /^[-]$/u.test(표지) ? '●' : 표지;
-}
-
 /** 우리가 읽는 글 — 번호·글머리표를 앞에 붙이고, 한글이 안 내는 것은 뺀다 */
 function 우리글(d) {
   const 표지 = d.번호표지들();
   const 안내는표 = 한글이안내는표들(d);
   let 글 = d.구역들.flatMap((s) => s.모든문단들
     .filter((p) => !안나오는자리(p.el, 안내는표))
-    .map((p) => (표지.has(p.el) ? `${한글이내는표지(표지.get(p.el))} ` : '') + p.글)).join('\n');
+    .map((p) => (표지.has(p.el) ? `${표지.get(p.el)} ` : '') + p.글)).join('\n');
   // 글자 겹치기의 겹친 글자를 하나씩 덜어 낸다 — 한글은 안 낸다. 견주기는 글자 묶음이라 자리는 상관없다
   for (const s of d.구역들) {
     for (const c of findAll(s.root, 'hp:compose')) {
@@ -133,7 +127,7 @@ const ps = `
 $ErrorActionPreference = 'Continue'
 # 파일 이름이 한글이다 — 콘솔 코드 페이지로 내보내면 깨져 판정을 못 짝짓는다
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
-$hwp = New-Object -ComObject HWPFrame.HwpObject
+${한글띄우기}
 # 창을 숨긴다 — 안 숨기면 Open·SaveAs 마다 앞으로 튀어나와 사용자의 클릭을 먹는다
 try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}
 try { $hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}
@@ -155,7 +149,7 @@ try {
 `;
 let 말 = '';
 try {
-  말 = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], { encoding: 'utf8', maxBuffer: 1 << 26 });
+  말 = 한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], { encoding: 'utf8', maxBuffer: 1 << 26 });
 } catch (e) {
   말 = String(e.stdout ?? '');   // 끝이 0 이 아니어도 뱉은 판정은 챙긴다
 }

@@ -27,6 +27,7 @@
  *
  *   node 검증/양식도구.mjs
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -231,7 +232,7 @@ function 견줄쪽수(_길) { return null; }
 function 한글로견주기(가, 나, 표) {
   const NL = String.fromCharCode(10);
   const 줄 = ["$ErrorActionPreference='Continue'",
-    '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+    한글띄우기,
     // **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
     // **사용자가 다른 프로그램에 하는 클릭을 먹는다.** 검증 한 바퀴에 수십 번이다.
     'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
@@ -250,7 +251,7 @@ function 한글로견주기(가, 나, 표) {
   // PowerShell 5.1 은 .ps1 을 ANSI 로 읽는다 — BOM 을 붙여야 UTF-8 로 읽는다
   fs.writeFileSync(스크립트, '\uFEFF' + 줄.join(NL), 'utf8');
   try {
-    execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 스크립트],
+    한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 스크립트],
       { stdio: 'pipe', timeout: 600_000 });
   } catch { return null; }
 

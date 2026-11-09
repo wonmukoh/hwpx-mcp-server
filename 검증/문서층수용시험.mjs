@@ -16,6 +16,7 @@
  *
  * 한글은 한 번만 띄운다. 경로에 한글(글자)을 넣지 않는다.
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -155,7 +156,7 @@ for (const 이름 of 목록) {
 // ── 2. 한글 한 번 띄워 전부 열어 본다 ─────────────────────────────────────
 const ps = `
 $ErrorActionPreference = 'Continue'
-$hwp = New-Object -ComObject HWPFrame.HwpObject
+${한글띄우기}
 # **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
 # 사용자가 다른 프로그램에 하는 클릭을 먹는다. 검증 한 바퀴에 수십 번이다.
 try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}
@@ -185,7 +186,7 @@ try {
 // 아래에서 「한글이 아무 말도 안 했다」로 잡히니, 조용히 넘어가지 않는다.
 let 결과 = '';
 try {
-  결과 = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
+  결과 = 한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
     encoding: 'buffer', timeout: 900_000, maxBuffer: 1 << 24,
   }).toString('utf8');
 } catch (e) {

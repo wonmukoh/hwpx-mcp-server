@@ -17,6 +17,7 @@
  *
  *   node 검증/셀여백단위.mjs
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -73,7 +74,7 @@ function 한글에게(파일) {
   const 저장본 = 파일.replace(/\.hwpx$/, '-saved.hwpx');
   const ps = [
     "$ErrorActionPreference='Continue'",
-    '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+    한글띄우기,
     // **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
     // **사용자가 다른 프로그램에 하는 클릭을 먹는다.** 검증 한 바퀴에 수십 번이다.
     'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
@@ -96,7 +97,7 @@ function 한글에게(파일) {
     '} catch { Write-Output ("THROW ||| " + $_.Exception.Message) }',
     'finally { try { $hwp.Clear(1) | Out-Null } catch {}; try { $hwp.Quit() | Out-Null } catch {} }',
   ].join('\n');
-  execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+  한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
     { encoding: 'buffer', timeout: 180_000 });
   if (!fs.existsSync(저장본)) return null;
 

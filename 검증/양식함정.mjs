@@ -14,6 +14,7 @@
  *
  *   node 검증/양식함정.mjs
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -111,7 +112,7 @@ for (const [이름, 뜻, 고침] of [
 {
   const NL = String.fromCharCode(10);
   const 줄 = ["$ErrorActionPreference='Continue'",
-    '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+    한글띄우기,
     // **창을 숨긴다.** 안 숨기면 한글 창이 앞으로 튀어나와 사용자의 클릭을 먹는다
     'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
     'try { $hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}',
@@ -132,7 +133,7 @@ for (const [이름, 뜻, 고침] of [
   fs.writeFileSync(스크립트, '﻿' + 줄.join(NL), 'utf8');
   let 나온것 = '';
   try {
-    나온것 = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 스크립트],
+    나온것 = 한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 스크립트],
       { encoding: 'buffer', timeout: 600_000, maxBuffer: 1 << 24 }).toString('utf8');
   } catch (e) {
     // 끝의 Quit 하나가 실패해도 판정은 이미 나와 있다 — 뱉은 것을 먼저 챙긴다

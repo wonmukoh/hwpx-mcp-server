@@ -18,6 +18,7 @@
  *
  *   node 검증/여러쪽재현.mjs
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -55,7 +56,7 @@ for (const [i, 이름] of 문서들.entries()) {
 
 function 한글로굽기(짝들) {
   const 줄 = ["$ErrorActionPreference='Continue'",
-    '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+    한글띄우기,
     // **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
     // **사용자가 다른 프로그램에 하는 클릭을 먹는다.** 검증 한 바퀴에 수십 번이다.
     'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
@@ -73,7 +74,7 @@ function 한글로굽기(짝들) {
     줄.push('  try { $hwp.Clear(1) | Out-Null } catch {}');
   }
   줄.push('} finally { try { $hwp.Quit() | Out-Null } catch {} }');
-  return execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 줄.join('\n')],
+  return 한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 줄.join('\n')],
     { encoding: 'buffer', timeout: 1_800_000, maxBuffer: 1 << 24 }).toString('utf8');
 }
 

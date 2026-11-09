@@ -15,6 +15,7 @@
  *
  * 한글과 python(pymupdf)이 있어야 한다. 없으면 그렇다고 말하고 건너뛴다.
  */
+import { 한글돌리기, 한글띄우기 } from './한글지키기.mjs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -86,7 +87,7 @@ const 한글것 = path.join(무대, 'from-hwp.hwpx');
 const pdf = path.join(무대, 'composed.pdf');
 const ps = [
   "$ErrorActionPreference='Continue'",
-  '$hwp = New-Object -ComObject HWPFrame.HwpObject',
+  한글띄우기,
     // **창을 숨긴다.** 안 숨기면 Open·SaveAs 마다 한글 창이 앞으로 튀어나와
     // **사용자가 다른 프로그램에 하는 클릭을 먹는다.** 검증 한 바퀴에 수십 번이다.
     'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
@@ -105,7 +106,7 @@ const ps = [
 
 let 한글말 = '';
 try {
-  한글말 = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+  한글말 = 한글돌리기('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
     { encoding: 'buffer', timeout: 600_000 }).toString('utf8');
 } catch (e) {
   탈.push(`한글을 못 돌렸다: ${e.message.split('\n')[0]}`);

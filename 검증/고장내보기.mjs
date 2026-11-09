@@ -1653,6 +1653,27 @@ const 고장들 = [
     'packages/server',
   ],
   [
+    '사용자 영역 글머리표를 그대로 낸다 (U+F0FC — 모델에게는 뜻 없는 글자)',
+    'packages/doc/src/번호.ts',
+    'if (자) 지도.set(p, 읽을글머리(자));',
+    'if (자) 지도.set(p, 자);',
+    'packages/doc',
+  ],
+  [
+    '보통 글머리표까지 「●」로 바꾼다 (「-」「∘」를 잃는다)',
+    'packages/doc/src/번호.ts',
+    "? '●' : 자;",
+    "? '●' : '●';",
+    'packages/doc',
+  ],
+  [
+    '위쪽 사용자 영역 글머리표를 그대로 낸다 (U+F0000~)',
+    'packages/doc/src/번호.ts',
+    "p{Co}$/u.test(자) ?",
+    "p{Co}$/u.test(자) && 자.length === 1 ?",
+    'packages/doc',
+  ],
+  [
     '칸 읽기가 줄마다 붙는 번호·글머리표를 안 준다',
     'packages/server/src/도구.ts',
     '            ...(표지.has(p.el) ? { numbering: 표지.get(p.el)! } : {}),',

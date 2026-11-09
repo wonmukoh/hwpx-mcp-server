@@ -3,6 +3,7 @@
  *
  *   node 검증/전부.mjs            시험 + 넓은 훑기 (한글 없이 돈다)
  *   node 검증/전부.mjs --한글      한글 수용 시험까지 (한글이 깔려 있어야 한다)
+ *                                  사용자가 쓰는 한글이 떠 있으면 안 돌린다 (--켜둔한글괜찮음 으로 돌린다)
  *
  * 통과 못 한 것이 하나라도 있으면 0이 아닌 값으로 끝난다.
  */
@@ -61,6 +62,9 @@ for (const d of 문서폴더) {
 }
 console.log();
 
+const 한글지킴이 = '지킴이가 한글을 닫나 (대역)';
+const 한글점검 = '한글을 띄워도 되나';
+const 한글문턱 = [한글지킴이, 한글점검];
 const 할일 = [
   ['꾸러미 굽기', process.execPath, [path.join('검증', '빌드.mjs')]],
   // **배포용(dist)도 여기서 굽는다.** 안 그러면 검증이 다 통과해도 dist 가 묵는다 —
@@ -101,6 +105,10 @@ const 할일 = [
 // `prepublishOnly` 에도 박혀 있다. 여기서는 **미리** 알려 준다.
 할일.push(['내놓을 채비', process.execPath, [path.join('검증', '내놓을채비.mjs')]]);
 if (한글까지) {
+  // **한글을 띄우기 전에 본다.** 고장 내보기가 스무 분 넘게 도니 시작할 때 말고 이때 본다.
+  할일.push([한글지킴이, process.execPath, [path.join('검증', '한글지키기.mjs'), '--대역시험']]);
+  // 멈춘 자동화 한글이 있으면 갈래가 줄줄이 COM 오류로 끝나고, 사용자가 켜는 한글도 막힌다 (실측 40).
+  할일.push([한글점검, process.execPath, [path.join('검증', '한글지키기.mjs'), ...(process.argv.includes('--켜둔한글괜찮음') ? ['--켜둔한글괜찮음'] : [])]]);
   할일.push(['한글이 받아들이나 (규격·컨테이너)', process.execPath, [path.join('검증', '한글수용시험.mjs')]]);
   할일.push(['한글이 받아들이나 (문서 계층)', process.execPath, [path.join('검증', '문서층수용시험.mjs')]]);
   // 한글을 정답지로 — 한글이 읽는 글과 우리가 읽는 글이 같나 (덧말·자동 번호, 고친 뒤에도)
@@ -126,13 +134,17 @@ if (한글까지) {
 }
 
 const 결과 = [];
+let 한글막힘 = false;
 for (const [이름, cmd, args] of 할일) {
   console.log(`── ${이름} ${'─'.repeat(Math.max(0, 50 - 이름.length))}`);
+  // 점검에 걸리면 한글 갈래는 **띄우지 않고** ✗ 로 남긴다 — 건너뛰었다고 초록이 되면 안 된다
+  if (한글막힘 && !한글문턱.includes(이름)) { console.log('  한글을 안 띄웠다 (위 점검)\n'); 결과.push([이름, false]); continue; }
   // shell 은 npx 처럼 .cmd 인 것에만 쓴다.
   // node.exe 경로에 공백이 있으면(C:/Program Files/…) shell 이 그걸 끊어 먹는다.
   const 셸필요 = process.platform === 'win32' && !cmd.endsWith('.exe');
   const r = spawnSync(cmd, args, { stdio: 'inherit', shell: 셸필요 });
   결과.push([이름, r.status === 0]);
+  if (한글문턱.includes(이름) && r.status !== 0) 한글막힘 = true;
   console.log();
 }
 

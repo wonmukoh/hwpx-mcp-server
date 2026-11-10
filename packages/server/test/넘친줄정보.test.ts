@@ -1,8 +1,8 @@
 /**
- * **save_document 는 한글 2024 가 안 열던 파일을 고쳤다는 것을 말한다.**
+ * **save_document 는 줄 정보를 지웠다는 것을 말한다.**
  *
  * 저장할 때 글보다 뒤를 가리키는 줄 정보를 지운다 (`@hwpx/doc` `넘친줄정보지우기`).
- * 조용히 고치면 사용자는 「원본이 안 열리던 파일」이었다는 것을 모른다 — 수와 말로 알린다.
+ * 조용히 고치면 사용자는 파일이 달라진 것을 모른다 — 수와 말로 알린다.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -38,7 +38,7 @@ describe('save_document — 넘친 줄 정보', () => {
     const r = await 도구부르기('save_document', { doc_id, path: 낼곳 }, 방);
     expect(r.structuredContent!['ok']).toBe(true);
     expect(r.structuredContent!['lineseg_cleared']).toBe(1);
-    expect(r.content[0]?.text ?? '').toContain('한글 2024 에서 안 열리는');
+    expect(r.content[0]?.text ?? '').toContain('줄 정보가 1문단에 있어 지우고 저장했다');
   });
 
   it('멀쩡한 파일이면 말하지 않는다', async () => {

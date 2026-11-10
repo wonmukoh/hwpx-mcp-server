@@ -20,6 +20,7 @@ import { 한글돌리기, 한글띄우기, 한글띄워도되나 } from './한�
 const 뿌리 = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const 인자 = process.argv.slice(2);
 const 그래도 = 인자.includes('--그래도');
+const 강제없이 = 인자.includes('--강제없이'); // forceopen 없이 — 사람이 파일을 여는 쪽에 더 가깝다
 const 제한자리 = 인자.indexOf('--제한');
 const 제한초 = 제한자리 >= 0 ? Number(인자[제한자리 + 1]) : 60;
 const 파일들 = 인자.filter((x, i) => !x.startsWith('--') && (제한자리 < 0 || i !== 제한자리 + 1));
@@ -46,9 +47,10 @@ const ps = [
   한글띄우기,
   'try { $hwp.XHwpWindows.Item(0).Visible = $false } catch {}',
   'try { $hwp.SetMessageBoxMode(0x20000) | Out-Null } catch {}',
-  "$hwp.RegisterModule('FilePathCheckDLL','FilePathCheckerModule') | Out-Null",
-  "$r = $hwp.Open($env:HWPX_OPEN_PATH, '', 'forceopen:true')",
-  "'open=' + $r + ' pages=' + $hwp.PageCount",
+  "$reg = $hwp.RegisterModule('FilePathCheckDLL','FilePathCheckerModule')",
+  `$r = $hwp.Open($env:HWPX_OPEN_PATH, '', '${강제없이 ? '' : 'forceopen:true'}')`,
+  "$chars = 0; if ($r) { try { $chars = ([string]$hwp.GetTextFile('UNICODE','')).Length } catch { $chars = -1 } }",
+  "'open=' + $r + ' pages=' + $hwp.PageCount + ' chars=' + $chars + ' reg=' + $reg",
   'try { $hwp.Clear(1) | Out-Null } catch {}',
   '$hwp.Quit()',
 ].join('\n');

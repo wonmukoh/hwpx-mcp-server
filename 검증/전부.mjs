@@ -98,6 +98,8 @@ const 할일 = [
 할일.push(['기능표 (도구로 직접 해 보기)', process.execPath, [path.join('검증', '기능표.mjs')]]);
 // 짜서 남의 폴더에 깔았을 때도 도나. 저장소 안 시험이 못 잡는 것을 잡는다.
 할일.push(['꾸러미 (짜서 깔아 보기)', process.execPath, [path.join('검증', '꾸러미시험.mjs')]]);
+// npm 없이 도는 한 파일 — 의존성까지 묶어 빈 폴더에서 띄운다 (설치본에 직접 담는 길)
+할일.push(['실행본 (npm 없이)', process.execPath, [path.join('검증', '실행본굽기.mjs')]]);
 // 세 클라이언트가 각자 두드리는 대로 두드려 본다. 하나에서만 도는 서버는 못 쓴다.
 할일.push(['세 클라이언트', process.execPath, [path.join('검증', '세클라이언트.mjs')]]);
 
